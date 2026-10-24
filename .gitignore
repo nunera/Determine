@@ -1,0 +1,11 @@
+firmware/common/include/secrets.h
+.pio/
+build/
+.gradle/
+local.properties
+*.iml
+.idea/
+__pycache__/
+*.pyc
+.venv/
+.impeccable/

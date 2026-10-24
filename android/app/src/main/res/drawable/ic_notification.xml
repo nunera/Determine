@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A dot with two arcs ahead of it: a range sensor looking forward. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9.5,15a2.5,2.5 0,1 0,5 0a2.5,2.5 0,1 0,-5 0z" />
+    <path
+        android:pathData="M7,11.5A7,7 0,0 1,17 11.5"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFFFF" />
+    <path
+        android:pathData="M4,8A11,11 0,0 1,20 8"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFFFF" />
+</vector>

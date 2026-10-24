@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- DESIGN.md palette -->
+    <color name="paper">#FFFFFF</color>
+    <color name="ink">#131316</color>
+    <color name="hazard">#FFD000</color>
+</resources>

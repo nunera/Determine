@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Determine Describe API (cloud/API.md v1). POST /v1/describe on Lambda arm64 (Graviton2), Python 3.12.
+  Calls the SmolVLM inference server on Inferentia2/Trainium2, with optional Amazon Bedrock Nova Lite fallback.
+
+Parameters:
+  DescribeBackend:
+    Type: String
+    Default: inf2
+    AllowedValues: [inf2, trn2, bedrock]
+    Description: Primary model backend. inf2/trn2 call the inference server at InferenceUrl; bedrock calls Nova Lite.
+  DescribeFallback:
+    Type: String
+    Default: none
+    AllowedValues: [none, bedrock]
+    Description: Backend used only when the primary is unavailable or times out.
+  InferenceUrl:
+    Type: String
+    Default: ""
+    Description: Inference server base URL, e.g. http://10.0.1.23:8080 (private IP; needs the VPC parameters).
+  DescribeApiKeyParam:
+    Type: String
+    Default: /determine/describe/api-key
+    AllowedPattern: ^/[A-Za-z0-9_.\-/]+$
+    Description: SSM SecureString holding the phone's bearer key (DESCRIBE_API_KEY).
+  InferenceKeyParam:
+    Type: String
+    Default: /determine/describe/inference-key
+    AllowedPattern: ^/[A-Za-z0-9_.\-/]+$
+    Description: SSM SecureString holding the inference server's X-Determine-Key (INFERENCE_KEY).
+  BedrockModelId:
+    Type: String
+    Default: us.amazon.nova-lite-v1:0
+    AllowedValues: [us.amazon.nova-lite-v1:0, amazon.nova-lite-v1:0]
+    Description: Nova Lite cross-region inference profile (us.*) or the in-region model id.
+  SubnetIds:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: Optional private subnet IDs (same VPC as the inference server). Leave empty to run outside a VPC.
+  SecurityGroupId:
+    Type: String
+    Default: ""
+    Description: Optional security group for the function; the inference server's group must allow it on its port.
+
+Conditions:
+  UseVpc: !And
+    - !Not [!Equals [!Join ["", !Ref SubnetIds], ""]]
+    - !Not [!Equals [!Ref SecurityGroupId, ""]]
+  UseBedrock: !Or
+    - !Equals [!Ref DescribeBackend, bedrock]
+    - !Equals [!Ref DescribeFallback, bedrock]
+
+Resources:
+  DescribeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Determine Describe API (POST /v1/describe)
+      CodeUri: app/
+      Handler: handler.handler
+      Runtime: python3.12
+      Architectures: [arm64]
+      MemorySize: 512
+      Timeout: 10
+      Environment:
+        Variables:
+          DESCRIBE_BACKEND: !Ref DescribeBackend
+          DESCRIBE_FALLBACK: !Ref DescribeFallback
+          DESCRIBE_API_KEY_PARAM: !Ref DescribeApiKeyParam
+          INFERENCE_URL: !Ref InferenceUrl
+          INFERENCE_KEY_PARAM: !Ref InferenceKeyParam
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+      VpcConfig: !If
+        - UseVpc
+        - SubnetIds: !Ref SubnetIds
+          SecurityGroupIds: [!Ref SecurityGroupId]
+        - !Ref AWS::NoValue
+      FunctionUrlConfig:
+        AuthType: NONE # the handler enforces the bearer key; no Cors block = CORS off (the phone is not a browser)
+      Policies:
+        - Statement:
+            - Sid: ReadDescribeSecrets
+              Effect: Allow
+              Action: ssm:GetParameter
+              Resource:
+                - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${DescribeApiKeyParam}
+                - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${InferenceKeyParam}
+        - !If
+          - UseBedrock
+          - Statement:
+              - Sid: InvokeNovaLite
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource:
+                  # the us.* inference profile routes to Nova Lite in several US regions
+                  - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-lite-v1:0
+                  - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/amazon.nova-lite-v1:0
+          - !Ref AWS::NoValue
+
+  # Function URLs created after October 2025 need lambda:InvokeFunction as well as lambda:InvokeFunctionUrl.
+  # Recent SAM versions add both for AuthType NONE; this statement makes it explicit for older SAM CLIs.
+  DescribeFunctionUrlInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DescribeFunction
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
+  DescribeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${DescribeFunction}
+      RetentionInDays: 7
+
+Outputs:
+  DescribeUrl:
+    Description: Phone endpoint (append v1/describe)
+    Value: !GetAtt DescribeFunctionUrl.FunctionUrl
+  DescribeFunctionName:
+    Value: !Ref DescribeFunction
+  DescribeLogGroupName:
+    Value: !Ref DescribeLogGroup

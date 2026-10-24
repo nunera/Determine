@@ -9,7 +9,7 @@
 * { box-sizing:border-box; }
 html { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 body { margin:0; font:9.9pt/1.45 "Liberation Sans",Arial,Helvetica,sans-serif; color:var(--ink); }
-h1 { font-size:40pt; line-height:1; letter-spacing:-.04em; margin:1.1in 0 10px; }
+h1 { font-size:40pt; line-height:1; letter-spacing:-.04em; margin:.15in 0 10px; }
 h2 { font-size:18pt; line-height:1.15; letter-spacing:-.02em; margin:0 0 12px; padding-bottom:7px; border-bottom:1.5px solid var(--accent); }
 h3 { font-size:11.6pt; margin:16px 0 5px; color:#0f3d4f; break-after:avoid; page-break-after:avoid; }
 h4 { font-size:10pt; margin:12px 0 4px; }
@@ -45,7 +45,7 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 .toc b { color:var(--accent); display:inline-block; width:22px; }
 .sources { font-size:7.9pt; line-height:1.35; padding-left:24px; }
 .sources li { margin:3px 0; }
-.cover-band { border-top:3px solid var(--accent); border-bottom:1px solid var(--line); padding:10px 0; margin:24px 0 18px; display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+.cover-band { border-top:3px solid var(--accent); border-bottom:1px solid var(--line); padding:10px 0; margin:16px 0 12px; display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
 .cover-band div b { display:block; font-size:8pt; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); }
 .cover-band div { font-size:9.2pt; }
 .avoid { break-inside:avoid; }
@@ -131,7 +131,7 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 
 <h3>1.2 Guarantees</h3>
 <ol>
-<li><b>G1 Fail loud.</b> If the camera, ToF, link, phone app or wearable power fails, the system targets an audible or tactile "system unavailable" notification through a surviving output within ≤ 1 s <span class="tag t-p">PROPOSED</span>. If both boards lose power, the phone uses its own speaker and vibration; the dead frame cannot play an earcon. Silence means "nothing to report <i>from a working system</i>", never "path clear".</li>
+<li><b>G1 Fail loud.</b> If the camera, ToF, link, phone app or wearable power fails, the system targets an audible or tactile "system unavailable" notification through a surviving output within ≤ 1 s <span class="tag t-p">PROPOSED</span>. If the cue board loses power, the phone uses its own speaker and vibration: the camera board has no audio or haptic output, so a dead cue board leaves the frame unable to play an earcon. Silence means "nothing to report <i>from a working system</i>", never "path clear".</li>
 <li><b>G2 Unknown is not clear.</b> An empty detection list never produces a reassurance cue. Determine has no "all clear" sound.</li>
 <li><b>G3 Offline hazard loop.</b> Capture → perception → decision → cue runs with no internet connection.</li>
 <li><b>G4 Calibrated, capped output.</b> Per-side gain comes from the wearer's own calibration and is clamped by a ceiling that no setting can exceed.</li>
@@ -232,7 +232,7 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 <p>None of the products found combines all four of the following: a low-cost glasses form, phone-side perception, bone-conduction <i>and</i> haptic output, and explicit calibration for asymmetric hearing. No ETA product or paper found addresses unilateral hearing loss in its cue design. That is an inference from absence of evidence, not a verified gap. <span class="tag t-i">INFERENCE</span></p>
 <div class="grid3">
 <div class="card"><h4>Not "AI glasses for the blind"</h4>That framing is crowded and invites overclaiming. Determine is a <i>parking sensor for walking</i>, whose output follows a defined set of rules.</div>
-<div class="card"><h4>Commodity hardware, unpriced build</h4>The phone does perception; the frame uses two commodity boards. Only $88.35 of line items have quoted prices, including out-of-stock transducers. Board packs, drive extras and power remain unpriced (Chapter 12). Do not quote a frame total yet.</div>
+<div class="card"><h4>Commodity hardware, unpriced build</h4>The phone does perception; the frame uses two commodity boards. Only the Mini ToF has a price rechecked for this list ($25.95 [20]). Micro Center prices for the boards, amps, haptic parts and regulator are unverified, and power and mounts remain unpriced (Chapter 12). Do not quote a frame total yet.</div>
 <div class="card"><h4>Hearing-aware by construction</h4>Calibration, a mono-safe mode and haptic direction are core features, not settings bolted on later.</div>
 </div>
 <div class="caution"><b>Claims to avoid in the pitch:</b> "replaces the cane", "detects stairs, curbs or traffic", "makes navigation safe", "restores hearing", "first obstacle sensor for the blind" (WeWALK and NOA already exist), "uses Auracast" (unless it was actually built and demonstrated).</div>
@@ -354,7 +354,7 @@ Phone → XIAO ESP32-C3
 <thead><tr><th style="width:20%">Board</th><th style="width:45%">Relevant facts</th><th>Verdict</th></tr></thead>
 <tbody>
 <tr><td><b>Seeed XIAO ESP32-C3 (3-pack)</b></td><td>RISC-V single core, 400 KB SRAM and 4 MB flash, Wi-Fi b/g/n + BLE 5, exactly one I²C and one SPI bus, 11 GPIO, 21×17.8 mm, no integrated camera [59]. Vendor-typical 75 mA with Wi-Fi active [59]</td><td><b>Selected: cue board.</b> Micro Center Houston SKU 069005; user reports the listing in stock, but no independently verified shelf count or price. One board used, two spares</td></tr>
-<tr><td><b>ESP32-CAM (classic ESP32)</b></td><td>The esp32-camera driver lists ESP32, S2 and S3 as supported SoCs [13]. Practical streaming needs PSRAM: the driver requires it for anything above CIF-or-lower JPEG [13]</td><td><b>Selected: camera board.</b> Inland pair, Micro Center Houston SKU 221739; user reports stock. The actual module's PSRAM and sensor must pass Gate G0 before use</td></tr>
+<tr><td><b>ESP32-CAM (classic ESP32)</b></td><td>The esp32-camera driver lists ESP32, S2 and S3 as supported SoCs [13]. Practical streaming needs PSRAM: the driver requires it for everything except JPEG at CIF or lower [13]</td><td><b>Selected: camera board.</b> Inland pair, Micro Center Houston SKU 221739; user reports stock. The actual module's PSRAM and sensor must pass Gate G0 before use</td></tr>
 <tr><td>Seeed XIAO ESP32-S3 Sense</td><td>8 MB PSRAM, camera board (OV3660 or OV2640 since 2025-06-30), microphone, one DVP camera interface [12][14]</td><td><b>Not selected:</b> unavailable to this build. Documented single-board alternative for a later revision ($13.99 online when checked 24 Oct [14])</td></tr>
 <tr><td>Raspberry Pi Zero 2 W</td><td>Quad A53, CSI-2, H.264 1080p30 encode, Wi-Fi and BT 4.2, 5 V/2.5 A supply spec [53]</td><td>Overkill for a "dumb" frame. Power and boot time. Out of stock at Adafruit</td></tr>
 <tr><td>Raspberry Pi Pico 2 W</td><td>RP2350, 520 KB SRAM, no camera port [54]</td><td>Cannot carry the camera role</td></tr>
@@ -365,13 +365,13 @@ Phone → XIAO ESP32-C3
 <h3>5.3 Output hardware</h3>
 <ul>
 <li><b>Stereo bone conduction, played on the glasses.</b> Two MAX98357A I²S amplifiers share one I²S bus. Select left on one amp and right on the other: the default mixes both channels [36]. Each drives one 8 Ω / 1 W Adafruit 1674 transducer. Adafruit's own store was out of stock on 18 Oct, but <a href="https://www.digikey.com/en/products/detail/adafruit-industries-llc/1674/6827067">DigiKey lists the same item (1528-1948-ND)</a>; its displayed inventory is not a checkout-confirmed delivery date. Limit output below the transducer's 1 W continuous rating, and cover each skin-facing transducer and wire joint against sweat [36]. <span class="tag t-f">FACT</span> → <span class="tag t-d">DESIGN</span></li>
-<li><b>Haptics.</b> Two ERM disc motors, one per side, each driven by a DRV2605L. Both drivers have the same I²C address, so the selected TCA9548A mux isolates them on separate channels; the Mini ToF may use the upstream bus [59]. The Micro Center driver listing may differ in connector style from Adafruit's current STEMMA QT revision: inspect it and wire its header as supplied. A MOSFET-PWM revision would require a different BOM and is not this build. <span class="tag t-d">DESIGN</span></li>
+<li><b>Haptics.</b> Two ERM disc motors, one per side, each driven by a DRV2605L. Both drivers have the same I²C address [36], so the selected TCA9548A mux isolates them on separate channels; the Mini ToF may use the upstream bus [59]. The Micro Center driver listing may differ in connector style from Adafruit's current STEMMA QT revision: inspect it and wire its header as supplied. If a DRV2605L fails at bring-up, the optional fallback in §12.2 drives each motor through a logic-level MOSFET with a flyback diode from a spare C3 PWM GPIO: simple pulses only, no driver waveforms, with the phone-side ceiling and cadence rules unchanged. <span class="tag t-d">DESIGN</span></li>
 <li><b>Fallback audio.</b> A commercial bone-conduction headset paired to the phone, such as Shokz OpenMove at a $79.95 list price (variants showed sold out) or OpenRun at $129.95 [37]. Classic Bluetooth adds latency (§6.2), so in this mode haptics carry the urgent cue.</li>
 </ul>
 
 <h3>5.4 Power</h3>
 <p>The revision uses two Wi-Fi boards and a single compact front-facing Mini ToF board, not three 41 × 25 mm Modulino Distance boards. The <a href="https://www.sparkfun.com/sparkfun-qwiic-mini-tof-imager-vl53l5cx.html">Mini measures 12.7 × 25.4 mm</a>, retains the 8×8 grid and 4 m vendor range [20], and is the justified shipped exception to Houston-first sourcing. The ESP32-CAM and ToF face forward; the C3, amplifiers, haptic drivers and power distribution sit toward the back of a headband. The power bank stays in a pocket, feeding the C3 and a separate 5 V distribution branch for the camera, amps and a 3.3 V LM3671 peripheral regulator. All grounds needed for shared signals are common. The board-fit, thermal load and simultaneous output current are unmeasured; Gate G0 checks power and mounting before any wearable claim. <span class="tag t-d">DESIGN</span></p>
-<p class="small">GPIO budget: the C3 has one hardware I²C bus [59] for the Mini ToF and TCA9548A; the two DRV2605Ls sit on separate mux channels. The two amplifiers share three I²S signals. Fix the complete pin map, status-LED GPIO and channel-select resistor values before soldering; do not power motors or amps from an unmeasured C3 3V3 output. <span class="tag t-g">GATE G0</span></p>
+<p class="small">GPIO budget: the C3 has one hardware I²C bus [59] for the Mini ToF and TCA9548A; the two DRV2605Ls sit on separate mux channels. The two amplifiers share three I²S signals. Fix the complete pin map, status-LED GPIO, two spare PWM GPIOs for the MOSFET haptic fallback and channel-select resistor values before soldering; do not power motors or amps from an unmeasured C3 3V3 output. <span class="tag t-g">GATE G0</span></p>
 </section>
 
 <!-- ============ 6 LINKS ============ -->
@@ -383,7 +383,7 @@ Phone → XIAO ESP32-C3
 <thead><tr><th style="width:17%">Link</th><th style="width:40%">Facts</th><th>Use in Determine</th></tr></thead>
 <tbody>
 <tr><td><b>Wi-Fi to the phone hotspot</b></td><td>Both wearable boards join the hotspot as stations: the ESP32-CAM streams JPEG and the C3 sends ToF grids and acknowledgements. esp32-camera recommends JPEG, because YUV and RGB strain PSRAM bandwidth when Wi-Fi is on [13]. Both boards and the phone share one hotspot channel's airtime</td><td><b>Primary.</b> QVGA–VGA JPEG at 10–15 fps target. Joining the phone's hotspot keeps the phone's cellular internet, which joining a glasses-hosted access point would not. <span class="tag t-i">INFERENCE</span> Effective throughput with two stations is unmeasured; Gate G1 measures it</td></tr>
-<tr><td>USB-C UVC</td><td>Android supports UVC webcams through Camera2, but only if the device maker enables the external camera provider. AOSP says it "isn't designed" for high-speed streaming or AR, and its sample configuration bounds 640×480 at 30 fps [10]</td><td>Secondary, only after a per-phone check with a UVC camera. A user-space UVC library is a further fallback</td></tr>
+<tr><td>USB-C UVC</td><td>Android supports UVC webcams through Camera2, but only if the device maker enables the external camera provider. AOSP says it "isn't designed" for high-speed streaming or AR, and its sample configuration bounds 640×480 at 30 fps [10]</td><td>Secondary, only after a per-phone check with a UVC camera. A user-space UVC library over the Android USB host API [11] is a further fallback</td></tr>
 <tr><td>BLE GATT</td><td>ESP32-to-ESP32 throughput is about 0.73 Mbit/s on the 1M PHY and about 1.4 Mbit/s on the 2M PHY. Phone throughput is lower and undocumented [15]</td><td>Provisioning, health, and possibly cues. Not video</td></tr>
 <tr><td>Meta DAT</td><td>The camera stream degrades resolution first, then frame rate, and does not drop below 15 fps. A2DP and HFP audio are mutually exclusive [6][7]</td><td>Alternative FrameSource for teams that own supported glasses</td></tr>
 </tbody>
@@ -442,7 +442,8 @@ never:        output CLEAR; speak distance without valid ToF; let description pr
 <p>The bands are <span class="tag t-p">PROPOSED</span>. With 250 ms of system latency and about 1 s of human reaction at 1.4 m/s, a hazard reported at 1.0 m leaves very little margin. That is why the FAR and MID bands exist, and why the NEAR band is a last-moment warning, not the main mechanism. <span class="tag t-i">INFERENCE</span> White-cane mode MAY suppress low-zone returns that the cane already covers. The Ara wearable uses a similar mode [1].</p>
 
 <h3>7.3 Optional scene description (Describe loop)</h3>
-<p>The user asks with a long press or voice: "What's ahead?" — never automatically. If the user has opted into cloud description and the service is available, the phone redacts faces and sensitive detail before upload; imperfect redaction is a privacy risk, so upload happens only on the user's explicit choice. A small arm64 Lambda API on Graviton2 [65] holds the prompt — two sentences, surroundings first, no guesses about people — and a small vision-language model describes the image: SmolVLM via Hugging Face Optimum Neuron on one Inf2 instance [62][63]. The model family is documented for Inf2, but this deployment is <b>untested by us</b>. Trainium2 is the documented alternative [60][61][64], and Bedrock Nova Lite is a fallback that does not guarantee the silicon [66]; new AWS accounts start with zero Inf/Trn quota, so accelerator access must be requested early [67]. If no description service is ready, the phone says description is unavailable; it does not improvise an untested local model. A returned answer is prefixed "may be wrong". MID or NEAR hazards interrupt it, and it is inactive while the system is UNAVAILABLE. Response time is unmeasured; the design plans for seconds, not milliseconds. <span class="tag t-d">DESIGN</span></p>
+<p>The user asks with a long press or voice: "What's ahead?" — never automatically. If the user has opted into cloud description and the service is available, the phone redacts faces and sensitive detail before upload; imperfect redaction is a privacy risk, so upload happens only on the user's explicit choice. A small arm64 Lambda API on Graviton2 [65] holds the prompt — two sentences, surroundings first, no guesses about people — and a small vision-language model describes the image: SmolVLM via Hugging Face Optimum Neuron on one Inf2 instance [62][63]. Optimum Neuron lists SmolVLM, and Gemma3 as a second candidate, for image-text-to-text on Inf2 with vLLM support [62], but neither deployment is <b>tested by us</b>. Trainium2 is the documented alternative [60][61][64], and Bedrock Nova Lite is a fallback that does not guarantee the silicon [66]; new AWS accounts start with zero Inf/Trn quota, so accelerator access must be requested early [67]. If no description service is ready, the phone says description is unavailable; it does not improvise an untested local model. A returned answer is prefixed "may be wrong". MID or NEAR hazards interrupt it, and it is inactive while the system is UNAVAILABLE. Response time is unmeasured; the design plans for seconds, not milliseconds. <span class="tag t-d">DESIGN</span></p>
+<p class="small">Implementation: contract <code>cloud/API.md</code>; API <code>cloud/describe-api</code> (Lambda arm64, SAM); server <code>cloud/inference</code> (optimum-neuron from git main on the Neuron SDK 2.31 PyTorch 2.9 AMI, TP 2 on inf2.xlarge, 512 px single tile). Only the CPU development path has been run: SmolVLM-256M answered in p50 2.0 s on a laptop CPU. Inferentia2 compile time and latency are unmeasured until quota is granted. <span class="tag t-g">GATE</span></p>
 
 <h3>7.4 "Cannot see" list (spoken during onboarding)</h3>
 <p>Glass doors and windows · thin wires and ropes · drop-offs, curbs and stairs going down · objects outside the forward field of view · fast-moving vehicles · glare, darkness, rain and fog · anything beyond about 3 m.</p>
@@ -456,9 +457,9 @@ never:        output CLEAR; speak distance without valid ToF; let description pr
 <table>
 <thead><tr><th style="width:14%">Dimension</th><th style="width:30%">Encoded by</th><th style="width:35%">Values</th><th>Rationale</th></tr></thead>
 <tbody>
-<tr><td><b>What</b> (family)</td><td>Timbre + rhythm motif</td><td>Obstacle: short wood-block double. Person: two-tone marimba. System: descending three-note. Ready: single soft tick, once</td><td>Brewster: timbre and rhythm are the strongest discriminators [24]</td></tr>
+<tr><td><b>What</b> (family)</td><td>Timbre + rhythm motif</td><td>Obstacle: short wood-block double; at NEAR, one sharper urgent note. Person: two-tone marimba. System: descending three-note. Ready: single soft tick, once</td><td>Brewster: timbre and rhythm are the strongest discriminators [24]</td></tr>
 <tr><td><b>Where</b> (side)</td><td>Calibrated side + matching haptic + optional spearcon</td><td>Left · Centre (both sides together, both motors) · Right</td><td>Redundant, so it survives single-sided deafness and the skull-crossing of bone-conducted sound [26][28]</td></tr>
-<tr><td><b>How close</b></td><td>Repetition rate (parking-sensor metaphor)</td><td>FAR 1 per s · MID 2.5 per s · NEAR 5 per s plus urgent motif</td><td>Matches the car-sensor mental model. Stays within about 6 notes per second [24]</td></tr>
+<tr><td><b>How close</b></td><td>Repetition rate (parking-sensor metaphor)</td><td>FAR 1 per s · MID 2.5 per s · NEAR 5 per s, one urgent note each</td><td>Matches the car-sensor mental model. Peaks at 5 notes per second (FAR 2, MID 5, NEAR 5), within about 6 per second [24]</td></tr>
 <tr><td><b>How urgent</b></td><td>Limited level step + haptic intensity</td><td>Base at calibrated sensation level. NEAR at +6 dB <i>within the ceiling</i></td><td>Level supports urgency but is never the only signal. Stays 10–20 dB above threshold [24]</td></tr>
 </tbody>
 </table>
@@ -466,10 +467,11 @@ never:        output CLEAR; speak distance without valid ToF; let description pr
 <h3>8.1 Timing grammar</h3>
 <pre>note ≥ 83 ms (motif notes)   gap between serial cues ≥ 100 ms   max 6 notes/s      [24]
 pitch range 300 Hz – 4 kHz  (inside Brewster 125 Hz–5 kHz and inside transducer response)
-FAR:  ▮▮ ............ ▮▮ ............  (1/s)
-MID:  ▮▮ ... ▮▮ ... ▮▮ ...            (2.5/s)
-NEAR: ▮▮▮ ▮▮▮ ▮▮▮ + haptic buzz       (5/s, urgent motif, +6 dB within ceiling)
+FAR:  ▮▮ ............ ▮▮ ............  (1/s, 2 notes/s)
+MID:  ▮▮ ... ▮▮ ... ▮▮ ...            (2.5/s, 5 notes/s)
+NEAR: ▮ ▮ ▮ ▮ ▮ + haptic buzz         (5/s, one urgent note per 200 ms, +6 dB within ceiling)
 SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phone vibration</pre>
+<p class="small">Each period must hold its notes plus the 100 ms gap: MID 2 × 83 + 100 = 266 ms of a 400 ms period; NEAR 83 + 100 = 183 ms of a 200 ms period. A multi-note motif cannot fit at 5 per second.</p>
 <p class="small">The lower edge of the pitch range assumes the bone transducer's 300 Hz–19 kHz response [36]. Recheck it against whatever transducer is actually fitted.</p>
 
 <h3>8.2 Spoken layer</h3>
@@ -491,7 +493,7 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <pre>cue_bank.json  (shipped to glasses flash; phone references by cue_id)
 { "obstacle_far":  {"wav":"ob2.wav", "period_ms":1000, "haptic":"pulse40"},
   "obstacle_mid":  {"wav":"ob2.wav", "period_ms":400,  "haptic":"pulse60"},
-  "obstacle_near": {"wav":"ob3u.wav","period_ms":200,  "haptic":"buzz150","level_step_db":6},
+  "obstacle_near": {"wav":"ob1u.wav","period_ms":200,  "haptic":"buzz150","level_step_db":6},
   "person_*":      {"wav":"pe2.wav", ...},
   "system_off":    {"wav":"sys3d.wav","period_ms":5000,"haptic":"lss","both":true} }</pre>
 </section>
@@ -583,7 +585,7 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <li>Hacking runs from <b>8 am Saturday 24 Oct to 5 pm Sunday 25 Oct 2026</b> on the UT Austin campus, fully in person. Teams have at most 4 people. The event is free and does not reimburse travel [32].</li>
 <li>Rule: <b>"All work must be done at the event. You can't demo something you didn't build."</b> Attendees follow the MLH Code of Conduct [32].</li>
 <li>Prizes exist for challenges, with details "revealed at the opening ceremony". No judging rubric, tracks or prize values are published [32].</li>
-<li>The listed sponsors include Meta (highlighted tile), Visa, Annapurna (linked to Annapurna Labs), NMC2, TFS, BHW, D. E. Shaw and Capital One [32].</li>
+<li>The listed sponsors include Meta (highlighted tile), Visa, Annapurna (linked to Annapurna Labs), NMC2, TFS, BHW, D. E. Shaw and Capital One [32]. HackTX's own announcement names Annapurna Labs its "first platinum partner" for HackTX 26 [68]; the HackTX 2025 Devpost listed no Annapurna sponsor or prize [69].</li>
 <li>Conflict on the site: the application banner says "Apply by Sept 15" while the FAQ says Sept 11. Walk-in admission is first come, first served, is not guaranteed, and the site discourages non-Austin attendees from travelling for it [32]. <b>Confirm acceptance in the portal before travelling.</b></li>
 </ul>
 <div class="caution"><b>Implication:</b> all work, including this document, is done at the event: buy parts, read documentation, plan, write firmware, write the app and assemble the frame there. Email <code>hello@freetailhackers.com</code> to confirm whether cue sound files and phone compatibility checks are allowed. Get the answer in writing.</div>
@@ -595,7 +597,7 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <tr><td>Firmware</td><td>ESP32-CAM JPEG stream; XIAO ESP32-C3 ToF, UDP protocol, I²S cue player, haptic driver, watchdog, heartbeat</td></tr>
 <tr><td>Android</td><td>FrameSource and RangeSource ingest, MediaPipe detector, fusion, HazardPolicy, latency logging</td></tr>
 <tr><td>Audio / UX</td><td>Cue bank, calibration flow, TalkBack-accessible UI, spearcons, judge diagnostics overlay</td></tr>
-<tr><td>Hardware / demo</td><td>Frame mounting, wiring, power, the staged course, test protocol, pitch and Devpost</td></tr>
+<tr><td>Hardware / demo</td><td>Frame mounting, wiring, power, the staged course, test protocol, Describe loop (Lambda API, Neuron model), pitch and Devpost</td></tr>
 </tbody>
 </table>
 
@@ -603,29 +605,44 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <table>
 <thead><tr><th style="width:17%">Window</th><th style="width:43%">Milestone</th><th>Abort or branch</th></tr></thead>
 <tbody>
-<tr><td>Sat 8–12</td><td>Two-board bring-up: ESP32-CAM JPEG reaches the phone over the hotspot; C3 ToF grid streams; two-board power distribution checked; pin maps fixed; cue player plays a stored WAV on both sides</td><td>Camera module lacks PSRAM or has an unsupported sensor → drop resolution (CIF-or-lower JPEG needs no PSRAM [13]), else Tier 0 (phone camera on headband) while debugging. Transducers missing → phone-to-headset fallback</td></tr>
+<tr><td>Sat 8–12</td><td>Two-board bring-up: ESP32-CAM JPEG reaches the phone over the hotspot; C3 ToF grid streams; two-board power distribution checked; pin maps fixed; cue player plays a stored WAV on both sides</td><td>Camera module lacks PSRAM or has an unsupported sensor → drop to JPEG at CIF or lower, which needs no PSRAM [13], else Tier 0 (phone camera on headband) while debugging. Transducers missing → phone-to-headset fallback</td></tr>
 <tr><td>Sat 12–18</td><td>End-to-end loop: ToF corridor → policy → glasses cue. Detector labels added. Timestamps logged</td><td>Detector slow → ToF-only hazard with generic "obstacle" label</td></tr>
-<tr><td>Sat 18–24</td><td>Calibration flow, three modes, haptics, UNAVAILABLE handling</td><td>DRV2605L trouble → MOSFET PWM</td></tr>
+<tr><td>Sat 18–24</td><td>Calibration flow, three modes, haptics, UNAVAILABLE handling</td><td>DRV2605L trouble → optional MOSFET PWM parts (§12.2)</td></tr>
 <tr><td>Sun 0–8</td><td>Gates G6–G8 on the staged course. Tune bands and rates. Freeze features</td><td>No new features after 8 am</td></tr>
-<tr><td>Sun 8–12</td><td>Optional adapters: Meta DAT through Mock Device Kit, Auracast demo broadcast (only on supported phones)</td><td>Skip if any core gate is failing</td></tr>
+<tr><td>Sun 8–12</td><td>Optional adapters: Describe loop end to end (only if accelerator quota was granted), Meta DAT through Mock Device Kit, Auracast demo broadcast (only on supported phones)</td><td>Skip if any core gate is failing</td></tr>
 <tr><td>Sun 12–17</td><td>Pitch rehearsal, Devpost, demo resets, spare batteries</td><td>—</td></tr>
 </tbody>
 </table>
 
 <h3>11.4 Three-minute judge demo</h3>
 <ol>
-<li><b>Hook (20 s):</b> the parking-sensor line. Hold up the two-board frame next to the costs of NOA ($4,990) and OrCam ($4,250).</li>
-<li><b>Live course (75 s):</b> a sighted spotter walks the wearer past a head-height foam bar, a person, and a left-side then right-side obstacle. The judge diagnostics screen shows frame age, ToF grid, chosen alert and measured latency.</li>
-<li><b>Hearing (40 s):</b> switch the profile to SSD mode live. The urgent cue stays audible and direction moves to haptics plus spearcons. Show the ceiling stopping a forced gain increase.</li>
-<li><b>Failure (25 s):</b> unplug the camera. The system-off cue plays within the measured bound, and no "clear" is ever heard.</li>
-<li><b>Evidence (20 s):</b> the logged p50/p95 latency, the miss and false-alert table, and the BOM.</li>
+<li><b>Hook (20 s):</b> the parking-sensor line, moved from the bumper to the brow. Hold up the two-board frame.</li>
+<li><b>Live course (75 s):</b> a sighted spotter walks the wearer past a head-height foam bar, a person, and a left-side then right-side obstacle. The judge diagnostics screen shows both streams' age, the 8×8 ToF grid, the chosen alert and measured latency.</li>
+<li><b>One-ear mode (30 s):</b> switch the profile to SSD mode live. Audio goes mono; the urgent cue stays audible and direction moves to haptics plus spearcons. Show the ceiling stopping a forced gain increase.</li>
+<li><b>Pull the plug (20 s):</b> unplug the camera board. The system-off cue plays within the measured bound; reconnect and wait for READY. No "clear" is ever heard.</li>
+<li><b>Ask (20 s):</b> after recovery, long-press "What's ahead?" If the Describe loop is ready, a redacted frame returns a two-sentence answer prefixed "may be wrong". If accelerator access failed, skip the answer and keep showing the offline warning loop.</li>
+<li><b>Close (15 s):</b> the logged p50/p95 latency, the miss and false-alert table, what it cannot see, and what comes next.</li>
 </ol>
 
 <h3>11.5 Sponsor alignment, without forcing it</h3>
 <div class="grid2">
 <div class="card"><h4>Meta</h4><p>Wearables DAT 1.0 (rollout from 30 Sep 2026) gives mobile apps camera, microphone, audio and IMU access on supported AI glasses. Its Mock Device Kit simulates the glasses camera without hardware [6]. Determine's <code>FrameSource</code> seam lets a DAT adapter feed the <i>same</i> hazard loop. The story: Determine runs on commodity dumb glasses <i>and</i> on Ray-Ban Meta. Claim it only if the adapter was built at the event.</p></div>
-<div class="card"><h4>Annapurna Labs (AWS)</h4><p>Annapurna Labs is AWS's Austin-based chip group behind Nitro, Graviton, Inferentia and Trainium [33]. The honest connection is <i>system-first co-design</i>: Determine places computation in the frame, the phone or the cloud according to latency, power and failure budgets (Chapter 6), and measures them. The optional Describe loop targets that silicon: a Graviton2 Lambda API holds the prompt, and SmolVLM would run on Inf2 via Optimum Neuron, with Trainium2 the documented alternative (§7.3) [34][35][62]–[65]. They stay out of the hazard loop.</p></div>
+<div class="card"><h4>Annapurna Labs (AWS)</h4><p>Annapurna Labs is AWS's Austin-based chip group behind Nitro, Graviton, Inferentia and Trainium [33]. The honest connection is <i>system-first co-design</i>: Determine places computation in the frame, the phone or the cloud according to latency, power and failure budgets (Chapter 6), and measures them. The optional Describe loop targets that silicon: a Graviton2 Lambda API holds the prompt, and SmolVLM would run on Inf2 via Optimum Neuron, with Trainium2 the documented alternative (§7.3) [34][35][62]–[65]. They stay out of the hazard loop. Known collaborations and how to use them: §11.6.</p></div>
 </div>
+
+<h3>11.6 Annapurna Labs collaborations (checked 24 Oct 2026)</h3>
+<table>
+<thead><tr><th style="width:21%">Collaboration</th><th style="width:43%">What the source shows</th><th>Use for Determine</th></tr></thead>
+<tbody>
+<tr><td><b>HackTX 26 platinum partner</b></td><td>Announced as the event's first platinum partner [68]. No Annapurna challenge, rubric or prize is published; challenge details come at the opening ceremony [32]. Annapurna did not appear on the HackTX 2025 sponsor or prize list [69]</td><td>Do not build for an assumed track. At opening, ask the Annapurna team what they will judge, then decide whether the Describe loop is worth Sunday-morning time</td></tr>
+<tr><td>Cal Hacks 12.0 co-host (Oct 2025)</td><td>Annapurna co-hosted; the live prize page listed "Best Use of Annapurna" with the prize "TBD" [70], and the Devpost prize filters list no Annapurna prize [71]</td><td>Precedent only: an Annapurna prize may be defined late or judged outside Devpost <span class="tag t-i">INFERENCE</span></td></tr>
+<tr><td><b>Hugging Face</b></td><td>Hugging Face says it has worked with the AWS chip teams since Inferentia1 and maintains Optimum Neuron [72]. Optimum Neuron lists SmolVLM and Gemma3 for image-text-to-text on Inf2, with vLLM support for listed LLMs [62]. Its Neuron DLAMI is free and pre-installs Optimum Neuron; Inferentia and Trainium quotas start at 0 [73]</td><td>The Describe deployment path: HF DLAMI on one inf2.xlarge, SmolVLM first, Gemma3 as the second listed candidate if SmolVLM fails to compile. Request quota early; approval can take hours</td></tr>
+<tr><td>Build on Trainium</td><td>A $110M program: Amazon Research Awards calls give selected proposals Trainium credits and research-cluster access; named universities include MIT, CMU, UC Berkeley, UIUC, UCLA and UTS [74]. UT Austin is not on that list, but the UT Austin–Amazon Science Hub names Prof. Adam Klivans (UT CS) as its Build-on Trainium ambassador [76]</td><td>After HackTX only, through a faculty principal investigator. Determine's Describe loop is small-model inference, so a proposal would need a chip-level research question, not a product demo</td></tr>
+<tr><td>AWS Trainium Frontier Competition</td><td>Model-and-kernel co-design on Trainium2; $25K / $10K / $5K prizes, co-publication with Annapurna researchers and a NeurIPS 2026 event [75]. Submissions closed 30 Sep 2026</td><td>Closed. Shows what Annapurna rewards: measured hardware-aware design, not logo use</td></tr>
+<tr><td>UT Austin–Amazon Science Hub</td><td>Amazon-wide partnership since 2023 (information retrieval, ML, robotics) with PhD fellowships, research collaborations and events [76]</td><td>Faculty route for post-event research with blind and low-vision participants; not an Annapurna sponsorship</td></tr>
+</tbody>
+</table>
+<p><b>What to show Annapurna judges.</b> The placement table (frame, phone, cloud) with each budget measured on the day; for Describe, compile time, p50/p95 request time on inf2.xlarge and cost per request at the listed hourly price, all labelled C0 only if logged. Never claim a partnership, endorsement or credits from Annapurna. <span class="tag t-d">DESIGN</span></p>
 <p><b>Winning overall</b> is an ambition, not something this document can engineer. What it can engineer is the set of things judges reward: a complete working loop, a clear human need backed by evidence, measured numbers, honest limits and a memorable demo.</p>
 </section>
 
@@ -667,6 +684,7 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <tr><td>Resistor assortment and recording indicator LED</td><td class="num">1 set + 1 LED</td><td>Local electronics store. Amp channel selection and LED current limiting require resistors; confirm a usable indicator GPIO at G0</td></tr>
 <tr><td>Headband or glasses frame, camera/ToF mounts, transducer/motor mounts, Velcro or tape, skin-safe insulation</td><td class="num">1 set</td><td>Local hardware or eyewear store. Only camera and Mini ToF face forward; insulate skin-facing transducer joints</td></tr>
 <tr><td>Android phone for hotspot, offline perception and app</td><td class="num">1</td><td>User-owned if compatible. Soldering iron and multimeter: one each if not already owned</td></tr>
+<tr><td>Optional haptic fallback: logic-level N-MOSFET, flyback diode and gate resistor, one set per motor</td><td class="num">2 sets</td><td><a href="https://ace4parts.com/">Ace Electronics</a> [40] or EPO; buy only as the DRV2605L fallback. The MOSFET must switch fully from 3.3 V gate drive; reserve two PWM-capable C3 GPIOs at G0</td></tr>
 </tbody>
 </table>
 <p class="small"><b>No grand total:</b> prices, local pickup receipts, overnight checkout dates, shipping, tax, power draw and mount fit are not all confirmed. An online “in stock” listing is not a delivery guarantee. The two essential shipped exceptions are the Mini ToF and raw bone transducers; no verified in-person Houston equivalents preserve their functions.</p>
@@ -716,7 +734,7 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <thead><tr><th style="width:36%">Failure</th><th style="width:30%">Detection</th><th>Response</th></tr></thead>
 <tbody>
 <tr><td>Phone lacks external-camera HAL</td><td>G2</td><td>Wi-Fi path (default anyway)</td></tr>
-<tr><td>ESP32-CAM module has no PSRAM or an unsupported sensor</td><td>G0 bring-up; module markings vs the esp32-camera lists [13]</td><td>The driver requires PSRAM above CIF-or-lower JPEG [13]: drop resolution, else Tier 0 phone camera</td></tr>
+<tr><td>ESP32-CAM module has no PSRAM or an unsupported sensor</td><td>G0 bring-up; module markings vs the esp32-camera lists [13]</td><td>Without PSRAM the driver supports only JPEG at CIF or lower [13]: drop resolution, else Tier 0 phone camera</td></tr>
 <tr><td>PSRAM contention corrupts frames under Wi-Fi [13]</td><td>JPEG decode errors</td><td>Lower resolution or frame rate. Use JPEG only</td></tr>
 <tr><td>Hotspot drops or the phone roams to another network</td><td>Heartbeat timeout on both boards</td><td>UNAVAILABLE, then auto-rejoin. Pin the SSID</td></tr>
 <tr><td>One board drops off the hotspot while the other stays up</td><td>That board's BEAT times out</td><td>Fail loud: UNAVAILABLE, never a half-working "all clear". Auto-rejoin</td></tr>
@@ -747,6 +765,7 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <tr><td>Single-board wearable</td><td>Re-combine camera and cues on one SoC when a camera-capable board (e.g. XIAO ESP32-S3 Sense [14]) is reliably obtainable; removes the second radio and the per-board clock alignment</td><td>Availability plus a G0-equivalent two-function bring-up</td></tr>
 <tr><td>iOS</td><td>Wi-Fi FrameSource. Apple documents UVC external cameras for iPad [56], so treat iPhone USB cameras as unsupported until tested</td><td>Parity of gates G1–G7</td></tr>
 <tr><td>Regulatory</td><td>Classification review under 21 CFR 886.5900 [31]</td><td>Legal counsel</td></tr>
+<tr><td>Annapurna / AWS research</td><td>Ask the UT–Amazon Science Hub's Build-on Trainium ambassador whether a chip-level question fits an Amazon Research Awards proposal [74][76]</td><td>A faculty principal investigator and an accepted proposal</td></tr>
 </tbody>
 </table>
 </section>
@@ -777,7 +796,7 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <section class="chapter">
 <div class="kicker">Chapter 16</div>
 <h2>Source register</h2>
-<p class="small">Retrieved 24 Oct 2026, except [13], [20], [36], [59] and the AWS entries re-read for the 24 Oct two-board revision. Only the SparkFun ToF and Adafruit bone transducer price/stock were rechecked among the older-priced parts. Vendor pages state vendor claims. Product prices drift.</p>
+<p class="small">Retrieved 24 Oct 2026, except [13], [20], [36], [59] and the AWS entries re-read for the 24 Oct two-board revision, and [62] plus the Annapurna collaboration entries [68]–[76] read 24 Oct 2026. Only the SparkFun ToF and Adafruit bone transducer price/stock were rechecked among the older-priced parts. Vendor pages state vendor claims. Product prices drift.</p>
 <ol class="sources">
 <li>Lighthouse Guild, "The White Cane and Beyond" (2024). https://lighthouseguild.org/news/the-white-cane-and-beyond/</li>
 <li>Pittet et al., secondary ETA evaluation with BVI participants, <i>Scientific Reports</i> (2026). https://pmc.ncbi.nlm.nih.gov/articles/PMC12909938/</li>
@@ -846,6 +865,15 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <li>AWS, Lambda arm64 / Graviton2 foundations. https://docs.aws.amazon.com/lambda/latest/dg/foundation-arch.html</li>
 <li>AWS, Bedrock Nova Lite model card. https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html</li>
 <li>AWS, EC2 accelerator instance quotas. https://docs.aws.amazon.com/ec2/latest/instancetypes/ec2-instance-quotas.html</li>
+<li>HackTX (Freetail Hackers), "Now… introducing our first platinum partner Annapurna Labs!" (Facebook post, 2026). https://www.facebook.com/HackTX/posts/now-introducing-our-first-platinum-partner-annapurna-labs-hacktx26-is-getting-cl/1126820616365870/</li>
+<li>HackTX 2025 Devpost (sponsors and prize list). https://hacktx2025.devpost.com/</li>
+<li>Cal Hacks 12.0 live prize list. https://live.calhacks.io/prizes</li>
+<li>Cal Hacks 12.0 Devpost project gallery (prize filters). https://cal-hacks-12-0.devpost.com/project-gallery</li>
+<li>AWS, Trainium customers and partners (Hugging Face statement). https://aws.amazon.com/ai/machine-learning/trainium/customers/</li>
+<li>Hugging Face, Optimum Neuron EC2 setup (Neuron DLAMI, default quotas). https://huggingface.co/docs/optimum-neuron/en/ec2-setup</li>
+<li>AWS, Build on Trainium. https://aws.amazon.com/ai/machine-learning/trainium/research/</li>
+<li>Amazon Science, "AWS Trainium Frontier competition: Co-design models and kernels on purpose-built AI chips" (10 Aug 2026). https://www.amazon.science/news/aws-trainium-frontier-competition-co-design-models-and-kernels-on-purpose-built-ai-chips</li>
+<li>UT Austin–Amazon Science Hub, About (technical ambassadors). https://sciencehub.utexas.edu/about/</li>
 </ol>
 </section>
 </body>

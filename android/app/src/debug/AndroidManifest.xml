@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: allow http:// so the app can reach cloud/describe-api/local_server.py on a laptop.
+     Release builds keep Android's default (HTTPS only); the deployed Lambda Function URL is HTTPS. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:usesCleartextTraffic="true" />
+</manifest>
