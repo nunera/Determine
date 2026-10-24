@@ -18,7 +18,7 @@ Static HTML/CSS printed to PDF with Chromium (delegated: no framework needed for
 
 ## Product Purpose
 
-Determine is "dumb glasses": one XIAO ESP32-C3 from the selected Micro Center three-pack handles an 8×8 time-of-flight sensor, stereo bone-conduction cues and temple haptics; a separate ESP32-CAM supplies JPEG frames. Both connect to the phone over Wi-Fi. The phone alone decides what counts as a hazard and sends back short cue commands. The frame is an aid alongside a cane or guide dog, not a navigation guarantee.
+Determine is a proposed compact headband prototype of "dumb glasses": one XIAO ESP32-C3 from a Micro Center three-pack hosts a single 12.7 × 25.4 mm VL53L5CX Mini 8×8 time-of-flight sensor, stereo bone-conduction cues and temple haptics; a separate ESP32-CAM supplies JPEG frames. Only the camera and ToF face forward; the C3, amps and haptic boards sit on a rear strap, and the power bank stays in a pocket. Both boards connect to the phone over Wi-Fi. The phone alone decides what counts as a hazard. This is a layout to test, not a demonstrated comfortable pair of glasses or a navigation guarantee.
 
 ## Positioning
 
@@ -29,7 +29,8 @@ A parking sensor for walking, not "AI glasses for the blind". Low-cost hardware,
 - Built at HackTX 26 (UT Austin, 24–25 Oct 2026). Rule: all work must be done at the event.
 - Demo: staged indoor course with a sighted spotter.
 - Reflex loop (hazard warnings) runs offline on the phone. The optional, on-demand Describe loop targets a Graviton API plus SmolVLM on Inferentia2 via Hugging Face Optimum Neuron; Trainium2/Qwen2-VL is a more explicitly AWS-documented alternative, and Bedrock is a silicon-unspecified fallback. None is part of an urgent warning; all deployments remain unvalidated.
-- The XIAO ESP32-S3 Sense is unavailable for this build. The C3 has no integrated camera; the separate ESP32-CAM must be checked for a compatible sensor and PSRAM before committing to vision. Exact Micro Center price and local stock for the C3 three-pack and camera board remain unverified. Two powered boards and two Wi-Fi streams add mounting, battery and timing risk.
+- The XIAO ESP32-S3 Sense is unavailable for this build. The C3 has no integrated camera; the selected Inland ESP32-CAM pair must be checked for a compatible sensor and PSRAM before committing to vision. The user reports the listed Micro Center Houston components in stock, but their checkout, prices and shelf counts were not independently observed. Two powered boards and two Wi-Fi streams add mounting, battery and timing risk.
+- Houston pickup first for listed boards, amps, haptic drivers and motors, mux, regulator and FTDI adapter. One SparkFun VL53L5CX Mini plus Qwiic-to-wire harness and two Adafruit 1674 raw bone transducers from DigiKey are the two shipped exceptions unless exact local equivalents are secured; confirm checkout delivery. Three locally sold Arduino Modulino Distance boards were rejected as too bulky and too short-range, not a drop-in 8×8 alternative.
 
 ## Capabilities and Constraints
 
@@ -40,7 +41,7 @@ A parking sensor for walking, not "AI glasses for the blind". Low-cost hardware,
 
 ## Evidence on Hand
 
-- `Determine-Architecture.pdf` / `.html`: sourced architecture contract. Earlier single-board ≈$127 parts estimate is superseded; the two-board bill of materials needs verified prices and power parts before quoting a total.
+- `Determine-Architecture.pdf` / `.html`: sourced architecture contract and complete compact-prototype purchase list (Chapter 12), including quantities, Houston SKUs, shipped exceptions and unpriced accessories. Earlier single-board ≈$127 parts estimate is superseded; no two-board grand total is quoted without verified prices and power parts.
 - No user testimonials, trial data or measured latency exist yet; never fabricate them.
 
 ## Product Principles

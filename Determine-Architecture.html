@@ -55,7 +55,7 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 
 <!-- ============ COVER ============ -->
 <section>
-<div class="kicker">Design baseline 0.2 · Research cut 24 October 2026 · Two-board hardware revision 24 October 2026</div>
+<div class="kicker">Design baseline 0.2 · Research cut 24 October 2026 · Compact Houston-first BOM revision 24 October 2026</div>
 <h1>Determine</h1>
 <p class="lede">Dumb glasses, a capable phone, and a calibrated warning about what is directly ahead of you.</p>
 <p><b>Architecture and prototype contract</b><br>
@@ -79,7 +79,7 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 <tr><td><span class="tag t-g">GATE</span></td><td>Measured evidence required before a capability may be claimed or the next layer built.</td></tr>
 </tbody>
 </table>
-<p class="small">Most vendor prices below were checked 24 Oct 2026 and exclude tax and shipping. SparkFun's ToF price/stock and Adafruit's bone transducer price/out-of-stock status were rechecked 18 Oct. Both Micro Center product pages (XIAO ESP32-C3 3-pack; ESP32-CAM pair) blocked automated reads (HTTP 403), so their prices and local availability are unverified. The sourcing chapter separates verified facts from calls you need to make. Layout follows the reference <i>MisaOS-Architecture.pdf</i>. Determine is an independent project.</p>
+<p class="small">Vendor prices below are historical checks from 15–24 Oct 2026, excluding tax and shipping; the current bill of materials quotes no unverified total. The user reports the listed Houston Micro Center components in stock, but automated reads of Micro Center inventory returned HTTP 403 and no reservation or receipt was observed. The Mini ToF sensor and raw bone transducers require separate delivery unless an exact local source is secured. Layout follows the reference <i>MisaOS-Architecture.pdf</i>. Determine is an independent project.</p>
 </section>
 
 <!-- ============ CONTENTS ============ -->
@@ -329,9 +329,9 @@ Phone → XIAO ESP32-C3
 <line x1="670" y1="110" x2="670" y2="200" stroke="#566377"/><text x="692" y="214" font-size="11" fill="#16202e" text-anchor="end">R bone transducer</text>
 <line x1="85" y1="98" x2="150" y2="196" stroke="#566377"/><text x="150" y="208" font-size="11" fill="#16202e">L haptic (ERM)</text>
 <line x1="615" y1="98" x2="550" y2="196" stroke="#566377"/><text x="550" y="208" font-size="11" fill="#16202e" text-anchor="end">R haptic (ERM)</text>
-<text x="350" y="240" font-size="10.5" fill="#566377" text-anchor="middle">Cue board, amps and drivers sit behind the ear or on a rear strap; the ESP32-CAM mounts at the bridge. Two boards, separate power runs.</text>
+<text x="350" y="240" font-size="10.5" fill="#566377" text-anchor="middle">Only the camera and Mini ToF face forward; cue board, amps and drivers sit on a rear strap. Power bank stays in a pocket.</text>
 </svg>
-<figcaption>Figure 5.1. v0 layout. Weight is kept off the nose. The lenses are interchangeable (clear or tinted) and do not affect sensor alignment.</figcaption>
+<figcaption>Figure 5.1. Proposed compact headband layout, not finished eyeglasses. The single Mini ToF board is 12.7 × 25.4 mm [20]; no three-board ToF cluster. Weight is kept off the nose. Fit, cable routing and comfort remain untested.</figcaption>
 </figure>
 
 <h3>5.1 Sensing options</h3>
@@ -353,8 +353,8 @@ Phone → XIAO ESP32-C3
 <table>
 <thead><tr><th style="width:20%">Board</th><th style="width:45%">Relevant facts</th><th>Verdict</th></tr></thead>
 <tbody>
-<tr><td><b>Seeed XIAO ESP32-C3 (3-pack)</b></td><td>RISC-V single core, 400 KB SRAM and 4 MB flash, Wi-Fi b/g/n + BLE 5, exactly one I²C and one SPI bus, 11 GPIO, 21×17.8 mm, no integrated camera [59]. Vendor-typical 75 mA with Wi-Fi active [59]</td><td><b>Selected: cue board.</b> Micro Center 3-pack; product page blocked (HTTP 403), so price and stock are unverified — confirm in person. One board used, two spares</td></tr>
-<tr><td><b>ESP32-CAM (classic ESP32)</b></td><td>The esp32-camera driver lists ESP32, S2 and S3 as supported SoCs [13]. Practical streaming needs PSRAM: the driver requires it for anything above CIF-or-lower JPEG [13]</td><td><b>Selected: camera board.</b> Candidate purchase: Inland pair at Micro Center, price and stock unverified (HTTP 403). Camera test gated on the actual module's PSRAM and sensor (Gate G0)</td></tr>
+<tr><td><b>Seeed XIAO ESP32-C3 (3-pack)</b></td><td>RISC-V single core, 400 KB SRAM and 4 MB flash, Wi-Fi b/g/n + BLE 5, exactly one I²C and one SPI bus, 11 GPIO, 21×17.8 mm, no integrated camera [59]. Vendor-typical 75 mA with Wi-Fi active [59]</td><td><b>Selected: cue board.</b> Micro Center Houston SKU 069005; user reports the listing in stock, but no independently verified shelf count or price. One board used, two spares</td></tr>
+<tr><td><b>ESP32-CAM (classic ESP32)</b></td><td>The esp32-camera driver lists ESP32, S2 and S3 as supported SoCs [13]. Practical streaming needs PSRAM: the driver requires it for anything above CIF-or-lower JPEG [13]</td><td><b>Selected: camera board.</b> Inland pair, Micro Center Houston SKU 221739; user reports stock. The actual module's PSRAM and sensor must pass Gate G0 before use</td></tr>
 <tr><td>Seeed XIAO ESP32-S3 Sense</td><td>8 MB PSRAM, camera board (OV3660 or OV2640 since 2025-06-30), microphone, one DVP camera interface [12][14]</td><td><b>Not selected:</b> unavailable to this build. Documented single-board alternative for a later revision ($13.99 online when checked 24 Oct [14])</td></tr>
 <tr><td>Raspberry Pi Zero 2 W</td><td>Quad A53, CSI-2, H.264 1080p30 encode, Wi-Fi and BT 4.2, 5 V/2.5 A supply spec [53]</td><td>Overkill for a "dumb" frame. Power and boot time. Out of stock at Adafruit</td></tr>
 <tr><td>Raspberry Pi Pico 2 W</td><td>RP2350, 520 KB SRAM, no camera port [54]</td><td>Cannot carry the camera role</td></tr>
@@ -364,14 +364,14 @@ Phone → XIAO ESP32-C3
 
 <h3>5.3 Output hardware</h3>
 <ul>
-<li><b>Stereo bone conduction, played on the glasses.</b> Two MAX98357A I²S amplifiers ($5.95 each [36]) share one I²S bus. Each amp's channel select is configured so one plays left and one plays right, because the default setting mixes both channels. Each amp drives a bone transducer. Adafruit's 8 Ω / 1 W transducer is $8.95 but was <i>out of stock</i> on 17 Oct [36]. For prolonged skin contact, Adafruit recommends covering the transducer and its wire connections (for example with Sugru) so that current cannot pass through sweat [36]. Apply that rule to any substitute transducer. <span class="tag t-f">FACT</span> → <span class="tag t-d">DESIGN</span></li>
-<li><b>Haptics.</b> Two ERM disc motors ($1.95 each [36]). Drive them either from two DRV2605L haptic drivers ($7.95 each [36]) for rich waveforms, or from a logic-level MOSFET per motor with PWM for lower cost. The DRV2605L uses a fixed I²C address and the C3 has a single hardware I²C bus [59], so two of them need an I²C multiplexer; the MOSFET-PWM alternative avoids the problem entirely. <span class="tag t-i">INFERENCE</span> (confirm against the TI datasheet at build time.)</li>
+<li><b>Stereo bone conduction, played on the glasses.</b> Two MAX98357A I²S amplifiers share one I²S bus. Select left on one amp and right on the other: the default mixes both channels [36]. Each drives one 8 Ω / 1 W Adafruit 1674 transducer. Adafruit's own store was out of stock on 18 Oct, but <a href="https://www.digikey.com/en/products/detail/adafruit-industries-llc/1674/6827067">DigiKey lists the same item (1528-1948-ND)</a>; its displayed inventory is not a checkout-confirmed delivery date. Limit output below the transducer's 1 W continuous rating, and cover each skin-facing transducer and wire joint against sweat [36]. <span class="tag t-f">FACT</span> → <span class="tag t-d">DESIGN</span></li>
+<li><b>Haptics.</b> Two ERM disc motors, one per side, each driven by a DRV2605L. Both drivers have the same I²C address, so the selected TCA9548A mux isolates them on separate channels; the Mini ToF may use the upstream bus [59]. The Micro Center driver listing may differ in connector style from Adafruit's current STEMMA QT revision: inspect it and wire its header as supplied. A MOSFET-PWM revision would require a different BOM and is not this build. <span class="tag t-d">DESIGN</span></li>
 <li><b>Fallback audio.</b> A commercial bone-conduction headset paired to the phone, such as Shokz OpenMove at a $79.95 list price (variants showed sold out) or OpenRun at $129.95 [37]. Classic Bluetooth adds latency (§6.2), so in this mode haptics carry the urgent cue.</li>
 </ul>
 
 <h3>5.4 Power</h3>
-<p>The revision puts two Wi-Fi radios on the frame. Seeed lists 75 mA typical for the C3 with Wi-Fi active [59]; the ESP32-CAM's draw is unmeasured on the actual module, and both boards' transmit peaks — plus amplifier and motor bursts — are what the supply must survive. v0 uses a pocket USB power bank feeding both boards over separate runs, which keeps the battery off the head and avoids building a Li-Po charging circuit during a hackathon. <span class="tag t-d">DESIGN</span> This revision makes no one-cable or peak-current claim: Gate G0 checks the two-board distribution, and Gate G11 measures runtime and thermal.</p>
-<p class="small">GPIO budget: the C3 has one hardware I²C bus [59], shared by the ToF array and, if DRV2605L drivers are fitted, by both of them behind an I²C multiplexer — there is no second bus to claim. I²S (3 pins) plus motor PWM (2 pins) must fit the remaining header pins, and the pin map must be fixed before soldering. <span class="tag t-g">GATE G0</span></p>
+<p>The revision uses two Wi-Fi boards and a single compact front-facing Mini ToF board, not three 41 × 25 mm Modulino Distance boards. The <a href="https://www.sparkfun.com/sparkfun-qwiic-mini-tof-imager-vl53l5cx.html">Mini measures 12.7 × 25.4 mm</a>, retains the 8×8 grid and 4 m vendor range [20], and is the justified shipped exception to Houston-first sourcing. The ESP32-CAM and ToF face forward; the C3, amplifiers, haptic drivers and power distribution sit toward the back of a headband. The power bank stays in a pocket, feeding the C3 and a separate 5 V distribution branch for the camera, amps and a 3.3 V LM3671 peripheral regulator. All grounds needed for shared signals are common. The board-fit, thermal load and simultaneous output current are unmeasured; Gate G0 checks power and mounting before any wearable claim. <span class="tag t-d">DESIGN</span></p>
+<p class="small">GPIO budget: the C3 has one hardware I²C bus [59] for the Mini ToF and TCA9548A; the two DRV2605Ls sit on separate mux channels. The two amplifiers share three I²S signals. Fix the complete pin map, status-LED GPIO and channel-select resistor values before soldering; do not power motors or amps from an unmeasured C3 3V3 output. <span class="tag t-g">GATE G0</span></p>
 </section>
 
 <!-- ============ 6 LINKS ============ -->
@@ -637,50 +637,56 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <table>
 <thead><tr><th style="width:22%">Store</th><th style="width:28%">Address</th><th style="width:25%">Hours / phone</th><th>What to look for</th></tr></thead>
 <tbody>
-<tr><td><b>Micro Center Houston</b></td><td>5305 S Rice Ave, Houston, TX 77081</td><td>Mon–Sat 10–9, Sun 11–6 (chain hours) [38]</td><td>The XIAO ESP32-C3 3-pack and the ESP32-CAM pair (both online pages blocked — verify price and stock in person), USB-C cables and OTG adapters, power banks, possibly ToF and haptic breakouts</td></tr>
+<tr><td><b>Micro Center Houston</b></td><td>5305 S Rice Ave, Houston, TX 77081</td><td>Mon–Sat 10–9, Sun 11–6 · (713) 940-8500 [38]</td><td>Selected C3, ESP32-CAM, amps, haptic drivers, motors, mux, regulator and FTDI programmer; exact SKUs in §12.2. User reports the listings in stock; shelf counts and reservations were not independently observed</td></tr>
 <tr><td><b>Electronic Parts Outlet (EPO)</b></td><td>3753-B Fondren Rd, Houston, TX 77063</td><td>Mon–Fri 9–6, Sat 9–5, Sun closed · (713) 784-0140 [39]</td><td>Says it stocks Arduino, SparkFun, Raspberry Pi, Pololu and Adafruit lines. Call about specific parts</td></tr>
 <tr><td><b>Ace Electronics</b></td><td>3210 Antoine Dr, Houston, TX 77092</td><td>Mon–Fri 8–5 only · 713-688-8114 [40]</td><td>Vibration motors, wire, protoboard, heat shrink, MOSFETs</td></tr>
 <tr><td>Best Buy Galleria</td><td>5133 Richmond Ave, Houston, TX 77056</td><td>(713) 552-1512 [41]</td><td>Commercial bone-conduction headset (fallback audio). Check stock online first</td></tr>
 <tr><td><b>Micro Center Austin</b></td><td>12707 N Mopac Expy, Austin, TX 78727</td><td>Opens 10 am Saturday [38]</td><td>Emergency top-up during HackTX (hacking starts at 8 am)</td></tr>
 </tbody>
 </table>
-<p class="small">No electronics supplier in Galveston was verified, so plan Houston runs. Live shelf stock could not be confirmed at any of these stores, because the retailer pages blocked automated reads. Ace's and Altex's online availability flags show web-store stock, not shelf stock. <b>Call before driving.</b></p>
+<p class="small" style="widows:2;orphans:2">No electronics supplier in Galveston was verified. The user reports the Houston-listed parts in stock; this document has no independent reservation or checkout evidence. Micro Center automated pages blocked inventory reads. EPO lists general components, not per-part stock. The VL53L5CX Mini and raw bone transducers have no verified Houston walk-in source: shipped orders are exceptions, and an “in stock” label alone does not prove a delivery date.</p>
 
-<h3>12.2 Bill of materials, recommended v0 ("Dumb Frame")</h3>
+<h3>12.2 Complete purchase list, compact two-board prototype</h3>
 <table>
-<thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Unit</th><th class="num">Total</th><th>Source and status</th></tr></thead>
+<thead><tr><th style="width:45%">Part and role</th><th class="num" style="width:12%">Buy</th><th>Source, status and constraint</th></tr></thead>
 <tbody>
-<tr><td>Seeed Studio XIAO ESP32-C3, 3-pack — <b>cue board</b> (ToF host, I²S playback, haptics)</td><td class="num">1 pack (3 boards)</td><td class="num">—</td><td class="num">—</td><td><a href="https://www.microcenter.com/product/713924/seeed-studio-xiao-esp32-c3-(3-pack)">Selected Micro Center listing</a>; page blocked (HTTP 403, 18 Oct) — price and local stock unverified, confirm in person. One board used, two spares</td></tr>
-<tr><td>ESP32-CAM module pair (Inland) — <b>camera board</b>, candidate purchase</td><td class="num">1 pair (2 modules)</td><td class="num">—</td><td class="num">—</td><td><a href="https://www.microcenter.com/product/632692/inland-esp32-cam-wifi-bluetooth-camera-modules-pair">Candidate Micro Center listing</a>; page blocked (HTTP 403, 18 Oct) — price and local stock unverified. Camera use gated on the actual module's PSRAM and sensor (Gate G0) [13]</td></tr>
-<tr><td>SparkFun VL53L5CX 8×8 ToF (Qwiic Mini)</td><td class="num">1</td><td class="num">$25.95</td><td class="num">$25.95</td><td>SparkFun, listed in stock when rechecked 18 Oct [20]</td></tr>
-<tr><td>MAX98357A I²S amp (L and R)</td><td class="num">2</td><td class="num">$5.95</td><td class="num">$11.90</td><td>Adafruit, in stock [36]</td></tr>
-<tr><td>Bone conductor transducer 8 Ω 1 W</td><td class="num">2</td><td class="num">$8.95</td><td class="num">$17.90</td><td>Adafruit, <b>out of stock</b> when rechecked 18 Oct [36]. Find an equivalent bone transducer and insulate it before skin contact</td></tr>
-<tr><td>DRV2605L haptic driver</td><td class="num">2</td><td class="num">$7.95</td><td class="num">$15.90</td><td>Adafruit, in stock [36]. Needs an I²C mux on the C3's single bus, or MOSFETs from Ace/EPO</td></tr>
-<tr><td>I²C mux for two DRV2605Ls, or MOSFET-PWM drive instead</td><td class="num">1 option</td><td class="num">—</td><td class="num">—</td><td>Choose and price at G0; the two identical-address drivers cannot coexist on the bare C3 bus</td></tr>
-<tr><td>Vibrating mini motor disc</td><td class="num">2</td><td class="num">$1.95</td><td class="num">$3.90</td><td>Adafruit, in stock [36]. Ace lists a $5 vibration motor</td></tr>
-<tr><td>Wire, protoboard, heat shrink</td><td class="num">1</td><td class="num">$12.80</td><td class="num">$12.80</td><td>Ace online listing [40]</td></tr>
-<tr><td>Glasses frame (clear or tinted), mounting tape, Velcro</td><td class="num">1</td><td class="num">—</td><td class="num">$10.00</td><td>Allowance, price not verified</td></tr>
-<tr><td>USB power bank with two outputs, two compatible power leads; camera programming adapter if needed</td><td class="num">1 set</td><td class="num">—</td><td class="num">—</td><td>Price and verify both output ports under simultaneous Wi-Fi load; allow for ESP32-CAM programming hardware</td></tr>
-<tr class="total"><td>Subtotal of priced line items</td><td></td><td></td><td class="num">$88.35</td><td>Uses the two DRV2605L prices and includes out-of-stock transducers. Excludes both board packs, mux, power/leads, programming adapter and $10 provisional frame allowance. Not a purchasable grand total</td></tr>
+<tr><td>XIAO ESP32-C3 cue board, 3-pack (one used, two spare)</td><td class="num">1 pack</td><td><a href="https://www.microcenter.com/product/713924/seeed-studio-xiao-esp32-c3-(3-pack)">Micro Center Houston SKU 069005</a>; user-reported in stock</td></tr>
+<tr><td>Inland ESP32-CAM camera modules, pair (one used, one spare)</td><td class="num">1 pair</td><td><a href="https://www.microcenter.com/product/632692/inland-esp32-cam-wifi-bluetooth-camera-modules-pair">Micro Center SKU 221739</a>; user-reported in stock. Check the actual sensor, PSRAM and 5 V pinout at G0 [13]</td></tr>
+<tr><td>VL53L5CX Qwiic Mini 8×8 ToF, front-facing</td><td class="num">1</td><td><a href="https://www.sparkfun.com/sparkfun-qwiic-mini-tof-imager-vl53l5cx.html">SparkFun SEN-19013</a>, $25.95 when checked 18 Oct; shipped exception. 12.7 × 25.4 mm, not three bulky Modulino boards [20]</td></tr>
+<tr><td>MAX98357A mono I²S amp, one left and one right</td><td class="num">2</td><td><a href="https://www.microcenter.com/product/613583/adafruit-industries-max98357a-i2s-3w-class-d-amplifier-breakout">Micro Center SKU 007112</a>; user-reported in stock. Set separate channel-selection voltages [36]</td></tr>
+<tr><td>Adafruit 1674 bone-conduction transducer, 8 Ω / 1 W</td><td class="num">2</td><td><a href="https://www.digikey.com/en/products/detail/adafruit-industries-llc/1674/6827067">DigiKey 1528-1948-ND</a>; shipped exception unless exact local parts are confirmed. Adafruit direct was out of stock; limit amp output and insulate for skin contact [36]</td></tr>
+<tr><td>DRV2605L haptic motor driver</td><td class="num">2</td><td><a href="https://www.microcenter.com/product/613668/adafruit-industries-drv2605l-haptic-motor-controller">Micro Center SKU 008607</a>; user-reported in stock. Inspect connector style before choosing leads</td></tr>
+<tr><td>ERM vibration disc motor</td><td class="num">2</td><td><a href="https://www.microcenter.com/product/454448/adafruit-industries-vibrating-mini-motor-disc">Micro Center SKU 850917</a>; user-reported in stock</td></tr>
+<tr><td>TCA9548A I²C multiplexer for the two haptic drivers</td><td class="num">1</td><td><a href="https://www.microcenter.com/product/637441/adafruit-industries-tca9548a-i2c-multiplexer">Micro Center SKU 278499</a>; user-reported in stock</td></tr>
+<tr><td>LM3671 3.3 V / 600 mA buck regulator for peripheral rail</td><td class="num">1</td><td><a href="https://www.microcenter.com/product/613713/adafruit-industries-lm3671-33v-buck-converter-breakout-33v-output-600ma-max">Micro Center SKU 009191</a>; user-reported in stock. Verify measured current under 600 mA</td></tr>
+<tr><td>FTDI USB-to-UART adapter for ESP32-CAM programming</td><td class="num">1</td><td><a href="https://www.microcenter.com/product/656323/inland-ftdi-adapter-usb-controller">Micro Center SKU 489252</a>; user-reported in stock. Use 3.3 V UART logic; obtain its matching computer-side USB cable</td></tr>
+<tr><td>Qwiic-to-bare-wire 4-pin cable for the Mini ToF</td><td class="num">1</td><td><a href="https://www.sparkfun.com/flexible-qwiic-cable-breadboard-jumper-4-pin.html">SparkFun PRT-17912</a>; ship with the Mini, or obtain a compatible local harness</td></tr>
+<tr><td>5 V USB power bank with at least two simultaneous outputs</td><td class="num">1</td><td>Local general electronics retailer; verify measured combined draw and both ports in use. Battery stays in pocket</td></tr>
+<tr><td>USB-C data/power cable for C3; computer-side FTDI USB cable; insulated USB-to-5 V/GND breakout for camera, amps and regulator</td><td class="num">1 each</td><td>Buy locally, matching the actual FTDI connector and power-bank output; keep two separately powered branches and common signal ground</td></tr>
+<tr><td>Jumper wires, 0.1-inch headers, hookup wire, perfboard, solder, heat-shrink and strain relief</td><td class="num">1 small set each</td><td>Micro Center or <a href="https://epohouston.com/electronic-components/">Electronic Parts Outlet</a>; no item-level stock proof. Include the ESP32-CAM flash jumper</td></tr>
+<tr><td>Resistor assortment and recording indicator LED</td><td class="num">1 set + 1 LED</td><td>Local electronics store. Amp channel selection and LED current limiting require resistors; confirm a usable indicator GPIO at G0</td></tr>
+<tr><td>Headband or glasses frame, camera/ToF mounts, transducer/motor mounts, Velcro or tape, skin-safe insulation</td><td class="num">1 set</td><td>Local hardware or eyewear store. Only camera and Mini ToF face forward; insulate skin-facing transducer joints</td></tr>
+<tr><td>Android phone for hotspot, offline perception and app</td><td class="num">1</td><td>User-owned if compatible. Soldering iron and multimeter: one each if not already owned</td></tr>
 </tbody>
 </table>
+<p class="small"><b>No grand total:</b> prices, local pickup receipts, overnight checkout dates, shipping, tax, power draw and mount fit are not all confirmed. An online “in stock” listing is not a delivery guarantee. The two essential shipped exceptions are the Mini ToF and raw bone transducers; no verified in-person Houston equivalents preserve their functions.</p>
 <h3>12.3 Tiers</h3>
 <table>
 <thead><tr><th style="width:17%">Tier</th><th style="width:45%">Contents</th><th style="width:15%">Cost status</th><th style="width:23%">Use</th></tr></thead>
 <tbody>
 <tr><td>Tier 0: phone-only</td><td>Android phone on a headband using its own camera, plus available headphones and phone vibration. Same app, using the PhoneCamera FrameSource</td><td>Unquoted</td><td>Software proof; not the glasses</td></tr>
 <tr><td>Tier 1: minimum frame</td><td>C3 cue board + ESP32-CAM + ToF + 2 motors (MOSFET drive) + supplies + frame + power. Audio from phone to existing headphones</td><td>Unquoted</td><td>Camera and haptic demo</td></tr>
-<tr><td><b>Tier 2: recommended</b></td><td>Full table above: two boards, ToF, stereo bone cues played on the cue board, haptics</td><td>Incomplete subtotal</td><td>Full demo; transducer substitute needed</td></tr>
+<tr><td><b>Tier 2: recommended</b></td><td>Complete table above: two boards, one compact 8×8 Mini ToF, stereo bone cues played on the cue board, haptics and pocket power</td><td>Unquoted</td><td>Full staged demo; two shipped exceptions</td></tr>
 <tr><td>Fallback audio</td><td>Replace DIY transducers and amps with a bone-conduction headset</td><td>Price at purchase</td><td>Haptics carry urgency</td></tr>
 </tbody>
 </table>
 <p class="small">Other listed products (24 Oct 2026): Ray-Ban Meta Gen 3 from $449 [42], Envision Ally Solos $699 [43], OrCam MyEye 3 Pro $4,250 [44], NOA $4,990 [46], .lumen €9,999 [47]. They do different jobs. Determine's two-board total is unquoted, so no like-for-like cost-of-entry comparison is claimed.</p>
 
-<h3>12.4 Purchase timeline (two-board revision, Saturday 24 Oct 2026)</h3>
+<h3>12.4 Houston-first purchase and size gates</h3>
 <ol>
-<li><b>Sat 24 Oct:</b> At Micro Center Austin (opens 10 am), confirm both board prices and stock; check the camera module's PSRAM and sensor [13]. Buy two power leads, a two-output bank and a programming adapter if needed. Pick up ToF and cue parts in the same trip. Check a bone-headset fallback.</li>
-<li><b>Sat 24 Oct (afternoon):</b> Call EPO (9–6) about transducers and sensor substitutes; Ace (8–5) for motors, MOSFETs and wiring; buy local equivalents if anything is out.</li>
-<li><b>Sun 25 Oct:</b> Micro Center Austin opens at 10 am for anything still missing.</li>
+<li><b>Collect locally:</b> reserve the user-reported in-stock Micro Center Houston SKUs in §12.2, then check the ESP32-CAM PSRAM/sensor, driver connector revisions and the actual FTDI port. Buy generic wiring and mounts from Micro Center or EPO. The user report is not a receipt or a measured shelf count.</li>
+<li><b>Two shipped exceptions:</b> order one SparkFun VL53L5CX Mini plus its Qwiic harness, and two Adafruit 1674 transducers from DigiKey unless the exact items are found locally. Confirm delivery dates at checkout; choose expedited service if required.</li>
+<li><b>Before wiring:</b> mock up a single forward camera and ToF on a headband, with control boards on the rear strap and battery in a pocket. If balance, fit or simultaneous power fails Gate G0, do not claim a wearable build. A single locally sold Modulino Distance board would be a larger, 1.2 m single-zone near-field demo only, not an equivalent 8×8 fallback.</li>
 </ol>
 </section>
 

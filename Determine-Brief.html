@@ -179,9 +179,9 @@ svg .mn { font-family:var(--mono); font-weight:600; }
 <!-- ===================== B · HARDWARE ===================== -->
 <section class="page">
   <h2><span class="mark">B</span>Dumb glasses. Your phone does the thinking.</h2>
-  <svg id="glasses" viewBox="0 0 960 330" role="img" aria-label="Front view of the glasses with labelled parts: a XIAO ESP32-C3 board with the VL53L5CX distance sensor at the bridge, a separate ESP32-CAM camera module, a candidate part, on the brow, left bone transducer and haptic motor in blue, right in red, two cables to a pocket power bank with two outputs."></svg>
+  <svg id="glasses" viewBox="0 0 960 330" role="img" aria-label="Proposed headband layout: a single compact VL53L5CX Mini distance sensor and separate ESP32-CAM face forward. The C3 cue board, amplifiers and haptic drivers sit on a rear strap. Left and right bone transducers and haptics touch the temples; the power bank is carried in a pocket. Fit is untested."></svg>
   <div class="flow">
-    <div class="step"><h3>Sense · two boards on the frame</h3><p>A candidate ESP32-CAM sends JPEG frames; the C3 sends a grid of 64 distances. Two independent Wi-Fi streams to the phone, each packet timestamped. No decisions are made on the face.</p></div>
+    <div class="step"><h3>Sense · small front, boards behind</h3><p>The ESP32-CAM sends JPEG frames; one compact VL53L5CX Mini sends 64 distances through the rear-mounted C3. Two independent Wi-Fi streams reach the phone, which makes every hazard decision.</p></div>
     <div class="arrow"><svg width="30" height="16" viewBox="0 0 30 16"><path d="M0 8h26M19 2l7 6-7 6" fill="none" stroke="#131316" stroke-width="2.2"/></svg></div>
     <div class="step"><h3>Decide · on the phone</h3><p>The phone aligns the two streams by timestamp and receive age, then an on-device object detector plus the distance grid feed fixed hazard rules and pick <i>one</i> cue: which sound, how loud on each side, which temple buzzes.</p></div>
     <div class="arrow"><svg width="30" height="16" viewBox="0 0 30 16"><path d="M0 8h26M19 2l7 6-7 6" fill="none" stroke="#131316" stroke-width="2.2"/></svg></div>
@@ -191,7 +191,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
     <p><b>Range plus context.</b> The 8×8 ToF grid measures distance even when a branch or open door has no detector label; the camera adds object context.</p>
     <p><b>Same app, other glasses.</b> Meta's Wearables DAT 1.0 can stream supported glasses' camera to a phone; its Mock Device Kit simulates it.<sup>9</sup> Determine's frame input could accept Meta frames. Claim only if built at HackTX.</p>
     <p><b>Two boards, one hotspot.</b> The C3 has no camera or Espressif parallel-camera driver support,<sup>10</sup> so a separate ESP32-CAM candidate would supply JPEG. Both join the phone hotspot; the phone drops stale frames and grids after clock-offset and receive-age checks. No inter-board wire.</p>
-    <p><b>Power and one bus.</b> Two power-bank outputs and two leads; verify draw and fit. C3 has one hardware I2C bus,<sup>6</sup> so two identical-address haptic drivers need a mux or PWM drive.</p>
+    <p><b>Weight off the nose.</b> Only camera and 12.7 × 25.4 mm Mini ToF face forward; C3, amps and drivers go on a rear strap, power bank in a pocket.<sup>7</sup> Fit and comfort remain untested. Two separately powered boards share one phone hotspot.</p>
   </div>
   <div class="foot"><span><b>Determine</b> · the glasses</span><span>3 / 8</span></div>
 </section>
@@ -293,15 +293,15 @@ svg .mn { font-family:var(--mono); font-weight:600; }
   <div class="f-grid">
     <svg id="demo" viewBox="0 0 520 470" role="img" aria-label="Three-minute demo timeline: hook, live course, calibration, pulled plug, scene description, close."></svg>
     <div>
-      <h3 style="font-size:19px">The parts, priced only where provable</h3>
+      <h3 style="font-size:19px">The parts, Houston-first</h3>
       <ol class="parts">
-        <li><b><a href="https://www.microcenter.com/product/713924/seeed-studio-xiao-esp32-c3-(3-pack)">C3 · 3-pack</a></b><span>One on the glasses, two spare. Wi-Fi client, one hardware I2C bus, 400 KB SRAM.<sup>6</sup> Micro Center price and local stock unverified.</span></li>
-        <li><b><a href="https://www.microcenter.com/product/632692/inland-esp32-cam-wifi-bluetooth-camera-modules-pair">ESP32-CAM</a></b><span>Candidate, not yet bought: classic-ESP32 camera module, its own hotspot client, JPEG frames. OV2640 sensor and PSRAM are checked on the actual item before we rely on them.<sup>10</sup></span></li>
-        <li><b>ToF grid</b><span>VL53L5CX 8×8 time-of-flight imager — $25.95 and listed in stock at SparkFun when rechecked 18 Oct.<sup>7</sup></span></li>
-        <li><b>Cues + haptics</b><span>Bone transducers, I2S amps and haptic motors. Adafruit's bone transducer was out of stock when checked 18 Oct; find a suitable substitute.<sup>8</sup></span></li>
-        <li><b>Power + frame</b><span>Power bank with two outputs, two cables, the frame — picked at build, checked on the items.</span></li>
+        <li><b><a href="https://www.microcenter.com/product/713924/seeed-studio-xiao-esp32-c3-(3-pack)">C3 · 3-pack</a></b><span>Micro Center Houston SKU 069005; one used, two spare. User reports stock; price and pickup not independently verified.<sup>6</sup></span></li>
+        <li><b><a href="https://www.microcenter.com/product/632692/inland-esp32-cam-wifi-bluetooth-camera-modules-pair">ESP32-CAM</a></b><span>Micro Center SKU 221739; one used, one spare. Check actual PSRAM and sensor before relying on vision.<sup>10</sup></span></li>
+        <li><b><a href="https://www.sparkfun.com/sparkfun-qwiic-mini-tof-imager-vl53l5cx.html">Mini ToF</a></b><span>One 8×8 VL53L5CX, 12.7 × 25.4 mm. Ship with one Qwiic-to-wire lead; no three-board local cluster.<sup>7</sup></span></li>
+        <li><b>Cues + haptics</b><span>Two each: bone transducers, I²S amps, haptic drivers and motors; one I²C mux. Houston Micro Center SKUs in the architecture. Raw 8 Ω bone pair ships from DigiKey.<sup>8</sup></span></li>
+        <li><b>Power + fit</b><span>One 3.3 V regulator, FTDI programmer, pocket power bank, insulated leads and mounts. Front camera/ToF, boards on rear strap. Build and measure fit.</span></li>
       </ol>
-      <p class="small">No total on purpose: Micro Center's pages for both boards returned HTTP 403 from research on 18 Oct, so price and local availability are unverified — a parts total, and any comparison, waits until confirmed in store. The C3 3-pack is the chosen buy; the ESP32-CAM is a candidate. The old single-board total is withdrawn with the board.</p>
+      <p class="small">Full quantities, Houston SKUs, cables and sources: Architecture §12.2. No grand total or guaranteed delivery: local stock is user-reported, and the Mini ToF and raw bone transducers are shipped exceptions. The prototype is a headband layout, not proven comfortable glasses.</p>
       <h3 style="font-size:19px;margin-top:14px">Built at HackTX, by four people</h3>
       <p class="small" style="color:var(--ink)">The official rule: “All work must be done at the event.”<sup>20</sup> Parts are bought ahead; firmware, app and frame are built on site.</p>
       <div class="team">
@@ -339,7 +339,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
         <li><b>The cane stays.</b>Determine is a secondary aid, on top of a cane or guide dog.</li>
         <li><b>Claim only what we measured.</b>Every threshold and latency here is a target until tested with blind and low-vision people, with an orientation and mobility specialist.</li>
       </ul>
-      <h3 style="margin-top:12px;font-size:13px">Sources (24 Oct 2026; hardware 6–8, 10 checked 18 Oct)</h3>
+      <h3 style="margin-top:12px;font-size:13px">Sources (15–24 Oct 2026; Houston stock user-reported)</h3>
       <ol class="sources">
         <li><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC12909938/">Pittet et al.</a>, secondary travel-aid trial, 2026</li>
         <li><a href="https://users.soe.ucsc.edu/~manduchi/papers/MobilityAccidents.pdf">Manduchi &amp; Kurniawan</a>, mobility accidents, 2011</li>
@@ -348,7 +348,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
         <li><a href="https://pubmed.ncbi.nlm.nih.gov/22193619/">Stenfelt</a>, sound crossing the skull, 2012</li>
         <li><a href="https://wiki.seeedstudio.com/XIAO_ESP32C3_Getting_Started/">Seeed</a>, XIAO ESP32-C3 wiki: 400 KB SRAM, one I2C; <a href="https://documentation.espressif.com/esp32-c3_datasheet_en.pdf">Espressif</a>, I2S</li>
         <li><a href="https://www.sparkfun.com/sparkfun-qwiic-mini-tof-imager-vl53l5cx.html">SparkFun</a>, VL53L5CX ToF, $25.95</li>
-        <li>Adafruit: <a href="https://www.adafruit.com/product/1674">bone</a>, <a href="https://www.adafruit.com/product/3006">amp</a>, <a href="https://www.adafruit.com/product/2305">haptic driver</a>, <a href="https://www.adafruit.com/product/1201">motor</a></li>
+        <li>Adafruit: <a href="https://www.adafruit.com/product/1674">bone</a> (direct sold out; <a href="https://www.digikey.com/en/products/detail/adafruit-industries-llc/1674/6827067">DigiKey same part</a>), <a href="https://www.adafruit.com/product/3006">amp</a>, <a href="https://www.adafruit.com/product/2305">driver</a>, <a href="https://www.adafruit.com/product/1201">motor</a></li>
         <li><a href="https://developers.meta.com/wearables/faq/">Meta</a>, Wearables DAT and Mock Device Kit</li>
         <li><a href="https://github.com/espressif/esp32-camera">Espressif</a>, esp32-camera driver: ESP32/S2/S3; PSRAM above-CIF JPEG</li>
         <li><a href="https://www.aboutamazon.com/news/aws/take-a-look-inside-the-lab-where-aws-makes-custom-chips">About Amazon</a>, Annapurna Labs</li>
@@ -475,10 +475,9 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
   el(g, 'path', { d: 'M20 60 Q20 18 82 18 L268 18 Q312 18 318 52 Q350 40 382 52 Q388 18 432 18 L618 18 Q680 18 680 60 L680 96 Q680 140 626 140 L452 140 Q398 140 386 92 Q350 78 314 92 Q302 140 248 140 L74 140 Q20 140 20 96 Z', fill: '#f2f3f5', stroke: C.ink, 'stroke-width': 3.2, 'stroke-linejoin': 'round' });
   el(g, 'rect', { x: -28, y: 30, width: 50, height: 16, fill: C.ink });
   el(g, 'rect', { x: 678, y: 30, width: 50, height: 16, fill: C.ink });
-  // C3 + ToF at bridge
-  el(g, 'rect', { x: 322, y: -16, width: 56, height: 34, rx: 3, fill: C.ink });
-  el(g, 'rect', { x: 330, y: -8, width: 15, height: 15, fill: C.hz });
-  el(g, 'rect', { x: 353, y: -5, width: 12, height: 12, rx: 2, fill: 'none', stroke: '#f2f3f5', 'stroke-width': 2 });
+  // Only the compact ToF is on this part of the brow; cue electronics sit behind
+  el(g, 'rect', { x: 338, y: -18, width: 24, height: 34, rx: 2, fill: C.ink });
+  el(g, 'rect', { x: 344, y: -8, width: 12, height: 12, fill: C.hz });
   // separate ESP32-CAM module (candidate) on the brow, over the right lens
   el(g, 'rect', { x: 496, y: -18, width: 52, height: 34, rx: 3, fill: '#f2f3f5', stroke: C.ink, 'stroke-width': 2.6 });
   el(g, 'circle', { cx: 522, cy: -1, r: 9, fill: '#fff', stroke: C.ink, 'stroke-width': 2.6 });
@@ -497,14 +496,14 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
     const tx = anchor === 'end' ? x2 - 6 : x2 + 6;
     lines.forEach((t, i) => label(s, tx, y2 + 4 + i * 15, t, { 'font-size': i ? 11.5 : 13.5, 'font-weight': i ? 400 : 800, fill: i ? C.muted : color, 'text-anchor': anchor }));
   };
-  call(476, 60, 268, 24, ['Cue board · XIAO ESP32-C3', 'VL53L5CX 8×8 grid on I2C', 'I2S stereo cues · two haptics'], 'end');
+  call(476, 60, 268, 24, ['Mini ToF · one 8×8 sensor', '12.7 × 25.4 mm at brow', 'C3 and cue boards on rear strap'], 'end');
   call(652, 56, 716, 20, ['ESP32-CAM camera · candidate', 'JPEG frames over Wi-Fi', 'OV2640 + PSRAM: check the item']);
   call(102, 144, 40, 208, ['Left bone transducer', 'plays the left ear'], 'start', C.L);
   call(134, 144, 132, 262, ['Left haptic motor', 'buzzes for left-side hazards'], 'start', C.L);
   call(858, 144, 850, 208, ['Right bone transducer', 'plays the right ear'], 'end', C.R);
   call(826, 144, 700, 262, ['Right haptic motor', 'buzzes for right-side hazards'], 'end', C.R);
-  label(s, 905, 318, 'two cables to a pocket power bank', { 'font-size': 11.5, fill: C.muted, 'text-anchor': 'end' });
-  label(s, 480, 318, 'Clear or tinted lenses: sensors sit on the frame front, so tint changes nothing.', { 'font-size': 11.5, fill: C.muted, 'text-anchor': 'middle' });
+  label(s, 905, 318, 'power bank in a pocket; board fit is untested', { 'font-size': 11.5, fill: C.muted, 'text-anchor': 'end' });
+  label(s, 480, 318, 'Clear or tinted lenses: camera and ToF look out from the front.', { 'font-size': 11.5, fill: C.muted, 'text-anchor': 'middle' });
 })();
 
 /* ---------- C rows ---------- */
