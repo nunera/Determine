@@ -1,0 +1,122 @@
+import java.net.URI
+import java.security.MessageDigest
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+android {
+    namespace = "org.determine.android"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "org.determine.android"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "0.1.0"
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+    androidResources {
+        // MediaPipe memory-maps the model; it must be stored uncompressed in the APK.
+        noCompress += "tflite"
+    }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+}
+
+/**
+ * Downloads the EfficientDet-Lite0 (int8, COCO) object-detector model used by MediaPipe Tasks Vision
+ * into a generated assets directory (never committed). The SHA-256 pins the exact file so a changed
+ * upstream model cannot silently alter detector behaviour (Arch §7.1).
+ */
+abstract class DownloadDetectorModel : DefaultTask() {
+    @get:Input abstract val url: Property<String>
+    @get:Input abstract val sha256: Property<String>
+    @get:Input abstract val fileName: Property<String>
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun download() {
+        val out = outputDir.get().asFile.resolve(fileName.get())
+        if (out.isFile && sha256Of(out.readBytes()) == sha256.get()) return
+        out.parentFile.mkdirs()
+        val bytes = URI(url.get()).toURL().openStream().use { it.readBytes() }
+        val actual = sha256Of(bytes)
+        check(actual == sha256.get()) {
+            "Detector model hash mismatch: expected ${sha256.get()}, got $actual from ${url.get()}"
+        }
+        out.writeBytes(bytes)
+    }
+
+    private fun sha256Of(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+}
+
+val downloadDetectorModel = tasks.register<DownloadDetectorModel>("downloadDetectorModel") {
+    url.set("https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite")
+    sha256.set("0720bf247bd76e6594ea28fa9c6f7c5242be774818997dbbeffc4da460c723bb")
+    fileName.set("efficientdet_lite0.tflite")
+    outputDir.set(layout.buildDirectory.dir("generated/detectorModel/assets"))
+}
+
+// MediaPipe BlazeFace short-range (the face model MediaPipe Tasks FaceDetector supports), used to blur faces
+// before a Describe upload. Faces far from the camera may be missed: redaction is imperfect (Arch §7.3).
+val downloadFaceModel = tasks.register<DownloadDetectorModel>("downloadFaceModel") {
+    url.set("https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite")
+    sha256.set("b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f")
+    fileName.set("blaze_face_short_range.tflite")
+    outputDir.set(layout.buildDirectory.dir("generated/faceModel/assets"))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(downloadDetectorModel, DownloadDetectorModel::outputDir)
+        variant.sources.assets?.addGeneratedSourceDirectory(downloadFaceModel, DownloadDetectorModel::outputDir)
+    }
+}
+
+dependencies {
+    implementation("org.determine:core")
+
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.navigation:navigation-compose:2.8.5")
+
+    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+
+    implementation("com.google.mediapipe:tasks-vision:0.10.20")
+
+    val camerax = "1.4.1"
+    implementation("androidx.camera:camera-core:$camerax")
+    implementation("androidx.camera:camera-camera2:$camerax")
+    implementation("androidx.camera:camera-lifecycle:$camerax")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    testImplementation("junit:junit:4.13.2")
+}

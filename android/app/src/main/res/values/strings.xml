@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Determine</string>
+    <string name="channel_name">Determine running</string>
+    <string name="action_stop">Stop</string>
+    <string name="state_starting">Starting: waiting for both boards</string>
+    <string name="state_ready">Ready</string>
+    <string name="state_degraded">Limited: distance sensor not fully usable</string>
+    <string name="state_unavailable">System off: warnings unavailable</string>
+    <string name="state_paused">Paused: no warnings</string>
+    <string name="state_stopped">Stopped: no warnings</string>
+</resources>
