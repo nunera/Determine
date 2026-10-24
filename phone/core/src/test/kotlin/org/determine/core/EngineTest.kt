@@ -62,7 +62,7 @@ class SystemMonitorTest {
 /** Two simulated boards wired to an Engine, all in virtual time. */
 class Rig(config: EngineConfig = EngineConfig()) {
     var now = 1_000_000_000L
-    val camOffset = 7_000_000L - now
+    var camOffset = 7_000_000L - now
     val cueOffset = 3_000_000L - now
     var camAlive = true
     var cueAlive = true
@@ -139,6 +139,9 @@ class Rig(config: EngineConfig = EngineConfig()) {
 
     fun run(us: Long) { val end = now + us; while (now < end) step() }
 
+    /** Camera board reboots: its clock restarts with a new offset and frame_id counts from 0 again. */
+    fun rebootCam(newOffset: Long) { camOffset = newOffset; frameId = 0 }
+
     fun obstacle(mm: Int?) {
         status = IntArray(64) { 255 }; grid = IntArray(64)
         if (mm != null) { val z = 2 * 8 + 3; grid[z] = mm; status[z] = 5 }
@@ -149,6 +152,19 @@ class Rig(config: EngineConfig = EngineConfig()) {
 
 class EngineTest {
     private fun readyRig(cfg: EngineConfig = EngineConfig()) = Rig(cfg).also { it.run(1_000_000); assertEquals(SystemState.READY, it.engine.state, it.states.toString()) }
+
+    @Test
+    fun `camera reboot with restarted frame ids and a new clock recovers to ready`() {
+        val r = readyRig()
+        r.run(20_000_000) // ~200 frames: fewer than the assembler's 1000-frame reboot jump
+        r.camAlive = false
+        r.run(1_000_000)
+        assertEquals(SystemState.UNAVAILABLE, r.engine.state)
+        r.rebootCam(newOffset = 50_000L - r.now) // board time restarts near zero, so offset changes
+        r.camAlive = true
+        r.run(2_000_000)
+        assertEquals(SystemState.READY, r.engine.state, r.states.takeLast(4).toString())
+    }
 
     @Test
     fun `boots to ready with one ready tick and profile acked`() {

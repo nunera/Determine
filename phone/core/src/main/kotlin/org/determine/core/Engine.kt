@@ -182,8 +182,14 @@ class Engine(
         // the board clock near zero, so its time jumps back by far more than any network delay.
         if (prevT != null && b.tUs < prevT && prevT - b.tUs <= REBOOT_JUMP_US) return
         val rebooted = prevT != null && b.tUs < prevT
-        if (rebooted) l.clock.reset() // board clock restarted: old offset is meaningless
         val reconnected = prevRx == null || rebooted || rx - prevRx > config.monitor.beatTimeoutUs
+        // After a reboot or a silence longer than the BEAT timeout, nothing from the old session can be trusted:
+        // the board clock may have restarted (old offset meaningless) and the camera restarts frame_id at 0,
+        // which the assembler would otherwise drop as "late" until it passed the old count.
+        if (reconnected && prevRx != null) {
+            l.clock.reset()
+            if (from == BoardId.CAM) assembler.reset()
+        }
         l.lastBeatRxUs = rx
         l.lastBeatTUs = b.tUs
         l.faults = b.faults

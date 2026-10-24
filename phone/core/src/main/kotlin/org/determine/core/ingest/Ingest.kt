@@ -73,6 +73,12 @@ class FrameAssembler(
         inFlight.entries.filter { nowPhoneUs - it.value.rxUs > timeoutUs }.map { it.key }.forEach { drop(it) }
     }
 
+    /** Forget all frame history: the camera rebooted or reconnected and restarts frame_id. */
+    fun reset() {
+        inFlight.clear()
+        newestDoneId = -1
+    }
+
     val inFlightCount: Int get() = inFlight.size
 
     private fun drop(id: Long) {

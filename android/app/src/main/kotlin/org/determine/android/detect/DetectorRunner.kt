@@ -76,6 +76,10 @@ class DetectorRunner(
         } catch (e: Exception) {
             createError = e.message ?: e.javaClass.simpleName
             Log.e(TAG, "ObjectDetector unavailable; running ToF-only", e)
+        } catch (e: LinkageError) {
+            // No MediaPipe native library for this ABI (e.g. x86_64 emulators): degrade to ToF-only, never crash.
+            createError = "native library missing (${e.javaClass.simpleName})"
+            Log.e(TAG, "ObjectDetector native library unavailable; running ToF-only", e)
         }
     }
 

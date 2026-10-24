@@ -38,6 +38,10 @@ class FaceRedactor(context: Context) : Redactor {
     } catch (e: RuntimeException) {
         Log.e(TAG, "face detector unavailable; Describe uploads are disabled", e)
         null
+    } catch (e: LinkageError) {
+        // No MediaPipe native library for this ABI: no redaction, therefore no uploads.
+        Log.e(TAG, "face detector native library missing; Describe uploads are disabled", e)
+        null
     }
 
     val available: Boolean get() = detector != null

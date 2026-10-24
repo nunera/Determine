@@ -14,6 +14,20 @@ blind or low-vision users.
 
 All 8 brief pages: [`docs/images/brief-1.png` … `brief-8.png`](docs/images/) · PDF: [`Determine-Brief.pdf`](Determine-Brief.pdf)
 
+## App screenshots
+
+Android app on an emulator, driven by the two-board simulator (`tools/sim/sim_boards.py`); not real hardware.
+
+<p align="center">
+  <img src="docs/images/app-main-running.png" width="19%" alt="Main screen: status Ready, all ok">
+  <img src="docs/images/app-judge.png" width="19%" alt="Judge diagnostics: both boards synced, frame and ToF ages">
+  <img src="docs/images/app-judge-alert.png" width="19%" alt="Judge diagnostics during an approach: obstacle ahead, near, 0.5 metres, ToF grid highlighted">
+  <img src="docs/images/app-settings.png" width="19%" alt="Settings: Describe service and software fallbacks">
+  <img src="docs/images/app-calibration.png" width="19%" alt="Hearing calibration start screen">
+</p>
+
+Main · Judge diagnostics · Judge during an approach (NEAR at 0.5 m) · Settings (Describe, fallbacks) · Calibration
+
 ## Software layout
 
 | Path | What | Build / test |
