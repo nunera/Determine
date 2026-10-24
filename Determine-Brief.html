@@ -5,7 +5,7 @@
 <title>Determine — HackTX 26 pitch brief</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:ital,wght@0,300..800;1,400&display=block" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:ital,wght@0,300..800;1,400&family=Noto+Music&display=block" rel="stylesheet">
 <style>
 @page { size: 11in 8.5in; margin: 0; }
 :root {
@@ -95,7 +95,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
 .chip i { flex:1; display:block; }
 
 /* ---------- page E ---------- */
-.e-head { font-size:16px; line-height:1.35; max-width:900px; margin:-8px 0 14px; }
+.e-head { font-size:15px; line-height:1.35; max-width:960px; margin:-10px 0 10px; }
 .e-grid { display:grid; grid-template-columns: 1fr 1.18fr; gap:34px; }
 .loop h3 { font-size:21px; display:flex; align-items:baseline; gap:10px; }
 .loop h3 .ill { font-size:10px; }
@@ -105,11 +105,11 @@ svg .mn { font-family:var(--mono); font-weight:600; }
 .chain li:first-child { border-top:1px solid var(--ink); }
 .chain li b:first-child { font-family:var(--mono); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; padding-top:2px; }
 .chain li.ann { background:linear-gradient(var(--hz), var(--hz)) no-repeat 0 0 / 5px 100%; padding-left:12px; }
-.backends { display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin-top:17px; border-top:3px solid var(--ink); }
+.backends { display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin-top:11px; border-top:3px solid var(--ink); }
 .backends > div { padding:9px 12px 0 0; font-size:12px; line-height:1.3; }
 .backends > div + div { padding-left:12px; border-left:1px solid var(--hair); }
 .backends b { display:block; font-size:15px; line-height:1.1; margin-bottom:4px; }
-.scene { margin-top:15px; border-top:3px solid var(--ink); display:grid; grid-template-columns:190px 1fr 180px; gap:22px; padding-top:12px; align-items:start; }
+.scene { margin-top:10px; border-top:3px solid var(--ink); display:grid; grid-template-columns:190px 1fr 180px; gap:22px; padding-top:10px; align-items:start; }
 .scene h3 { font-size:16px; }
 .scene blockquote { font-size:19px; line-height:1.22; font-weight:700; letter-spacing:-.01em; margin:0; }
 .scene .ill { margin-top:6px; display:block; }
@@ -148,7 +148,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
     <h1>Determine</h1>
     <p class="sub">Dumb glasses. Your phone does the thinking. A warning you can hear or feel.</p>
   </div>
-  <svg class="score" id="cover-score" viewBox="0 0 1056 300" role="img" aria-label="A two-stave score. The left ear is a blue staff, the right ear a red staff. As an obstacle approaches from 3 metres to 1 metre, beeps on the right speed up from 60 to 150 to 300 beats per minute. At 1 metre, in a yellow hazard field, the obstacle is centred and both staves play. After it passes, both staves rest."></svg>
+  <svg class="score" id="cover-score" viewBox="0 0 1056 300" role="img" aria-label="A two-stave score. The left ear is a blue staff, the right ear a red staff. As an obstacle approaches from 3 metres to 1 metre, beeps on the right speed up from 60 to 150 to 300 beats per minute. At 1 metre, in a yellow hazard field, the obstacle is centred and both staves play single urgent notes. After it passes, both staves rest."></svg>
   <div class="tag">
     <p>Cars beep when we can't see behind us. People who are blind deserve a head-level warning too.</p>
     <div class="who"><b>Proposed design · HackTX 26</b><br>Not built or tested yet<br>UT Austin, 24–25 Oct 2026<br>For judges, Meta and Annapurna Labs<br>Full architecture contract on request</div>
@@ -162,7 +162,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
   <div class="a-grid">
     <div>
       <p class="lede">About 1 in 8 blind travellers hit their head at least once a month.</p>
-      <p>In a survey of 307 blind travellers, 13% had a head-level accident at least monthly. 86% of those happened outdoors, mostly on tree branches, and 23% had medical consequences.<sup>2</sup> A long cane sweeps the ground ahead of you. Its own makers' field calls it a primary aid, and it is excellent at curbs and steps. It cannot feel a branch at eye level, an open cabinet door or a truck mirror.</p>
+      <p>In a survey of 307 blind travellers, 13% had a head-level accident at least monthly. 86% of head-level accidents happened outdoors, mostly on tree branches, and 23% had medical consequences.<sup>2</sup> A long cane sweeps the ground ahead of you. Research classes it as a primary aid,<sup>1</sup> and it is excellent at curbs and steps. It cannot feel a branch at eye level, an open cabinet door or a truck mirror.</p>
       <p class="quote">The long cane “does not protect users from obstacles at the upper body and head levels.”<br><span class="small">Pittet et al., <i>Scientific Reports</i>, 2026<sup>1</sup></span></p>
     </div>
     <svg id="elevation" viewBox="0 0 470 300" role="img" aria-label="Side view. A cane covers the ground about one metre ahead. Determine's sensor at eye height covers a wedge from chest to head height out to about three metres, where a branch hangs at 1.7 metres."></svg>
@@ -190,7 +190,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
   <div class="b-meta">
     <p><b>Range plus context.</b> The 8×8 ToF grid measures distance even when a branch or open door has no detector label; the camera adds object context.</p>
     <p><b>Same app, other glasses.</b> Meta's Wearables DAT 1.0 can stream supported glasses' camera to a phone; its Mock Device Kit simulates it.<sup>9</sup> Determine's frame input could accept Meta frames. Claim only if built at HackTX.</p>
-    <p><b>Two boards, one hotspot.</b> The C3 has no camera or Espressif parallel-camera driver support,<sup>10</sup> so a separate ESP32-CAM candidate would supply JPEG. Both join the phone hotspot; the phone drops stale frames and grids after clock-offset and receive-age checks. No inter-board wire.</p>
+    <p><b>Two boards, one hotspot.</b> The C3 has no camera or Espressif parallel-camera driver support,<sup>10</sup> so a separate ESP32-CAM supplies JPEG once its sensor and PSRAM are checked. Both join the phone hotspot; the phone drops stale frames and grids after clock-offset and receive-age checks. No inter-board wire.</p>
     <p><b>Weight off the nose.</b> Only camera and 12.7 × 25.4 mm Mini ToF face forward; C3, amps and drivers go on a rear strap, power bank in a pocket.<sup>7</sup> Fit and comfort remain untested. Two separately powered boards share one phone hotspot.</p>
   </div>
   <div class="foot"><span><b>Determine</b> · the glasses</span><span>3 / 8</span></div>
@@ -201,7 +201,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
   <h2><span class="mark">C</span>A parking sensor that knows what it's beeping at.</h2>
   <div class="row">
     <div><h3>How close → tempo</h3><p>The car-sensor model everyone already knows. Never above 6 notes a second.<sup>3</sup></p></div>
-    <svg id="r-close" viewBox="0 0 780 92" role="img" aria-label="Far: one beep pair per second at 60 bpm. Mid: 2.5 per second at 150 bpm. Near: 5 per second at 300 bpm with an urgent motif, a haptic buzz and up to 6 decibels more, within the ceiling."></svg>
+    <svg id="r-close" viewBox="0 0 780 92" role="img" aria-label="Far: one beep pair per second at 60 bpm. Mid: 2.5 pairs per second at 150 bpm. Near: 5 single urgent notes per second at 300 bpm, a haptic buzz and up to 6 decibels more, within the ceiling."></svg>
   </div>
   <div class="row">
     <div><h3>Where → which ear</h3><p>Left staff plays the left ear, right staff the right. The matching temple buzzes too.</p></div>
@@ -218,7 +218,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
   <div class="silence">
     <svg viewBox="0 0 96 110" width="96" height="110" aria-hidden="true"><text x="48" y="86" text-anchor="middle" class="m" font-size="104" fill="#131316">&#x1D13D;</text></svg>
     <p class="big">There is no all-clear sound. Silence is a rest, not the end of the piece.</p>
-    <p>Silence would mean “nothing to report from a working system”, never “path clear”. If the camera, distance grid or either board's link fails, the design targets a descending <b>system off</b> motif within one second, repeated until recovery. If both boards lose power, the dead glasses cannot beep: the phone must speak or vibrate the failure instead. Timing and audibility are untested. Tempo, motif and haptics carry urgency too.</p>
+    <p>Silence would mean “nothing to report from a working system”, never “path clear”. If the camera, distance grid or either board's link fails, the design targets a descending <b>system off</b> motif within one second, repeated until recovery. If the cue board loses power, the glasses cannot beep: the phone must speak or vibrate the failure instead. Timing and audibility are untested. Tempo, motif and haptics carry urgency too.</p>
   </div>
   <div class="foot"><span><b>Determine</b> · the cue language</span><span>4 / 8</span></div>
 </section>
@@ -257,9 +257,9 @@ svg .mn { font-family:var(--mono); font-weight:600; }
   <div class="e-grid">
     <div class="loop">
       <h3>Reflex <span class="ill">phone · offline · always on</span></h3>
-      <svg id="reflex" viewBox="0 0 440 150" role="img" aria-label="Latency budget on a millisecond axis: sensing and JPEG on the two boards 55, two Wi-Fi streams 45, alignment and detection 80, cue and playback 40, against a 250 millisecond target that is unmeasured."></svg>
+      <svg id="reflex" viewBox="0 0 440 150" role="img" aria-label="Latency budget on a millisecond axis: sensing and JPEG on the two boards 60, two Wi-Fi streams 40, alignment and detection 80, cue and playback 40, against a 250 millisecond target that is unmeasured."></svg>
       <p>Target ≤ 250 ms from capture to cue at the 95th percentile, shown live on the judges' screen. It's a goal until we measure it, and nothing is measured yet — the shared hotspot carrying two streams is the least certain part. At walking pace (1.4 m/s), 250 ms is about 35 cm, so warning distances budget for it.</p>
-      <p class="small">Three tiers of silicon, each placed by its latency, power and failure budget: two small ESP32-class boards on the glasses — a C3 for the distance grid, cues and haptics<sup>6</sup>, and a classic-ESP32 camera module for JPEG frames<sup>10</sup> — then the phone's processor for every decision, and Annapurna silicon for the one job that can wait seconds. No board on the face decides anything.</p>
+      <p class="small">Three tiers of silicon, placed by latency, power and failure budget: two ESP32-class boards on the glasses (a C3 for grid, cues and haptics<sup>6</sup>; a classic-ESP32 camera<sup>10</sup>), the phone for every decision, and Annapurna silicon for the one job that can wait seconds.</p>
     </div>
     <div class="loop">
       <h3>Describe <span class="ill">on request · Annapurna silicon</span></h3>
@@ -283,7 +283,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
     <div><b>Trainium2 · alternative</b>AWS Neuron documents Qwen2-VL-7B on one chip; fit on a smaller trn2.3xlarge is untested.<sup>12,13,16</sup></div>
     <div><b>Bedrock · fallback</b>Nova Lite can handle images, but Bedrock does not guarantee the silicon. New accounts start with Inf/Trn quota 0.<sup>18,19</sup></div>
   </div>
-  <p class="small" style="margin-top:7px">Request accelerator access now; approval is not guaranteed. Compile and integrate the model at HackTX under its all-work-at-the-event rule.<sup>20</sup></p>
+  <p class="small" style="margin-top:7px">Annapurna Labs is HackTX 26's first platinum partner, but no Annapurna challenge is published yet, so Describe stays optional.<sup>21</sup> Request accelerator access now; approval is not guaranteed. Compile and integrate the model at HackTX under its all-work-at-the-event rule.<sup>20</sup></p>
   <div class="foot"><span><b>Determine</b> · Reflex and Describe</span><span>6 / 8</span></div>
 </section>
 
@@ -305,7 +305,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
       <h3 style="font-size:19px;margin-top:14px">Built at HackTX, by four people</h3>
       <p class="small" style="color:var(--ink)">The official rule: “All work must be done at the event.”<sup>20</sup> Parts are bought ahead; firmware, app and frame are built on site.</p>
       <div class="team">
-        <div><b>Glasses firmware</b>Two boards: C3 runs grid, cues, haptics; candidate ESP32-CAM streams JPEG</div>
+        <div><b>Glasses firmware</b>Two boards: C3 runs grid, cues, haptics; ESP32-CAM streams JPEG</div>
         <div><b>Phone perception</b>Stream alignment, detector, hazard rules, judge screen</div>
         <div><b>Sound and calibration</b>Cue bank, balance flow, one-ear mode</div>
         <div><b>Describe and demo</b>Graviton API, Neuron model, the pitch</div>
@@ -325,7 +325,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
         <li>Glass doors and windows <span>light passes through</span></li>
         <li>Thin wires and ropes <span>too small for 8×8</span></li>
         <li>Drop-offs, curbs, stairs going down <span>the cane's job</span></li>
-        <li>Anything outside the forward view <span>63° field</span></li>
+        <li>Anything outside the forward view <span>63° diagonal</span></li>
         <li>Fast-moving vehicles <span>not a traffic aid</span></li>
         <li>Glare, darkness, rain and fog <span>degrades, announced</span></li>
         <li>Anything beyond about 3 m <span>by design</span></li>
@@ -361,6 +361,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
         <li><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html">AWS</a>, Bedrock Nova Lite model card</li>
         <li><a href="https://docs.aws.amazon.com/ec2/latest/instancetypes/ec2-instance-quotas.html">AWS</a>, EC2 accelerator quotas</li>
         <li><a href="https://hacktx.com/">Freetail Hackers</a>, HackTX 26 FAQ</li>
+        <li><a href="https://www.facebook.com/HackTX/posts/now-introducing-our-first-platinum-partner-annapurna-labs-hacktx26-is-getting-cl/1126820616365870/">HackTX</a>, Annapurna Labs platinum partner post</li>
       </ol>
     </div>
   </div>
@@ -427,7 +428,7 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
   [190, 325].forEach(x => rest(s, x, Lmid, C.L, 36));
   [408, 468, 528, 588].forEach(x => notes(s, x, Rmid, [0, 0], C.R, o));
   [450, 570].forEach(x => rest(s, x, Lmid, C.L, 36));
-  [668, 716, 764, 812].forEach(x => { notes(s, x, Rmid, [0, 0, 0], C.R, Object.assign({}, o, { dx: 12 })); notes(s, x, Lmid, [0, 0, 0], C.L, Object.assign({}, o, { dx: 12 })); });
+  [672, 704, 736, 768, 800, 832].forEach(x => { notes(s, x, Rmid, [0], C.R, o); notes(s, x, Lmid, [0], C.L, o); });
   [900, 952].forEach(x => { rest(s, x, Lmid, C.L, 36); rest(s, x, Rmid, C.R, 36); });
   // distance ruler
   const ry = 250;
@@ -478,7 +479,7 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
   // Only the compact ToF is on this part of the brow; cue electronics sit behind
   el(g, 'rect', { x: 338, y: -18, width: 24, height: 34, rx: 2, fill: C.ink });
   el(g, 'rect', { x: 344, y: -8, width: 12, height: 12, fill: C.hz });
-  // separate ESP32-CAM module (candidate) on the brow, over the right lens
+  // separate ESP32-CAM module on the brow, over the right lens
   el(g, 'rect', { x: 496, y: -18, width: 52, height: 34, rx: 3, fill: '#f2f3f5', stroke: C.ink, 'stroke-width': 2.6 });
   el(g, 'circle', { cx: 522, cy: -1, r: 9, fill: '#fff', stroke: C.ink, 'stroke-width': 2.6 });
   el(g, 'circle', { cx: 522, cy: -1, r: 4, fill: C.ink });
@@ -497,11 +498,12 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
     lines.forEach((t, i) => label(s, tx, y2 + 4 + i * 15, t, { 'font-size': i ? 11.5 : 13.5, 'font-weight': i ? 400 : 800, fill: i ? C.muted : color, 'text-anchor': anchor }));
   };
   call(476, 60, 268, 24, ['Mini ToF · one 8×8 sensor', '12.7 × 25.4 mm at brow', 'C3 and cue boards on rear strap'], 'end');
-  call(652, 56, 716, 20, ['ESP32-CAM camera · candidate', 'JPEG frames over Wi-Fi', 'OV2640 + PSRAM: check the item']);
-  call(102, 144, 40, 208, ['Left bone transducer', 'plays the left ear'], 'start', C.L);
-  call(134, 144, 132, 262, ['Left haptic motor', 'buzzes for left-side hazards'], 'start', C.L);
-  call(858, 144, 850, 208, ['Right bone transducer', 'plays the right ear'], 'end', C.R);
-  call(826, 144, 700, 262, ['Right haptic motor', 'buzzes for right-side hazards'], 'end', C.R);
+  call(652, 56, 716, 20, ['ESP32-CAM camera', 'JPEG frames over Wi-Fi', 'OV2640 + PSRAM: check the item']);
+  // one label per temple: bone transducer and haptic motor leaders meet above it
+  el(s, 'line', { x1: 134, y1: 144, x2: 40, y2: 236, stroke: C.L, 'stroke-width': 1.3 });
+  call(102, 144, 40, 236, ['Left: bone transducer + haptic', 'plays the left ear · buzzes for left hazards'], 'start', C.L);
+  el(s, 'line', { x1: 826, y1: 144, x2: 850, y2: 236, stroke: C.R, 'stroke-width': 1.3 });
+  call(858, 144, 850, 236, ['Right: bone transducer + haptic', 'plays the right ear · buzzes for right hazards'], 'end', C.R);
   label(s, 905, 318, 'power bank in a pocket; board fit is untested', { 'font-size': 11.5, fill: C.muted, 'text-anchor': 'end' });
   label(s, 480, 318, 'Clear or tinted lenses: camera and ToF look out from the front.', { 'font-size': 11.5, fill: C.muted, 'text-anchor': 'middle' });
 })();
@@ -517,10 +519,10 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
   head(10, 'FAR', 'under 3 m · 1/s · \u2669 = 60'); head(242, 'MID', 'under 2 m · 2.5/s · \u2669 = 150'); head(544, 'NEAR', 'under 1 m · 5/s · \u2669 = 300');
   [44, 150].forEach(x => notes(s, x, mid, [0, 0], C.ink));
   [256, 310, 364, 418, 472].forEach(x => notes(s, x, mid, [0, 0], C.ink));
-  [550, 594, 638, 682, 726].forEach(x => notes(s, x, mid, [0, 0, 0], C.ink, { dx: 11 }));
+  [556, 592, 628, 664, 700, 736].forEach(x => notes(s, x, mid, [0], C.ink));
   // haptic buzz + dynamic within ceiling
-  el(s, 'rect', { x: 550, y: 77, width: 70, height: 6, fill: C.ink });
-  label(s, 626, 84, 'buzz 150 ms · +6 dB, under ceiling', { 'font-size': 10.5, 'font-weight': 700 });
+  el(s, 'rect', { x: 550, y: 77, width: 30, height: 6, fill: C.ink });
+  label(s, 586, 84, 'buzz 150 ms · +6 dB, under ceiling', { 'font-size': 10, 'font-weight': 700 });
 })();
 (() => {
   const s = document.getElementById('r-where');
@@ -538,12 +540,13 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
       if (mode !== 'R') notes(g, x, Lm, [0, 0], C.L, o); else rest(g, x + 6, Lm, C.L, 26);
       if (mode !== 'L') notes(g, x, Rm, [0, 0], C.R, o); else rest(g, x + 6, Rm, C.R, 26);
     });
-    label(g, x0 + w + 12, 52, title[0], { 'font-size': 13.5, 'font-weight': 800 });
-    label(g, x0 + w + 12, 68, title[1], { 'font-size': 11, fill: C.muted });
+    label(g, x0 + w + 12, 46, title[0], { 'font-size': 13.5, 'font-weight': 800 });
+    label(g, x0 + w + 12, 62, title[1], { 'font-size': 11, fill: C.muted });
+    label(g, x0 + w + 12, 76, title[2], { 'font-size': 11, fill: C.muted });
   };
-  block(6, 160, 'L', ['Left', 'left ear + left temple']);
-  block(280, 160, 'C', ['Centre', 'both ears + both temples']);
-  block(554, 160, 'R', ['Right', 'right ear + right temple']);
+  block(6, 150, 'L', ['Left', 'left ear +', 'left temple']);
+  block(268, 150, 'C', ['Centre', 'both ears +', 'both temples']);
+  block(530, 150, 'R', ['Right', 'right ear +', 'right temple']);
 })();
 (() => {
   const s = document.getElementById('r-what');
@@ -555,9 +558,9 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
   head(404, 'System off', 'descending three, every 5 s until fixed'); head(632, 'Ready', 'one soft tick, once');
   [40, 112].forEach(x => notes(s, x, mid, [0, 0], C.ink));
   [236, 308].forEach(x => notes(s, x, mid, [1, -2], C.ink, { dx: 16 }));
-  notes(s, 440, mid, [-4, -1, 2], C.ink, { dx: 22 });
+  notes(s, 440, mid, [-2, 1, 4], C.ink, { dx: 22 });
   rest(s, 530, mid, C.ink, 26);
-  notes(s, 560, mid, [-4, -1, 2], C.ink, { dx: 22 });
+  notes(s, 560, mid, [-2, 1, 4], C.ink, { dx: 22 });
   notes(s, 660, mid, [-1], C.ink);
   [705, 745].forEach(x => rest(s, x, mid, C.ink, 26));
 })();
@@ -597,7 +600,7 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
 (() => {
   const s = document.getElementById('reflex');
   const x0 = 6, w = 428, ms = 250, X = t => x0 + t / ms * w;
-  const segs = [[55, 'sense + JPEG', 'two boards'], [45, 'Wi-Fi ×2', 'hotspot'], [80, 'align + detect', 'phone'], [40, 'cue + play', 'glasses']];
+  const segs = [[60, 'sense + JPEG', 'two boards'], [40, 'Wi-Fi ×2', 'hotspot'], [80, 'align + detect', 'phone'], [40, 'cue + play', 'glasses']];
   let t = 0;
   segs.forEach(([d, n, where], i) => {
     const fill = i % 2 ? '#e6e7ea' : '#ffffff';
