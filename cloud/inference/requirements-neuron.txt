@@ -1,0 +1,5 @@
+# Inside /opt/aws_neuronx_venv_pytorch_2_9 (Neuron SDK 2.31), which already provides torch-neuronx,
+# neuronx-cc and neuronx_distributed. SmolVLM image-text-to-text exists only on optimum-neuron main (not 0.4.x);
+# pin this to the commit that compiled successfully once it works.
+optimum-neuron[neuronx] @ git+https://github.com/huggingface/optimum-neuron.git@main
+pillow
