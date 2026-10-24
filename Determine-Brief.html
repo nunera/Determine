@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Determine — HackTX 26 pitch brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:ital,wght@0,300..800;1,400&display=block" rel="stylesheet">
+<style>
+@page { size: 11in 8.5in; margin: 0; }
+:root {
+  --paper:#ffffff; --ink:#131316; --muted:#4a4d55; --hair:#c9cbd1;
+  --L:#1d4ed8; --R:#cf1f2a; --Lt:#a9c0ff; --Rt:#ffa9ad; --hz:#ffd000;
+  --sans:"Atkinson Hyperlegible Next", sans-serif;
+  --mono:"Atkinson Hyperlegible Mono", monospace;
+  --music:"Noto Music";
+}
+* { box-sizing:border-box; }
+html, body { margin:0; background:var(--paper); color:var(--ink); font-family:var(--sans); }
+body { font-size:14px; line-height:1.42; -webkit-print-color-adjust:exact; print-color-adjust:exact; font-variant-numeric: tabular-nums; }
+::selection { background:var(--hz); color:var(--ink); }
+a { color:inherit; text-decoration-color:var(--hair); text-underline-offset:2px; }
+.page { width:11in; height:8.5in; padding:.55in .62in .72in; position:relative; overflow:hidden; break-after:page; page-break-after:always; }
+.page:last-child { break-after:auto; page-break-after:auto; }
+.foot { position:absolute; left:.62in; right:.62in; bottom:.3in; display:flex; justify-content:space-between; align-items:center; font:600 11px/1 var(--mono); color:var(--muted); letter-spacing:.02em; padding-top:8px; border-top:1px solid var(--ink); }
+.foot b { color:var(--ink); }
+h1, h2, h3 { margin:0; text-wrap:balance; }
+h2 { font-size:38px; line-height:1.04; font-weight:800; letter-spacing:-.025em; display:flex; align-items:flex-start; gap:18px; margin-bottom:20px; }
+.mark { flex:none; display:inline-grid; place-items:center; width:46px; height:46px; border:3px solid var(--ink); font-size:27px; font-weight:800; letter-spacing:0; margin-top:-2px; }
+h3 { font-size:17px; line-height:1.2; font-weight:800; letter-spacing:-.01em; margin-bottom:6px; }
+p { margin:0 0 9px; }
+.lede { font-size:25px; line-height:1.18; font-weight:700; letter-spacing:-.015em; }
+.small { font-size:11.5px; line-height:1.38; color:var(--muted); }
+.mono { font-family:var(--mono); }
+sup { font:600 8.5px var(--mono); color:var(--muted); margin-left:1px; }
+.q { font-weight:800; }
+.q::before { content:'"'; } .q::after { content:'"'; }
+.L { color:var(--L); } .R { color:var(--R); }
+.ill { font:600 9.5px var(--mono); text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+svg text { font-family:var(--sans); }
+svg .m { font-family:var(--music); }
+svg .mn { font-family:var(--mono); font-weight:600; }
+
+/* ---------- cover ---------- */
+.cover { padding:0; }
+.cover .top { position:absolute; left:.62in; right:.62in; top:.5in; display:grid; grid-template-columns: 1fr 330px; gap:28px; align-items:end; }
+.cover h1 { font-size:132px; line-height:.86; font-weight:800; letter-spacing:-.04em; }
+.cover .sub { font-size:21px; line-height:1.22; font-weight:600; padding-bottom:12px; }
+.cover .score { position:absolute; left:0; top:2.45in; width:11in; }
+.cover .tag { position:absolute; left:.62in; right:.62in; bottom:.95in; display:grid; grid-template-columns: 1fr 260px; gap:40px; align-items:end; }
+.cover .tag p { font-size:24px; line-height:1.2; font-weight:700; letter-spacing:-.012em; margin:0; }
+.cover .tag .who { font-size:12px; line-height:1.45; color:var(--muted); border-left:1px solid var(--ink); padding-left:14px; }
+.cover .tag .who b { color:var(--ink); font-size:13px; }
+
+/* ---------- page A ---------- */
+.a-grid { display:grid; grid-template-columns: 1.05fr 1fr; gap:36px; }
+.quote { font-size:17px; line-height:1.3; font-weight:600; margin:16px 0 0; padding-top:12px; border-top:1px solid var(--ink); }
+.persona { margin-top:20px; display:grid; grid-template-columns: 210px 1fr 1fr 1fr; gap:0; border-top:3px solid var(--ink); }
+.persona > div { padding:12px 16px 0 0; }
+.persona > div + div { padding-left:16px; border-left:1px solid var(--hair); }
+.persona h3 { font-size:15px; }
+.persona p { font-size:12.5px; line-height:1.36; margin:0; }
+
+/* ---------- page B ---------- */
+.flow { display:grid; grid-template-columns: 1fr 34px 1fr 34px 1fr; align-items:stretch; margin-top:6px; }
+.flow > div.step { border-top:3px solid var(--ink); padding-top:9px; }
+.flow .arrow { display:grid; place-items:center; }
+.flow h3 { font-size:15px; }
+.flow p { font-size:12.5px; line-height:1.36; margin:0; }
+.b-meta { display:grid; grid-template-columns: 1fr 1fr; gap:30px; margin-top:16px; }
+.b-meta p { font-size:12.5px; line-height:1.38; }
+
+/* ---------- page C ---------- */
+.row { display:grid; grid-template-columns: 196px 1fr; gap:18px; align-items:center; border-top:1px solid var(--ink); padding:7px 0 4px; }
+.row h3 { font-size:16px; margin-bottom:3px; }
+.row p { font-size:11.5px; line-height:1.32; color:var(--muted); margin:0; }
+.words { display:flex; flex-wrap:wrap; gap:8px 26px; align-items:baseline; font-size:27px; letter-spacing:-.01em; padding:6px 0 4px; }
+.silence { display:grid; grid-template-columns: 96px 1fr 1fr; gap:22px; align-items:center; border-top:3px solid var(--ink); margin-top:4px; padding-top:10px; }
+.silence .big { font-size:23px; line-height:1.15; font-weight:800; letter-spacing:-.01em; margin:0; }
+.silence p { font-size:12.5px; line-height:1.36; margin:0; }
+
+/* ---------- page D ---------- */
+.d-grid { display:grid; grid-template-columns: 455px 1fr; gap:34px; }
+.steps { list-style:none; margin:0; padding:0; counter-reset:s; }
+.steps li { counter-increment:s; display:grid; grid-template-columns:34px 1fr; gap:12px; padding:8px 0; border-top:1px solid var(--hair); font-size:13px; line-height:1.34; }
+.steps li:first-child { border-top:1px solid var(--ink); }
+.steps li::before { content:counter(s); display:grid; place-items:center; width:30px; height:30px; border:2.5px solid var(--ink); font-weight:800; font-size:16px; }
+.steps b { display:block; font-size:14.5px; }
+.modes { display:grid; grid-template-columns: repeat(3, 1fr); gap:0; margin-top:16px; border-top:3px solid var(--ink); }
+.modes > div { padding:10px 16px 0 0; }
+.modes > div + div { padding-left:16px; border-left:1px solid var(--hair); }
+.modes h3 { font-size:15px; display:flex; align-items:center; gap:9px; }
+.modes p { font-size:12.3px; line-height:1.36; margin:0; }
+.chip { display:inline-flex; width:30px; height:14px; flex:none; }
+.chip i { flex:1; display:block; }
+
+/* ---------- page E ---------- */
+.e-head { font-size:16px; line-height:1.35; max-width:900px; margin:-8px 0 14px; }
+.e-grid { display:grid; grid-template-columns: 1fr 1.18fr; gap:34px; }
+.loop h3 { font-size:21px; display:flex; align-items:baseline; gap:10px; }
+.loop h3 .ill { font-size:10px; }
+.loop p { font-size:12.5px; line-height:1.36; }
+.chain { list-style:none; margin:4px 0 0; padding:0; }
+.chain li { display:grid; grid-template-columns: 112px 1fr; gap:12px; padding:6px 0; border-top:1px solid var(--hair); font-size:12.4px; line-height:1.32; }
+.chain li:first-child { border-top:1px solid var(--ink); }
+.chain li b:first-child { font-family:var(--mono); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; padding-top:2px; }
+.chain li.ann { background:linear-gradient(var(--hz), var(--hz)) no-repeat 0 0 / 5px 100%; padding-left:12px; }
+.backends { display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin-top:17px; border-top:3px solid var(--ink); }
+.backends > div { padding:9px 12px 0 0; font-size:12px; line-height:1.3; }
+.backends > div + div { padding-left:12px; border-left:1px solid var(--hair); }
+.backends b { display:block; font-size:15px; line-height:1.1; margin-bottom:4px; }
+.scene { margin-top:15px; border-top:3px solid var(--ink); display:grid; grid-template-columns:190px 1fr 180px; gap:22px; padding-top:12px; align-items:start; }
+.scene h3 { font-size:16px; }
+.scene blockquote { font-size:19px; line-height:1.22; font-weight:700; letter-spacing:-.01em; margin:0; }
+.scene .ill { margin-top:6px; display:block; }
+.scene p { font-size:12px; line-height:1.34; margin:0; }
+
+/* ---------- page F ---------- */
+.f-grid { display:grid; grid-template-columns: 1.12fr 1fr; gap:38px; }
+.team { display:grid; grid-template-columns: 1fr 1fr; gap:6px 18px; margin-top:6px; font-size:12.3px; line-height:1.32; }
+.team div { border-top:1px solid var(--hair); padding-top:5px; }
+.team b { display:block; }
+.parts { list-style:none; margin:6px 0 0; padding:0; }
+.parts li { display:grid; grid-template-columns:112px 1fr; gap:10px; padding:5px 0; border-top:1px solid var(--hair); font-size:11.5px; line-height:1.3; }
+.parts li:first-child { border-top:3px solid var(--ink); }
+.parts b { font-family:var(--mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; padding-top:2px; }
+
+/* ---------- page G ---------- */
+.g-grid { display:grid; grid-template-columns: 1fr 1fr; gap:38px; }
+.cant { list-style:none; margin:0; padding:0; }
+.cant li { font-size:21px; line-height:1.15; font-weight:700; letter-spacing:-.01em; padding:7px 0; border-top:1px solid var(--hair); display:flex; gap:12px; align-items:baseline; }
+.cant li:first-child { border-top:3px solid var(--ink); }
+.cant li span { font:600 10px var(--mono); color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-left:auto; white-space:nowrap; }
+.rules { margin:0; padding:0; list-style:none; }
+.rules li { padding:8px 0; border-top:1px solid var(--hair); font-size:12.8px; line-height:1.35; }
+.rules li:first-child { border-top:3px solid var(--ink); }
+.rules b { display:block; font-size:15px; }
+.sources { columns:2; column-gap:24px; font-size:11px; line-height:1.35; color:var(--ink); margin:0; padding-left:16px; }
+.sources li { break-inside:avoid; margin-bottom:3px; }
+.sources a { color:var(--ink); text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:1px; }
+</style>
+</head>
+<body>
+
+<!-- ===================== COVER ===================== -->
+<section class="page cover">
+  <div class="top">
+    <h1>Determine</h1>
+    <p class="sub">Dumb glasses. Your phone does the thinking. A warning you can hear or feel.</p>
+  </div>
+  <svg class="score" id="cover-score" viewBox="0 0 1056 300" role="img" aria-label="A two-stave score. The left ear is a blue staff, the right ear a red staff. As an obstacle approaches from 3 metres to 1 metre, beeps on the right speed up from 60 to 150 to 300 beats per minute. At 1 metre, in a yellow hazard field, the obstacle is centred and both staves play. After it passes, both staves rest."></svg>
+  <div class="tag">
+    <p>Cars beep when we can't see behind us. People who are blind deserve a head-level warning too.</p>
+    <div class="who"><b>Proposed design · HackTX 26</b><br>Not built or tested yet<br>UT Austin, 24–25 Oct 2026<br>For judges, Meta and Annapurna Labs<br>Full architecture contract on request</div>
+  </div>
+  <div class="foot"><span><b>Determine</b> · parking sensors for people</span><span>Research cut 24 Oct 2026 · 1 / 8</span></div>
+</section>
+
+<!-- ===================== A · PROBLEM ===================== -->
+<section class="page">
+  <h2><span class="mark">A</span>A cane finds the ground.<br>The branch is at head height.</h2>
+  <div class="a-grid">
+    <div>
+      <p class="lede">About 1 in 8 blind travellers hit their head at least once a month.</p>
+      <p>In a survey of 307 blind travellers, 13% had a head-level accident at least monthly. 86% of those happened outdoors, mostly on tree branches, and 23% had medical consequences.<sup>2</sup> A long cane sweeps the ground ahead of you. Its own makers' field calls it a primary aid, and it is excellent at curbs and steps. It cannot feel a branch at eye level, an open cabinet door or a truck mirror.</p>
+      <p class="quote">The long cane “does not protect users from obstacles at the upper body and head levels.”<br><span class="small">Pittet et al., <i>Scientific Reports</i>, 2026<sup>1</sup></span></p>
+    </div>
+    <svg id="elevation" viewBox="0 0 470 300" role="img" aria-label="Side view. A cane covers the ground about one metre ahead. Determine's sensor at eye height covers a wedge from chest to head height out to about three metres, where a branch hangs at 1.7 metres."></svg>
+  </div>
+  <div class="persona">
+    <div><h3>Maya</h3><p class="ill">Illustrative traveller</p><p style="margin-top:6px">Walks to class with a long cane. Her left ear is weaker than her right.</p></div>
+    <div><h3>Keeps her cane</h3><p>Determine adds a head-level layer. It never replaces the cane or a guide dog, and it never says the path is clear.</p></div>
+    <div><h3>Wants a warning, not a narrator</h3><p>In a 2026 trial, every participant preferred short, precise output (“person to your left at 11 o'clock, 3 metres”) to generative descriptions.<sup>1</sup></p></div>
+    <div><h3>Learns it in minutes</h3><p>4 of 13 trial users struggled with a rival's spatialised sounds.<sup>1</sup> Determine uses a small cue set, taught at setup, with direction carried twice.</p></div>
+  </div>
+  <div class="foot"><span><b>Determine</b> · the problem</span><span>2 / 8</span></div>
+</section>
+
+<!-- ===================== B · HARDWARE ===================== -->
+<section class="page">
+  <h2><span class="mark">B</span>Dumb glasses. Your phone does the thinking.</h2>
+  <svg id="glasses" viewBox="0 0 960 330" role="img" aria-label="Front view of the glasses with labelled parts: a XIAO ESP32-C3 board with the VL53L5CX distance sensor at the bridge, a separate ESP32-CAM camera module, a candidate part, on the brow, left bone transducer and haptic motor in blue, right in red, two cables to a pocket power bank with two outputs."></svg>
+  <div class="flow">
+    <div class="step"><h3>Sense · two boards on the frame</h3><p>A candidate ESP32-CAM sends JPEG frames; the C3 sends a grid of 64 distances. Two independent Wi-Fi streams to the phone, each packet timestamped. No decisions are made on the face.</p></div>
+    <div class="arrow"><svg width="30" height="16" viewBox="0 0 30 16"><path d="M0 8h26M19 2l7 6-7 6" fill="none" stroke="#131316" stroke-width="2.2"/></svg></div>
+    <div class="step"><h3>Decide · on the phone</h3><p>The phone aligns the two streams by timestamp and receive age, then an on-device object detector plus the distance grid feed fixed hazard rules and pick <i>one</i> cue: which sound, how loud on each side, which temple buzzes.</p></div>
+    <div class="arrow"><svg width="30" height="16" viewBox="0 0 30 16"><path d="M0 8h26M19 2l7 6-7 6" fill="none" stroke="#131316" stroke-width="2.2"/></svg></div>
+    <div class="step"><h3>Play · on the glasses</h3><p>The C3 plays a stored sound straight to the bone over I2S, so urgent beeps skip Bluetooth audio delay. Every command expires: a late one is dropped, never played late.</p></div>
+  </div>
+  <div class="b-meta">
+    <p><b>Range plus context.</b> The 8×8 ToF grid measures distance even when a branch or open door has no detector label; the camera adds object context.</p>
+    <p><b>Same app, other glasses.</b> Meta's Wearables DAT 1.0 can stream supported glasses' camera to a phone; its Mock Device Kit simulates it.<sup>9</sup> Determine's frame input could accept Meta frames. Claim only if built at HackTX.</p>
+    <p><b>Two boards, one hotspot.</b> The C3 has no camera or Espressif parallel-camera driver support,<sup>10</sup> so a separate ESP32-CAM candidate would supply JPEG. Both join the phone hotspot; the phone drops stale frames and grids after clock-offset and receive-age checks. No inter-board wire.</p>
+    <p><b>Power and one bus.</b> Two power-bank outputs and two leads; verify draw and fit. C3 has one hardware I2C bus,<sup>6</sup> so two identical-address haptic drivers need a mux or PWM drive.</p>
+  </div>
+  <div class="foot"><span><b>Determine</b> · the glasses</span><span>3 / 8</span></div>
+</section>
+
+<!-- ===================== C · CUE LANGUAGE ===================== -->
+<section class="page">
+  <h2><span class="mark">C</span>A parking sensor that knows what it's beeping at.</h2>
+  <div class="row">
+    <div><h3>How close → tempo</h3><p>The car-sensor model everyone already knows. Never above 6 notes a second.<sup>3</sup></p></div>
+    <svg id="r-close" viewBox="0 0 780 92" role="img" aria-label="Far: one beep pair per second at 60 bpm. Mid: 2.5 per second at 150 bpm. Near: 5 per second at 300 bpm with an urgent motif, a haptic buzz and up to 6 decibels more, within the ceiling."></svg>
+  </div>
+  <div class="row">
+    <div><h3>Where → which ear</h3><p>Left staff plays the left ear, right staff the right. The matching temple buzzes too.</p></div>
+    <svg id="r-where" viewBox="0 0 780 104" role="img" aria-label="Left: notes on the blue left staff only. Centre: notes on both staves, overprinted violet. Right: notes on the red right staff only."></svg>
+  </div>
+  <div class="row">
+    <div><h3>What → timbre</h3><p>Timbre and rhythm are the strongest cues for telling sounds apart.<sup>3</sup></p></div>
+    <svg id="r-what" viewBox="0 0 780 92" role="img" aria-label="Obstacle: a wood-block double. Person: a two-tone marimba rising. System off: three descending notes repeated every 5 seconds. Ready: one soft tick, once."></svg>
+  </div>
+  <div class="row">
+    <div><h3>Words → optional</h3><p>Sped-up spoken words (spearcons) after the beep, never instead of it.<sup>4</sup></p></div>
+    <div class="words"><span class="q L">left</span><span class="q">door</span><span class="q">person</span><span class="q R">right</span><span class="q">11 o'clock, 2 metres</span></div>
+  </div>
+  <div class="silence">
+    <svg viewBox="0 0 96 110" width="96" height="110" aria-hidden="true"><text x="48" y="86" text-anchor="middle" class="m" font-size="104" fill="#131316">&#x1D13D;</text></svg>
+    <p class="big">There is no all-clear sound. Silence is a rest, not the end of the piece.</p>
+    <p>Silence would mean “nothing to report from a working system”, never “path clear”. If the camera, distance grid or either board's link fails, the design targets a descending <b>system off</b> motif within one second, repeated until recovery. If both boards lose power, the dead glasses cannot beep: the phone must speak or vibrate the failure instead. Timing and audibility are untested. Tempo, motif and haptics carry urgency too.</p>
+  </div>
+  <div class="foot"><span><b>Determine</b> · the cue language</span><span>4 / 8</span></div>
+</section>
+
+<!-- ===================== D · CALIBRATION ===================== -->
+<section class="page">
+  <h2><span class="mark">D</span>Equally loud in both ears, even when one is weaker.</h2>
+  <div class="d-grid">
+    <div>
+      <svg id="balance" viewBox="0 0 455 340" role="img" aria-label="Illustrative loudness match. At 500 hertz, 1 kilohertz and 2 kilohertz, the weaker left ear needs a higher level than the right. Each side is set 15 decibels above its own threshold so both feel equally loud. Every level stays below a hard ceiling."></svg>
+      <p class="small">Uses the audiology convention (<b class="L">X</b> left, <b class="R">O</b> right) but it is not a hearing test and never shows results as one. Values are illustrative.</p>
+    </div>
+    <div>
+      <p class="lede" style="font-size:21px">Two to three minutes at setup, a 20-second check each time you put them on.</p>
+      <ol class="steps">
+        <li><span><b>Fit</b>Seat the frame. The app notes which output is in use and which side feels weaker.</span></li>
+        <li><span><b>Find each side's quietest audible level</b>An adaptive staircase, tap “heard” or “not heard”, in the three bands the cues use.</span></li>
+        <li><span><b>Set the level</b>10–20 dB above that threshold, your choice, clamped to the ceiling.<sup>3</sup></span></li>
+        <li><span><b>Balance</b>The real obstacle cue alternates left and right. Nudge until both feel the same.</span></li>
+        <li><span><b>Verify</b>Name the side of five random cues. Four right keeps stereo; otherwise switch mode.</span></li>
+      </ol>
+    </div>
+  </div>
+  <div class="modes">
+    <div><h3><span class="chip"><i style="background:var(--L)"></i><i style="background:var(--R)"></i></span>Stereo</h3><p>Each ear gets its own calibrated level. Side is heard, and the matching temple confirms it.</p></div>
+    <div><h3><span class="chip"><i style="background:#7a3d9c"></i></span>One deaf ear</h3><p>Bone-conducted sound crosses the skull losing only about 0–10 dB,<sup>5</sup> so left/right audio can't carry direction. Audio goes the same to both sides; the temple buzz and words carry direction.</p></div>
+    <div><h3><span class="chip"><i style="background:var(--ink)"></i><i style="background:#fff;border:2px solid var(--ink)"></i></span>Haptic only</h3><p>For anyone who prefers it. No calibration step, slider or urgency boost ever passes the ceiling; if the weak side would need more, it's marked unusable.</p></div>
+  </div>
+  <div class="foot"><span><b>Determine</b> · calibration</span><span>5 / 8</span></div>
+</section>
+
+<!-- ===================== E · TWO LOOPS / ANNAPURNA ===================== -->
+<section class="page">
+  <h2><span class="mark">E</span>Two loops. One can't wait. One can think.</h2>
+  <p class="e-head">Warnings never touch the network. Scene description is a question Maya chooses to ask; the design target is AWS's Annapurna silicon: a Graviton API and a small vision-language model on Inferentia2. Trainium2 is the documented alternative if the Inf2 path fails.<sup>11,13–15</sup></p>
+  <div class="e-grid">
+    <div class="loop">
+      <h3>Reflex <span class="ill">phone · offline · always on</span></h3>
+      <svg id="reflex" viewBox="0 0 440 150" role="img" aria-label="Latency budget on a millisecond axis: sensing and JPEG on the two boards 55, two Wi-Fi streams 45, alignment and detection 80, cue and playback 40, against a 250 millisecond target that is unmeasured."></svg>
+      <p>Target ≤ 250 ms from capture to cue at the 95th percentile, shown live on the judges' screen. It's a goal until we measure it, and nothing is measured yet — the shared hotspot carrying two streams is the least certain part. At walking pace (1.4 m/s), 250 ms is about 35 cm, so warning distances budget for it.</p>
+      <p class="small">Three tiers of silicon, each placed by its latency, power and failure budget: two small ESP32-class boards on the glasses — a C3 for the distance grid, cues and haptics<sup>6</sup>, and a classic-ESP32 camera module for JPEG frames<sup>10</sup> — then the phone's processor for every decision, and Annapurna silicon for the one job that can wait seconds. No board on the face decides anything.</p>
+    </div>
+    <div class="loop">
+      <h3>Describe <span class="ill">on request · Annapurna silicon</span></h3>
+      <ol class="chain">
+        <li><b>Ask</b><span>Long-press: <span class="q">what's ahead?</span> Never automatic.</span></li>
+        <li><b>Redact</b><span>The phone would blur faces and sensitive details before upload; imperfect redaction is a privacy risk, so upload requires the user's choice.</span></li>
+        <li class="ann"><b>Graviton</b><span>A small arm64 Lambda API (Graviton2) would hold the prompt: two sentences, surroundings first, no guesses about people.<sup>17</sup></span></li>
+        <li class="ann"><b>Inferentia2</b><span>SmolVLM on one inf2.xlarge ($0.76/h) using Hugging Face Optimum Neuron. The model family is listed for Inf2; this deployment is still untested by us.<sup>14,15</sup></span></li>
+        <li><b>Speak</b><span>The phone would say <span class="q">may be wrong</span>, then read the result. Any mid- or near-range hazard interrupts it.</span></li>
+      </ol>
+      <p class="small" style="margin-top:6px">Kept short on purpose: trial participants preferred concise, precise output to generative description.<sup>1</sup> End-to-end time is unmeasured; we plan for seconds, not milliseconds.</p>
+    </div>
+  </div>
+  <div class="scene">
+    <div><h3>Maya asks</h3><p>“What's ahead?” The user, not the model, chooses when description is useful. A fast hazard beep would interrupt this answer.</p></div>
+    <div><blockquote>“May be wrong. A doorway is open on your right; a person is farther ahead near the wall.”</blockquote><span class="ill">Illustrative copy · not model output or a navigation instruction</span></div>
+    <p>Describe adds context after the urgent Reflex loop. It never reassures the user that an area is safe, and cloud failure never silences the local cue. Time to response is not measured.</p>
+  </div>
+  <div class="backends">
+    <div><b>Inferentia2 · target</b>SmolVLM via Hugging Face Optimum Neuron on inf2.xlarge. Supported model family, not a validated Determine deployment.<sup>14,15</sup></div>
+    <div><b>Trainium2 · alternative</b>AWS Neuron documents Qwen2-VL-7B on one chip; fit on a smaller trn2.3xlarge is untested.<sup>12,13,16</sup></div>
+    <div><b>Bedrock · fallback</b>Nova Lite can handle images, but Bedrock does not guarantee the silicon. New accounts start with Inf/Trn quota 0.<sup>18,19</sup></div>
+  </div>
+  <p class="small" style="margin-top:7px">Request accelerator access now; approval is not guaranteed. Compile and integrate the model at HackTX under its all-work-at-the-event rule.<sup>20</sup></p>
+  <div class="foot"><span><b>Determine</b> · Reflex and Describe</span><span>6 / 8</span></div>
+</section>
+
+<!-- ===================== F · DEMO + COST ===================== -->
+<section class="page">
+  <h2><span class="mark">F</span>Three minutes, one course, one pulled plug.</h2>
+  <div class="f-grid">
+    <svg id="demo" viewBox="0 0 520 470" role="img" aria-label="Three-minute demo timeline: hook, live course, calibration, pulled plug, scene description, close."></svg>
+    <div>
+      <h3 style="font-size:19px">The parts, priced only where provable</h3>
+      <ol class="parts">
+        <li><b><a href="https://www.microcenter.com/product/713924/seeed-studio-xiao-esp32-c3-(3-pack)">C3 · 3-pack</a></b><span>One on the glasses, two spare. Wi-Fi client, one hardware I2C bus, 400 KB SRAM.<sup>6</sup> Micro Center price and local stock unverified.</span></li>
+        <li><b><a href="https://www.microcenter.com/product/632692/inland-esp32-cam-wifi-bluetooth-camera-modules-pair">ESP32-CAM</a></b><span>Candidate, not yet bought: classic-ESP32 camera module, its own hotspot client, JPEG frames. OV2640 sensor and PSRAM are checked on the actual item before we rely on them.<sup>10</sup></span></li>
+        <li><b>ToF grid</b><span>VL53L5CX 8×8 time-of-flight imager — $25.95 and listed in stock at SparkFun when rechecked 18 Oct.<sup>7</sup></span></li>
+        <li><b>Cues + haptics</b><span>Bone transducers, I2S amps and haptic motors. Adafruit's bone transducer was out of stock when checked 18 Oct; find a suitable substitute.<sup>8</sup></span></li>
+        <li><b>Power + frame</b><span>Power bank with two outputs, two cables, the frame — picked at build, checked on the items.</span></li>
+      </ol>
+      <p class="small">No total on purpose: Micro Center's pages for both boards returned HTTP 403 from research on 18 Oct, so price and local availability are unverified — a parts total, and any comparison, waits until confirmed in store. The C3 3-pack is the chosen buy; the ESP32-CAM is a candidate. The old single-board total is withdrawn with the board.</p>
+      <h3 style="font-size:19px;margin-top:14px">Built at HackTX, by four people</h3>
+      <p class="small" style="color:var(--ink)">The official rule: “All work must be done at the event.”<sup>20</sup> Parts are bought ahead; firmware, app and frame are built on site.</p>
+      <div class="team">
+        <div><b>Glasses firmware</b>Two boards: C3 runs grid, cues, haptics; candidate ESP32-CAM streams JPEG</div>
+        <div><b>Phone perception</b>Stream alignment, detector, hazard rules, judge screen</div>
+        <div><b>Sound and calibration</b>Cue bank, balance flow, one-ear mode</div>
+        <div><b>Describe and demo</b>Graviton API, Neuron model, the pitch</div>
+      </div>
+    </div>
+  </div>
+  <p class="small" style="margin-top:14px">Demo branches: if accelerator access fails, skip the scene answer and show the offline warning loop. If the camera module cannot stream, use the phone camera on a headband as a labelled software fallback — not the proposed glasses. No prerecorded result or fabricated latency; sponsor integration is a goal, not a claim.</p>
+  <div class="foot"><span><b>Determine</b> · demo and cost</span><span>7 / 8</span></div>
+</section>
+
+<!-- ===================== G · LIMITS + SOURCES ===================== -->
+<section class="page">
+  <h2><span class="mark">G</span>What it can't see, said out loud.</h2>
+  <div class="g-grid">
+    <div>
+      <ul class="cant">
+        <li>Glass doors and windows <span>light passes through</span></li>
+        <li>Thin wires and ropes <span>too small for 8×8</span></li>
+        <li>Drop-offs, curbs, stairs going down <span>the cane's job</span></li>
+        <li>Anything outside the forward view <span>63° field</span></li>
+        <li>Fast-moving vehicles <span>not a traffic aid</span></li>
+        <li>Glare, darkness, rain and fog <span>degrades, announced</span></li>
+        <li>Anything beyond about 3 m <span>by design</span></li>
+      </ul>
+      <p class="small" style="margin-top:8px">Spoken to every new user during setup. Demos run on a staged indoor course with a sighted spotter.</p>
+    </div>
+    <div>
+      <ul class="rules">
+        <li><b>Fail loud.</b>Design target: announce “system off” within one second through a working output, including the phone if the frame loses power. Never call silence a clear path. Not yet tested.</li>
+        <li><b>Unknown is not clear.</b>No detections never produces a reassuring sound.</li>
+        <li><b>The cane stays.</b>Determine is a secondary aid, on top of a cane or guide dog.</li>
+        <li><b>Claim only what we measured.</b>Every threshold and latency here is a target until tested with blind and low-vision people, with an orientation and mobility specialist.</li>
+      </ul>
+      <h3 style="margin-top:12px;font-size:13px">Sources (24 Oct 2026; hardware 6–8, 10 checked 18 Oct)</h3>
+      <ol class="sources">
+        <li><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC12909938/">Pittet et al.</a>, secondary travel-aid trial, 2026</li>
+        <li><a href="https://users.soe.ucsc.edu/~manduchi/papers/MobilityAccidents.pdf">Manduchi &amp; Kurniawan</a>, mobility accidents, 2011</li>
+        <li><a href="https://www.dcs.gla.ac.uk/~stephen/papers/HCI95.pdf">Brewster et al.</a>, earcon guidelines, 1995</li>
+        <li><a href="https://pubmed.ncbi.nlm.nih.gov/23516800/">Walker et al.</a>, spearcons, 2013</li>
+        <li><a href="https://pubmed.ncbi.nlm.nih.gov/22193619/">Stenfelt</a>, sound crossing the skull, 2012</li>
+        <li><a href="https://wiki.seeedstudio.com/XIAO_ESP32C3_Getting_Started/">Seeed</a>, XIAO ESP32-C3 wiki: 400 KB SRAM, one I2C; <a href="https://documentation.espressif.com/esp32-c3_datasheet_en.pdf">Espressif</a>, I2S</li>
+        <li><a href="https://www.sparkfun.com/sparkfun-qwiic-mini-tof-imager-vl53l5cx.html">SparkFun</a>, VL53L5CX ToF, $25.95</li>
+        <li>Adafruit: <a href="https://www.adafruit.com/product/1674">bone</a>, <a href="https://www.adafruit.com/product/3006">amp</a>, <a href="https://www.adafruit.com/product/2305">haptic driver</a>, <a href="https://www.adafruit.com/product/1201">motor</a></li>
+        <li><a href="https://developers.meta.com/wearables/faq/">Meta</a>, Wearables DAT and Mock Device Kit</li>
+        <li><a href="https://github.com/espressif/esp32-camera">Espressif</a>, esp32-camera driver: ESP32/S2/S3; PSRAM above-CIF JPEG</li>
+        <li><a href="https://www.aboutamazon.com/news/aws/take-a-look-inside-the-lab-where-aws-makes-custom-chips">About Amazon</a>, Annapurna Labs</li>
+        <li><a href="https://awsdocs-neuron.readthedocs-hosted.com/en/latest/release-notes/components/nxd-inference.html">AWS Neuron</a>, NxD release notes, Trn2+</li>
+        <li><a href="https://awsdocs-neuron.readthedocs-hosted.com/en/latest/libraries/nxd-inference/tutorials/qwen2-vl-tutorial.html">AWS Neuron</a>, Qwen2-VL tutorial</li>
+        <li><a href="https://huggingface.co/docs/optimum-neuron/en/supported_architectures">Hugging Face</a>, Optimum Neuron models</li>
+        <li><a href="https://aws.amazon.com/ec2/instance-types/inf2/">AWS</a>, EC2 Inf2 instances</li>
+        <li><a href="https://aws.amazon.com/ec2/instance-types/trn2/">AWS</a>, EC2 Trn2 instances</li>
+        <li><a href="https://docs.aws.amazon.com/lambda/latest/dg/foundation-arch.html">AWS</a>, Lambda arm64 / Graviton2</li>
+        <li><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-lite.html">AWS</a>, Bedrock Nova Lite model card</li>
+        <li><a href="https://docs.aws.amazon.com/ec2/latest/instancetypes/ec2-instance-quotas.html">AWS</a>, EC2 accelerator quotas</li>
+        <li><a href="https://hacktx.com/">Freetail Hackers</a>, HackTX 26 FAQ</li>
+      </ol>
+    </div>
+  </div>
+  <div class="foot"><span><b>Determine</b> · limits and sources</span><span>8 / 8</span></div>
+</section>
+
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+const C = { ink:'#131316', muted:'#4a4d55', hair:'#c9cbd1', L:'#1d4ed8', R:'#cf1f2a', Lt:'#a9c0ff', Rt:'#ffa9ad', hz:'#ffd000', violet:'#7a3d9c' };
+function el(p, tag, a = {}, text) {
+  const n = document.createElementNS(NS, tag);
+  for (const k in a) n.setAttribute(k, a[k]);
+  if (text !== undefined) n.textContent = text;
+  p.appendChild(n); return n;
+}
+// five-line staff, top line at y
+function staff(g, x1, x2, y, color, gap = 8, w = 1.1) {
+  for (let i = 0; i < 5; i++) el(g, 'line', { x1, x2, y1: y + i * gap, y2: y + i * gap, stroke: color, 'stroke-width': w });
+}
+// beamed note group; mid = y of middle line; pitch offsets in staff steps (half-gaps, negative = up)
+function notes(g, x, mid, pitches, color, o = {}) {
+  const gap = o.gap || 8, dx = o.dx || 13, stem = o.stem || 27, rx = o.rx || 5.4, ry = o.ry || 3.9;
+  const tops = [];
+  pitches.forEach((p, i) => {
+    const cx = x + i * dx, cy = mid + p * gap / 2;
+    el(g, 'ellipse', { cx, cy, rx, ry, fill: color, transform: `rotate(-22 ${cx} ${cy})` });
+    const sx = cx + rx - 0.6; tops.push([sx, cy - stem]);
+    el(g, 'line', { x1: sx, x2: sx, y1: cy - 1, y2: cy - stem, stroke: color, 'stroke-width': 1.5 });
+  });
+  if (tops.length > 1) {
+    const [a, b] = [tops[0], tops[tops.length - 1]], t = o.beam || 4.5;
+    el(g, 'polygon', { points: `${a[0] - .75},${a[1]} ${b[0] + .75},${b[1]} ${b[0] + .75},${b[1] + t} ${a[0] - .75},${a[1] + t}`, fill: color });
+  }
+}
+function rest(g, x, mid, color, size = 30) {
+  el(g, 'text', { x, y: mid + size * 0.32, class: 'm', 'font-size': size, fill: color, 'text-anchor': 'middle' }, '\u{1D13D}');
+}
+function bar(g, x, y1, y2, w = 1.4, color = C.ink) { el(g, 'line', { x1: x, x2: x, y1, y2, stroke: color, 'stroke-width': w }); }
+function label(g, x, y, t, a = {}) { return el(g, 'text', Object.assign({ x, y, 'font-size': 12, fill: C.ink }, a), t); }
+function repeatEnd(g, x, top1, top2, gap = 10) {
+  [top1, top2].forEach(t => { el(g, 'circle', { cx: x - 12, cy: t + gap * 1.5, r: 2.4, fill: C.ink }); el(g, 'circle', { cx: x - 12, cy: t + gap * 2.5, r: 2.4, fill: C.ink }); });
+  bar(g, x - 4, top1, top2 + gap * 4, 1.4); bar(g, x + 2, top1, top2 + gap * 4, 4.5);
+}
+
+/* ---------- cover score ---------- */
+(() => {
+  const s = document.getElementById('cover-score');
+  const gap = 10, Ltop = 62, Rtop = 172, Lmid = Ltop + 2 * gap, Rmid = Rtop + 2 * gap;
+  const x0 = 96, b1 = 380, b2 = 650, b3 = 862, xe = 1000;
+  el(s, 'rect', { x: b2 + 1, y: 10, width: b3 - b2 - 2, height: 252, fill: C.hz });
+  staff(s, x0, xe, Ltop, C.L, gap, 1.3); staff(s, x0, xe, Rtop, C.R, gap, 1.3);
+  el(s, 'rect', { x: x0 - 8, y: Ltop, width: 5, height: Rtop + 4 * gap - Ltop, fill: C.ink });
+  [[Ltop, 'L', C.L], [Rtop, 'R', C.R]].forEach(([t, n, c]) => {
+    el(s, 'rect', { x: 40, y: t + 4, width: 32, height: 32, fill: 'none', stroke: c, 'stroke-width': 2.6 });
+    label(s, 56, t + 28, n, { 'font-size': 21, 'font-weight': 800, fill: c, 'text-anchor': 'middle' });
+  });
+  [b1, b2, b3].forEach(x => bar(s, x, Ltop, Rtop + 4 * gap, 1.5));
+  repeatEnd(s, xe, Ltop, Rtop, gap);
+  const tempo = (x, name, bpm) => { const t = label(s, x, 42, '', { 'font-size': 15, 'font-weight': 800 }); t.innerHTML = `${name}<tspan font-weight="400" dx="8">\u2669 = ${bpm}</tspan>`; };
+  tempo(x0 + 8, 'FAR', 60); tempo(b1 + 14, 'MID', 150); tempo(b2 + 14, 'NEAR', 300);
+  label(s, b3 + 14, 42, 'rest', { 'font-size': 15, 'font-style': 'italic' });
+  const o = { gap, dx: 15, stem: 32, rx: 6.4, ry: 4.6, beam: 5.5 };
+  [150, 285].forEach(x => notes(s, x, Rmid, [0, 0], C.R, o));
+  [190, 325].forEach(x => rest(s, x, Lmid, C.L, 36));
+  [408, 468, 528, 588].forEach(x => notes(s, x, Rmid, [0, 0], C.R, o));
+  [450, 570].forEach(x => rest(s, x, Lmid, C.L, 36));
+  [668, 716, 764, 812].forEach(x => { notes(s, x, Rmid, [0, 0, 0], C.R, Object.assign({}, o, { dx: 12 })); notes(s, x, Lmid, [0, 0, 0], C.L, Object.assign({}, o, { dx: 12 })); });
+  [900, 952].forEach(x => { rest(s, x, Lmid, C.L, 36); rest(s, x, Rmid, C.R, 36); });
+  // distance ruler
+  const ry = 250;
+  el(s, 'line', { x1: x0, x2: b3, y1: ry, y2: ry, stroke: C.ink, 'stroke-width': 1.2 });
+  [[x0, '3 m'], [b1, '2 m'], [b2, '1 m'], [b3, 'passed']].forEach(([x, t]) => { bar(s, x, ry - 5, ry + 5, 1.2); label(s, x + 5, ry + 18, t, { class: 'mn', 'font-size': 12 }); });
+  label(s, b2 + 12, 150, 'centre: both ears, both temples', { 'font-size': 12.5, 'font-weight': 800 });
+  label(s, b3 + 12, 150, 'nothing to report.', { 'font-size': 12.5, 'font-weight': 800 });
+  label(s, b3 + 12, 165, 'never “all clear”', { 'font-size': 12.5 });
+  label(s, x0 + 8, 150, 'obstacle on your right: right ear, right temple', { 'font-size': 12.5, fill: C.R, 'font-weight': 700 });
+})();
+
+/* ---------- elevation ---------- */
+(() => {
+  const s = document.getElementById('elevation');
+  const gx = 70, gy = 262, ppm = 112; // px per metre
+  const Y = h => gy - h * ppm / 1.0 * 0.9, X = d => gx + d * ppm;
+  // Determine wedge from eye height 1.6 m, ±22° vertical, out to 3 m
+  const eh = 1.6, half = 22 * Math.PI / 180, R = 3.05;
+  const up = [X(R), Y(eh + Math.tan(half) * R)], dn = [X(R), Y(eh - Math.tan(half) * R)];
+  el(s, 'polygon', { points: `${X(0)},${Y(eh)} ${up[0]},${Math.max(up[1], 8)} ${dn[0]},${dn[1]}`, fill: C.hz });
+  // cane sweep
+  el(s, 'polygon', { points: `${X(0.05)},${Y(0.85)} ${X(1.05)},${gy} ${X(0.05)},${gy}`, fill: C.hair });
+  el(s, 'line', { x1: X(0.05), y1: Y(0.85), x2: X(1.05), y2: gy, stroke: C.ink, 'stroke-width': 2.4 });
+  // ground + axes
+  el(s, 'line', { x1: 20, x2: 460, y1: gy, y2: gy, stroke: C.ink, 'stroke-width': 2 });
+  bar(s, gx, gy, Y(2.2), 1.2);
+  [0.5, 1, 1.5, 2].forEach(h => { el(s, 'line', { x1: gx - 5, x2: gx, y1: Y(h), y2: Y(h), stroke: C.ink }); label(s, gx - 9, Y(h) + 4, `${h} m`, { class: 'mn', 'font-size': 10.5, 'text-anchor': 'end' }); });
+  [1, 2, 3].forEach(d => { el(s, 'line', { x1: X(d), x2: X(d), y1: gy, y2: gy + 5, stroke: C.ink }); label(s, X(d), gy + 18, `${d} m`, { class: 'mn', 'font-size': 10.5, 'text-anchor': 'middle' }); });
+  // glasses point
+  el(s, 'circle', { cx: X(0), cy: Y(eh), r: 6, fill: C.ink });
+  label(s, X(0) + 10, Y(eh) - 10, 'glasses, eye height', { 'font-size': 11.5, 'font-weight': 700 });
+  // branch
+  el(s, 'rect', { x: X(2.0), y: Y(1.72), width: 120, height: 7, fill: C.ink });
+  label(s, X(2.0) + 4, Y(1.72) - 8, 'branch at 1.7 m', { 'font-size': 11.5, 'font-weight': 700 });
+  label(s, X(1.25), Y(1.18), 'Determine: chest to head,', { 'font-size': 13, 'font-weight': 800 });
+  label(s, X(1.25), Y(1.18) + 16, 'out to about 3 m', { 'font-size': 13, 'font-weight': 800 });
+  label(s, X(0.18), gy - 12, 'cane: the ground, ~1 m', { 'font-size': 11.5, 'font-weight': 700 });
+})();
+
+/* ---------- glasses ---------- */
+(() => {
+  const s = document.getElementById('glasses');
+  const g = el(s, 'g', { transform: 'translate(130 70)' });
+  // temples (stylised, seen from front as stubs) and frame
+  el(g, 'path', { d: 'M20 60 Q20 18 82 18 L268 18 Q312 18 318 52 Q350 40 382 52 Q388 18 432 18 L618 18 Q680 18 680 60 L680 96 Q680 140 626 140 L452 140 Q398 140 386 92 Q350 78 314 92 Q302 140 248 140 L74 140 Q20 140 20 96 Z', fill: '#f2f3f5', stroke: C.ink, 'stroke-width': 3.2, 'stroke-linejoin': 'round' });
+  el(g, 'rect', { x: -28, y: 30, width: 50, height: 16, fill: C.ink });
+  el(g, 'rect', { x: 678, y: 30, width: 50, height: 16, fill: C.ink });
+  // C3 + ToF at bridge
+  el(g, 'rect', { x: 322, y: -16, width: 56, height: 34, rx: 3, fill: C.ink });
+  el(g, 'rect', { x: 330, y: -8, width: 15, height: 15, fill: C.hz });
+  el(g, 'rect', { x: 353, y: -5, width: 12, height: 12, rx: 2, fill: 'none', stroke: '#f2f3f5', 'stroke-width': 2 });
+  // separate ESP32-CAM module (candidate) on the brow, over the right lens
+  el(g, 'rect', { x: 496, y: -18, width: 52, height: 34, rx: 3, fill: '#f2f3f5', stroke: C.ink, 'stroke-width': 2.6 });
+  el(g, 'circle', { cx: 522, cy: -1, r: 9, fill: '#fff', stroke: C.ink, 'stroke-width': 2.6 });
+  el(g, 'circle', { cx: 522, cy: -1, r: 4, fill: C.ink });
+  // L/R bone transducers and haptics on temples
+  el(g, 'rect', { x: -40, y: 54, width: 24, height: 38, rx: 6, fill: C.L });
+  el(g, 'circle', { cx: 4, cy: 74, r: 9, fill: 'none', stroke: C.L, 'stroke-width': 3.5 });
+  el(g, 'rect', { x: 716, y: 54, width: 24, height: 38, rx: 6, fill: C.R });
+  el(g, 'circle', { cx: 696, cy: 74, r: 9, fill: 'none', stroke: C.R, 'stroke-width': 3.5 });
+  // two cables to one power bank
+  el(g, 'path', { d: 'M726 40 C798 58 806 158 788 234', fill: 'none', stroke: C.ink, 'stroke-width': 2.2, 'stroke-dasharray': '6 5' });
+  el(g, 'path', { d: 'M736 54 C772 88 756 168 738 230', fill: 'none', stroke: C.ink, 'stroke-width': 2.2, 'stroke-dasharray': '6 5' });
+  // callouts (absolute coords in svg)
+  const call = (x1, y1, x2, y2, lines, anchor = 'start', color = C.ink) => {
+    el(s, 'line', { x1, y1, x2, y2, stroke: color, 'stroke-width': 1.3 });
+    const tx = anchor === 'end' ? x2 - 6 : x2 + 6;
+    lines.forEach((t, i) => label(s, tx, y2 + 4 + i * 15, t, { 'font-size': i ? 11.5 : 13.5, 'font-weight': i ? 400 : 800, fill: i ? C.muted : color, 'text-anchor': anchor }));
+  };
+  call(476, 60, 268, 24, ['Cue board · XIAO ESP32-C3', 'VL53L5CX 8×8 grid on I2C', 'I2S stereo cues · two haptics'], 'end');
+  call(652, 56, 716, 20, ['ESP32-CAM camera · candidate', 'JPEG frames over Wi-Fi', 'OV2640 + PSRAM: check the item']);
+  call(102, 144, 40, 208, ['Left bone transducer', 'plays the left ear'], 'start', C.L);
+  call(134, 144, 132, 262, ['Left haptic motor', 'buzzes for left-side hazards'], 'start', C.L);
+  call(858, 144, 850, 208, ['Right bone transducer', 'plays the right ear'], 'end', C.R);
+  call(826, 144, 700, 262, ['Right haptic motor', 'buzzes for right-side hazards'], 'end', C.R);
+  label(s, 905, 318, 'two cables to a pocket power bank', { 'font-size': 11.5, fill: C.muted, 'text-anchor': 'end' });
+  label(s, 480, 318, 'Clear or tinted lenses: sensors sit on the frame front, so tint changes nothing.', { 'font-size': 11.5, fill: C.muted, 'text-anchor': 'middle' });
+})();
+
+/* ---------- C rows ---------- */
+(() => {
+  const s = document.getElementById('r-close');
+  const top = 36, gap = 8, mid = top + 2 * gap;
+  el(s, 'rect', { x: 532, y: 2, width: 246, height: 90, fill: C.hz });
+  staff(s, 4, 776, top, C.ink, gap);
+  [230, 532].forEach(x => bar(s, x, top, top + 4 * gap));
+  const head = (x, a, b) => { const t = label(s, x, 16, '', { 'font-size': 12.5, 'font-weight': 800 }); t.innerHTML = `${a}<tspan font-weight="400" dx="6">${b}</tspan>`; };
+  head(10, 'FAR', 'under 3 m · 1/s · \u2669 = 60'); head(242, 'MID', 'under 2 m · 2.5/s · \u2669 = 150'); head(544, 'NEAR', 'under 1 m · 5/s · \u2669 = 300');
+  [44, 150].forEach(x => notes(s, x, mid, [0, 0], C.ink));
+  [256, 310, 364, 418, 472].forEach(x => notes(s, x, mid, [0, 0], C.ink));
+  [550, 594, 638, 682, 726].forEach(x => notes(s, x, mid, [0, 0, 0], C.ink, { dx: 11 }));
+  // haptic buzz + dynamic within ceiling
+  el(s, 'rect', { x: 550, y: 77, width: 70, height: 6, fill: C.ink });
+  label(s, 626, 84, 'buzz 150 ms · +6 dB, under ceiling', { 'font-size': 10.5, 'font-weight': 700 });
+})();
+(() => {
+  const s = document.getElementById('r-where');
+  const gap = 7, Lt = 18, Rt = 66;
+  const block = (x0, w, mode, title) => {
+    const g = el(s, 'g');
+    if (mode === 'C') {
+      el(g, 'rect', { x: x0, y: Lt - 6, width: w, height: 62, fill: C.Lt, style: 'mix-blend-mode:multiply' });
+      el(g, 'rect', { x: x0, y: 38, width: w, height: 64, fill: C.Rt, style: 'mix-blend-mode:multiply' });
+    }
+    staff(g, x0, x0 + w, Lt, C.L, gap); staff(g, x0, x0 + w, Rt, C.R, gap);
+    el(g, 'rect', { x: x0 - 4, y: Lt, width: 3, height: Rt + 4 * gap - Lt, fill: C.ink });
+    const Lm = Lt + 2 * gap, Rm = Rt + 2 * gap, o = { gap, stem: 22, dx: 11, rx: 4.8, ry: 3.4, beam: 4 };
+    [x0 + 22, x0 + 74, x0 + 126].forEach(x => {
+      if (mode !== 'R') notes(g, x, Lm, [0, 0], C.L, o); else rest(g, x + 6, Lm, C.L, 26);
+      if (mode !== 'L') notes(g, x, Rm, [0, 0], C.R, o); else rest(g, x + 6, Rm, C.R, 26);
+    });
+    label(g, x0 + w + 12, 52, title[0], { 'font-size': 13.5, 'font-weight': 800 });
+    label(g, x0 + w + 12, 68, title[1], { 'font-size': 11, fill: C.muted });
+  };
+  block(6, 160, 'L', ['Left', 'left ear + left temple']);
+  block(280, 160, 'C', ['Centre', 'both ears + both temples']);
+  block(554, 160, 'R', ['Right', 'right ear + right temple']);
+})();
+(() => {
+  const s = document.getElementById('r-what');
+  const top = 34, gap = 8, mid = top + 2 * gap;
+  staff(s, 4, 776, top, C.ink, gap);
+  [196, 392, 620].forEach(x => bar(s, x, top, top + 4 * gap));
+  const head = (x, a, b) => { label(s, x, 14, a, { 'font-size': 12.5, 'font-weight': 800 }); label(s, x, 88, b, { 'font-size': 10.5, fill: C.muted }); };
+  head(12, 'Obstacle', 'wood-block double'); head(208, 'Person', 'two-tone marimba, rising');
+  head(404, 'System off', 'descending three, every 5 s until fixed'); head(632, 'Ready', 'one soft tick, once');
+  [40, 112].forEach(x => notes(s, x, mid, [0, 0], C.ink));
+  [236, 308].forEach(x => notes(s, x, mid, [1, -2], C.ink, { dx: 16 }));
+  notes(s, 440, mid, [-4, -1, 2], C.ink, { dx: 22 });
+  rest(s, 530, mid, C.ink, 26);
+  notes(s, 560, mid, [-4, -1, 2], C.ink, { dx: 22 });
+  notes(s, 660, mid, [-1], C.ink);
+  [705, 745].forEach(x => rest(s, x, mid, C.ink, 26));
+})();
+
+/* ---------- D balance chart ---------- */
+(() => {
+  const s = document.getElementById('balance');
+  const x0 = 58, y0 = 290, h = 250, max = 70, Y = d => y0 - d / max * h;
+  const ceil = 65;
+  // grid
+  [0, 20, 40, 60].forEach(d => { el(s, 'line', { x1: x0, x2: 440, y1: Y(d), y2: Y(d), stroke: C.hair }); label(s, x0 - 8, Y(d) + 4, `${d}`, { class: 'mn', 'font-size': 10.5, 'text-anchor': 'end' }); });
+  label(s, 14, Y(70) + 4, 'dB', { class: 'mn', 'font-size': 10.5 });
+  el(s, 'line', { x1: x0, x2: 440, y1: y0, y2: y0, stroke: C.ink, 'stroke-width': 1.6 });
+  // ceiling
+  el(s, 'rect', { x: x0, y: Y(ceil) - 3, width: 382, height: 6, fill: C.hz });
+  el(s, 'line', { x1: x0, x2: 440, y1: Y(ceil), y2: Y(ceil), stroke: C.ink, 'stroke-width': 1.6 });
+  label(s, 440, Y(ceil) - 9, 'ceiling: never exceeded', { 'font-size': 12, 'font-weight': 800, 'text-anchor': 'end' });
+  const bands = [['500 Hz', 36, 15], ['1 kHz', 41, 20], ['2 kHz', 48, 20]]; // [label, L thr, R thr]
+  const sl = 15;
+  bands.forEach(([n, lt, rt], i) => {
+    const cx = x0 + 70 + i * 122;
+    // presentation bars (threshold -> threshold+sl)
+    el(s, 'rect', { x: cx - 30, y: Y(lt + sl), width: 26, height: Y(lt) - Y(lt + sl), fill: C.Lt });
+    el(s, 'rect', { x: cx + 4, y: Y(rt + sl), width: 26, height: Y(rt) - Y(rt + sl), fill: C.Rt });
+    el(s, 'rect', { x: cx - 30, y: Y(lt + sl) - 2, width: 26, height: 4, fill: C.L });
+    el(s, 'rect', { x: cx + 4, y: Y(rt + sl) - 2, width: 26, height: 4, fill: C.R });
+    // threshold markers
+    label(s, cx - 17, Y(lt) + 6, 'X', { 'font-size': 17, 'font-weight': 800, fill: C.L, 'text-anchor': 'middle' });
+    el(s, 'circle', { cx: cx + 17, cy: Y(rt), r: 6.5, fill: 'none', stroke: C.R, 'stroke-width': 2.6 });
+    label(s, cx, y0 + 18, n, { class: 'mn', 'font-size': 11, 'text-anchor': 'middle' });
+  });
+  label(s, x0 + 4, 26, 'Quietest level each ear hears (', { 'font-size': 11.5, fill: C.muted }).innerHTML = 'Quietest level heard: <tspan fill="#1d4ed8" font-weight="800">X</tspan> left, <tspan fill="#cf1f2a" font-weight="800">O</tspan> right. Bar: +15 dB, the cue level.';
+  label(s, x0, 334, 'Weaker left ear → higher left level → equal loudness.', { 'font-size': 12, 'font-weight': 800 });
+})();
+
+/* ---------- E reflex budget ---------- */
+(() => {
+  const s = document.getElementById('reflex');
+  const x0 = 6, w = 428, ms = 250, X = t => x0 + t / ms * w;
+  const segs = [[55, 'sense + JPEG', 'two boards'], [45, 'Wi-Fi ×2', 'hotspot'], [80, 'align + detect', 'phone'], [40, 'cue + play', 'glasses']];
+  let t = 0;
+  segs.forEach(([d, n, where], i) => {
+    const fill = i % 2 ? '#e6e7ea' : '#ffffff';
+    el(s, 'rect', { x: X(t), y: 28, width: X(t + d) - X(t), height: 40, fill, stroke: C.ink, 'stroke-width': 1.6 });
+    label(s, X(t) + 6, 46, n, { 'font-size': 11.5, 'font-weight': 800 });
+    label(s, X(t) + 6, 61, `${d} ms`, { class: 'mn', 'font-size': 10.5 });
+    label(s, X(t) + 6, 20, where, { 'font-size': 10.5, fill: C.muted });
+    t += d;
+  });
+  el(s, 'line', { x1: x0, x2: x0 + w, y1: 92, y2: 92, stroke: C.ink, 'stroke-width': 1.2 });
+  [0, 50, 100, 150, 200, 250].forEach(v => { bar(s, X(v), 88, 96, 1.2); label(s, X(v), 110, `${v}`, { class: 'mn', 'font-size': 10, 'text-anchor': v === 250 ? 'end' : v === 0 ? 'start' : 'middle' }); });
+  el(s, 'rect', { x: X(0), y: 122, width: w, height: 22, fill: C.hz });
+  label(s, X(0) + 8, 138, '≤ 250 ms target, 95th percentile · ≈ 35 cm of walking', { 'font-size': 12.5, 'font-weight': 800 });
+})();
+
+/* ---------- F demo timeline ---------- */
+(() => {
+  const s = document.getElementById('demo');
+  const x0 = 64, y0 = 14, H = 440, T = 180, Y = t => y0 + t / T * H;
+  const items = [
+    [0, 20, 'Hook', 'The parking-sensor line, moved from the bumper to the brow.'],
+    [20, 75, 'Live course', 'A spotter walks the wearer past a head-height foam bar, a person, then a left and a right obstacle. The judges’ screen shows both streams’ age, the 8×8 grid, the chosen cue and measured latency.'],
+    [95, 30, 'One-ear mode', 'Switch to a single-sided profile: audio goes mono, the temples carry direction.'],
+    [125, 20, 'Pull the plug', 'Unplug the camera board. “System off” plays; reconnect and wait for ready. Never silence.'],
+    [145, 20, 'Ask', 'After recovery, “What’s ahead?” If cloud is ready, send a redacted frame for a two-sentence description.'],
+    [165, 15, 'Close', 'What we measured, what it can’t see, what’s next.']
+  ];
+  el(s, 'line', { x1: x0, x2: x0, y1: y0, y2: y0 + H, stroke: C.ink, 'stroke-width': 2 });
+  items.forEach(([t, d, n, desc], i) => {
+    const y1 = Y(t), y2 = Y(t + d);
+    el(s, 'rect', { x: x0 - 7, y: y1 + 1.5, width: 14, height: y2 - y1 - 3, fill: n === 'Ask' ? C.hz : n === 'Pull the plug' ? C.ink : i % 2 ? '#e6e7ea' : '#ffffff', stroke: C.ink, 'stroke-width': 1.4 });
+    const m = Math.floor(t / 60), sec = String(t % 60).padStart(2, '0');
+    label(s, x0 - 14, y1 + 12, `${m}:${sec}`, { class: 'mn', 'font-size': 11, 'text-anchor': 'end' });
+    label(s, x0 + 20, y1 + 14, n, { 'font-size': 15, 'font-weight': 800 });
+    label(s, x0 + 20 + n.length * 8.6 + 8, y1 + 14, `${d} s`, { class: 'mn', 'font-size': 10.5, fill: C.muted });
+    // wrap description
+    const words = desc.split(' '); let line = '', ly = y1 + 31, max = 56;
+    words.forEach(wd => { if ((line + ' ' + wd).trim().length > max) { label(s, x0 + 20, ly, line.trim(), { 'font-size': 12, fill: C.ink }); ly += 15; line = wd; } else line += ' ' + wd; });
+    if (line.trim()) label(s, x0 + 20, ly, line.trim(), { 'font-size': 12, fill: C.ink });
+  });
+  label(s, x0 - 14, Y(180) + 4, '3:00', { class: 'mn', 'font-size': 11, 'text-anchor': 'end' });
+  bar(s, x0, Y(180), Y(180), 0);
+  el(s, 'line', { x1: x0 - 8, x2: x0 + 8, y1: Y(180), y2: Y(180), stroke: C.ink, 'stroke-width': 2 });
+})();
+
+</script>
+</body>
+</html>
