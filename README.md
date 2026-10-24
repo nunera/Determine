@@ -22,7 +22,8 @@ All 8 brief pages: [`docs/images/brief-1.png` … `brief-8.png`](docs/images/) �
 | [`firmware/cue-board/`](firmware/cue-board/README.md) | XIAO ESP32-C3: 8×8 ToF, I²S stereo cues, DRV2605L haptics, watchdog | `pio run -e xiao_esp32c3`, `pio test -e native` |
 | [`firmware/cam-board/`](firmware/cam-board/README.md) | ESP32-CAM: JPEG capture, chunked FRAME stream, PSRAM fallback | `pio run -e esp32cam`, `pio test -e native` |
 | [`phone/`](phone/README.md) | Kotlin hazard engine (`core`) + headless phone (`cli`) | `./gradlew build` |
-| [`android/`](android/README.md) | Android app: service, MediaPipe detector, TTS/vibration, judge + calibration UI | `./gradlew assembleDebug testDebugUnitTest` |
+| [`android/`](android/README.md) | Android app: service, MediaPipe detector, TTS/vibration, judge + calibration UI, Describe client with on-phone face blur, phone-camera and phone-audio fallbacks | `./gradlew assembleDebug testDebugUnitTest` |
+| [`cloud/`](cloud/README.md) | Describe loop on Annapurna silicon: Graviton2 Lambda API + SmolVLM server on Inferentia2 | `python3 -m unittest discover -s cloud/describe-api/tests` (and `cloud/inference/tests`) |
 | [`tools/sim/`](tools/sim/README.md) | Two-board simulator, bench tool for real boards, end-to-end harness | `python3 -m unittest discover -s tools/sim/tests` |
 | [`docs/flows/`](docs/flows/README.md) | Hardware flow maps and software flowcharts (Mermaid) | `nix shell nixpkgs#mermaid-cli -c python3 docs/flows/render.py` |
 
@@ -39,6 +40,19 @@ flowchart LR
 
 The phone makes every hazard decision; the wearable never decides. There is no "all clear" sound, and a
 failure is announced, never silent (Arch §1.2, §4.2).
+
+## Machine learning and Annapurna silicon
+
+| Where | Model / chip | Role | Status |
+|---|---|---|---|
+| Phone | MediaPipe EfficientDet-Lite0 (COCO) | labels hazards ("person", "chair") for the cue timbre | in app |
+| Phone | MediaPipe BlazeFace short-range | blurs faces before any upload | in app |
+| AWS Graviton2 | Lambda arm64 `describe-api` | auth, prompt, safety filter | code + SAM template; not deployed |
+| AWS Inferentia2 | SmolVLM-256M via optimum-neuron, inf2.xlarge | "What's ahead?" two-sentence description | code + compile/setup scripts; needs Inf quota; CPU path measured at p50 2.0 s |
+| Bedrock | Nova Lite | fallback if Inf2 is down (silicon unspecified) | code |
+
+No learned model is in the hazard decision: warnings come from the 8×8 ToF corridor and fixed rules (Arch §7.2).
+See [`cloud/README.md`](cloud/README.md) for the event-day order and measurements.
 
 ## Diagrams
 

@@ -201,21 +201,28 @@ flowchart TD
 
 [rendered](rendered/software-7.svg) · Arch §9 defines STEREO (≥ 4/5, no side at ceiling) and SSD (side undetectable or chance); outcomes in between are not specified there.
 
-## (g) Optional Describe loop (Arch §7.3)
+## (g) Describe loop (Arch §7.3) — as implemented in `phone/core/describe` + `cloud/`
 
 ```mermaid
 flowchart TD
-  ASK["User long-press or voice: What's ahead?<br/>(never automatic)"] --> UN{"System UNAVAILABLE?"}
-  UN -- yes --> OFF["Inactive"]
-  UN -- no --> OPT{"Opted into cloud description<br/>and service available?"}
-  OPT -- no --> NA["Say: description unavailable<br/>(no untested local model)"]
-  OPT -- yes --> RED["Redact faces + sensitive detail on phone"]
-  RED --> UP["Upload frame to Lambda API (Graviton2)<br/>VLM e.g. SmolVLM on Inf2"]
-  UP --> WAIT["Wait (seconds; hazard loop keeps running)"]
-  WAIT --> RES["Two-sentence answer"]
-  RES --> SPEAK["Speak prefixed: may be wrong"]
-  HZ{"MID or NEAR hazard alert?"} -- yes --> INT["Interrupt / cancel Describe;<br/>hazard cue plays immediately"]
-  WAIT -.-> HZ
+  ASK["User long-press 'What's ahead?'<br/>or TalkBack action (never automatic)"] --> EN{"Opted in?"}
+  EN -- no --> R1["DISABLED"]
+  EN -- yes --> UN{"System UNAVAILABLE?"}
+  UN -- yes --> R2["SYSTEM_UNAVAILABLE"]
+  UN -- no --> BZ{"Request already in flight?"}
+  BZ -- yes --> R3["BUSY"]
+  BZ -- no --> FR{"Latest frame ≤ 500 ms old?"}
+  FR -- no --> R4["NO_FRESH_FRAME"]
+  FR -- yes --> RED["FaceRedactor on phone<br/>MediaPipe BlazeFace → pixelate faces"]
+  RED -- "fails / no model" --> R5["REDACTION_FAILED<br/>say: Description unavailable · nothing uploaded"]
+  RED -- ok --> UP["HTTPS POST /v1/describe<br/>describe-api on Lambda arm64 (Graviton2)"]
+  UP --> INF["POST /v1/generate<br/>SmolVLM-256M on inf2.xlarge (Inferentia2)<br/>fallback: Bedrock Nova Lite"]
+  INF --> FIL["Safety filter in the API:<br/>≤ 2 sentences, no 'clear/safe', no guesses about people"]
+  FIL --> CHK["Phone re-checks: drop reassurance sentences"]
+  CHK --> SPEAK["Speak: 'May be wrong.' + answer"]
+  UP -. "8 s timeout / error" .-> FAIL["say: Description unavailable"]
+  HZ{"MID or NEAR alert<br/>or UNAVAILABLE?"} -- yes --> INT["Cancel request, stop speech;<br/>hazard cue plays immediately"]
+  UP -.-> HZ
   SPEAK -.-> HZ
 ```
 
@@ -247,22 +254,29 @@ flowchart LR
   end
   MAIN --> ENG
   subgraph app["android/app — org.determine.android"]
-    SVC["service/DetermineService<br/>foreground service"]
-    HOST["runtime/EngineHost<br/>engine lock · 10 ms tick"]
+    SVC["service/DetermineService<br/>foreground service, restarts on fallback change"]
+    HOST["runtime/EngineHost<br/>engine lock · 10 ms tick · HostOptions"]
     RT["runtime/DetermineRuntime<br/>state flows for UI"]
     UDP["net/UdpLink · BoardAddressBook<br/>implements Outbox"]
     DET["detect/DetectorRunner · FramePacer<br/>MediaPipe EfficientDet-Lite0"]
-    ALR["alerts/AndroidPhoneAlerts<br/>TTS · Vibrator · system-off"]
+    ALR["alerts/AndroidPhoneAlerts<br/>TTS · Vibrator · system-off · DescribeSpeech"]
+    CAMS["camera/PhoneCameraSource<br/>Tier 0 CameraX fallback"]
+    CUES["audio/PhoneCueSink · CueBank<br/>phone-audio cue fallback"]
+    DSC["describe/FaceRedactor · HttpDescribeTransport"]
     PWR["power/BatteryCriticalGate"]
     UI["ui/ Main · Judge · Calibration · Settings screens"]
     SET["settings/UserSettings"]
   end
+  DESC["core describe/DescribeController"]
   SVC --> HOST
   HOST --> ENG
-  HOST --> UDP & DET & ALR & PWR
+  HOST --> DESC
+  DESC --> ENG
+  HOST --> UDP & DET & ALR & PWR & CAMS & CUES & DSC
   HOST --> RT
   RT --> UI
   UI --> SET
+  DSC -. HTTPS .-> CLOUD["cloud/describe-api → cloud/inference"]
   SIM["tools/sim<br/>sim_boards · bench · e2e"] -. UDP .-> MAIN
 ```
 
