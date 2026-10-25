@@ -43,6 +43,15 @@ with a SwiftUI host. iOS 17+, unsigned IPA only. Do not use it while walking: no
   frame as "No fresh camera image". It is display and speech only and never feeds hazard logic. It is not started
   while a MID or NEAR warning is active or the system is off, and a MID/NEAR alert or system off cuts a reading in
   progress (a hazard word or "System off" that replaced it is never cut). A second tap stops it.
+- **Voice control** (Siri, App Intents; `VoiceControl.swift`): "Hey Siri, what's ahead in Determine", "read text in
+  Determine", "pause warnings in Determine", "resume warnings in Determine", "stop reading in Determine". Each runs the
+  matching action already on Main inside the running app and never reaches the hazard decision. Nothing happens
+  unless a session is running: a voice command never starts the system. Siri's own speech can cut a warning word
+  that is being spoken, since Siri takes the audio route while it talks (not measured). **Pausing is never silent
+  and never forgotten, from voice or from the Main button:** while paused Determine says "Warnings are paused"
+  every 30 s and resumes the warnings by itself after 120 s (`VoiceControlSettings`). Siri only sees the intents
+  if the IPA carries the App Intents index that Xcode would normally generate; see
+  [Siri build](#siri-build). No always-on wake word yet.
 - **Link quality**: when the engine reports `linkWeak` (cue board RSSI below the threshold for the hold time) Main shows
   an orange "Weak connection" banner and Judge highlights the RSSI. The engine speaks "weak connection" once. It is
   informational and never changes the system state.
@@ -127,6 +136,8 @@ reports, not per-row logs; the table retains the earlier per-feature evidence be
 | Exploration mode | Main toggle; pulses strengthen as an object nears; silent with nothing in range | Works (user, v0.3.0); summary report, not independently observed |
 | Approach-speed escalation | Settings → Approach; walk toward a wall; band escalates by one step | not yet tested on device |
 | Describe | Settings → Describe: enable, turn on unblurred upload, set server URL and key; Main → What's ahead? with the iPhone camera running; the answer is spoken as returned; with the opt-in off nothing is sent; a MID/NEAR warning cuts it | not yet tested on device (wire client smoke-tested on Linux against the real handler with a stub model; no deployed server or real model) |
+| Siri voice commands | Install the Siri build; say each phrase with a session running; Settings → Siri may need the app enabled | not yet tested on device. Open risks: whether a sideloaded, re-signed app keeps the index, and whether the sideloading tool rewrites the bundle id (then pass it in `SIRI_EXTRA_BUNDLE_IDS`) |
+| Pause guard | Pause warnings; "Warnings are paused" repeats every 30 s; warnings resume by themselves at 120 s | not yet tested on device |
 
 ## Unsigned IPA
 
@@ -134,6 +145,16 @@ Built artifact: `xtool/DetermineApp.ipa` (arm64, iOS 17+, bundle id `org.determi
 **Determine**). It has no code signature, `_CodeSignature` or provisioning profile; install it through a
 third-party loader. `Support/Info.plist` declares `NSLocalNetworkUsageDescription`, `NSCameraUsageDescription`
 and no background modes. Never add `--sign`.
+
+### Siri build
+
+`scripts/add-siri-metadata.sh` is the build that Siri needs. It runs the normal xtool release build with the
+compiler also emitting `.swiftconstvalues` (Package.swift reads `DETERMINE_APPINTENTS_PROTOCOLS`), turns them into
+`Metadata.appintents` with the pinned [xtool-on-linux](https://github.com/cyberneel/xtool-on-linux) generator (MIT,
+checked there against Apple's own output on an iOS 27 beta; the format is undocumented and may change), and adds
+it to the unsigned IPA. Without it the intents compile but Siri never sees them, with no error. If your loader
+rewrites the bundle id (free Apple accounts usually append a suffix), run it with
+`SIRI_EXTRA_BUNDLE_IDS="<the id the app installs as>"`.
 
 ### Rebuild on this Linux workstation
 
@@ -172,7 +193,7 @@ for SDK prerequisites. Unsigned building requires neither `xtool auth` nor a con
 | `Sources/DetermineEngineChecks/` | Executable assertions: protocol vectors and ported Kotlin tests. |
 | `Sources/DetermineLink/` | BSD-socket UDP on :47000, board address book and attribution, shared by the app and the cli. |
 | `Sources/DeterminePhone/` | Linux/macOS headless cli (same options and output lines as `phone/cli`), checked by `tools/sim/e2e.py`. |
-| `Sources/DetermineApp/` | iPhone app. `SessionHost` owns the engine queue, tick, link and camera; `AppModel` holds settings, tuning and published state; `DebugTrace` the chart history and event log; `IosPhoneAlerts`, `PhoneCameraSource`, `CueBank` + `AudioEngineCueSink` (warning sounds), `TextRecognition` (Read text); SwiftUI views (`MainView`, `JudgeView` + `JudgeCharts` + `JudgeLogViews`, `SettingsView` + `ExperimentalSettings`, `CalibrationView`). |
+| `Sources/DetermineApp/` | iPhone app. `SessionHost` owns the engine queue, tick, link and camera; `AppModel` holds settings, tuning and published state; `DebugTrace` the chart history and event log; `IosPhoneAlerts`, `PhoneCameraSource`, `CueBank` + `AudioEngineCueSink` (warning sounds), `TextRecognition` (Read text), `VoiceControl` (Siri intents and the command types); SwiftUI views (`MainView`, `JudgeView` + `JudgeCharts` + `JudgeLogViews`, `SettingsView` + `ExperimentalSettings`, `CalibrationView`). |
 | `Support/Info.plist`, `xtool.yml` | Bundle metadata and xtool packaging. |
 
 `DetermineApp` is SwiftUI/UIKit/AVFoundation only: on Linux it compiles to a stub, so build the Linux targets

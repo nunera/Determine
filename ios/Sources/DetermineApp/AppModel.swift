@@ -85,6 +85,7 @@ final class AppModel: ObservableObject {
     private var lastLinkWeak = false
     private var readToken = 0
     private var describeToken = 0
+    private var pauseGuard: Task<Void, Never>?
 
     private enum Key {
         static let soundOutput = "determine.soundOutput"
@@ -212,6 +213,8 @@ final class AppModel: ObservableObject {
         running = false
         stopping = true
         generation += 1
+        pauseGuard?.cancel()
+        pauseGuard = nil
         self.host = nil
         reason = ""
         currentAlert = nil
@@ -244,8 +247,72 @@ final class AppModel: ObservableObject {
         stop(notice: "Determine stopped because the app went to the background. Warnings are off. Open the app and tap Start Determine to resume.")
     }
 
+    /// A pause is never silent and never forgotten: Determine repeats "Warnings are paused" every
+    /// `VoiceControlSettings.pauseReminderSeconds` and resumes by itself after `autoResumeSeconds`. This applies to
+    /// the Main button and to voice alike, so a mistaken or forgotten pause cannot leave the wearer unwarned.
     func setPaused(_ paused: Bool) {
         host?.setPaused(paused)
+        pauseGuard?.cancel()
+        pauseGuard = nil
+        guard paused else { return }
+        trace.log("Warnings paused")
+        pauseGuard = Task { @MainActor [weak self] in
+            var elapsed = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(VoiceControlSettings.pauseReminderSeconds))
+                guard !Task.isCancelled, let self, self.running else { return }
+                elapsed += VoiceControlSettings.pauseReminderSeconds
+                if elapsed >= VoiceControlSettings.autoResumeSeconds {
+                    self.host?.setPaused(false)
+                    self.pauseGuard = nil
+                    self.trace.log("Warnings resumed automatically after \(elapsed) s")
+                    return
+                }
+                self.alerts.speak("Warnings are paused")
+            }
+        }
+    }
+
+    // MARK: Voice commands
+
+    /// Runs one voice command (Siri today) and returns a short sentence for the assistant to say. Voice only ever
+    /// triggers the actions already on Main; it never reaches the hazard decision. Nothing happens unless a session
+    /// is running: a voice command must not start the system or change what the wearer is warned about by itself.
+    func perform(_ command: VoiceCommand) -> String {
+        guard running else { return "Determine is not running. Open the app and tap Start Determine." }
+        trace.log("Voice command: \(command.rawValue)")
+        switch command {
+        case .whatsAhead:
+            guard describeEnabled else { return "Description is off in Settings." }
+            requestDescription()
+            if case let .done(message) = describeState { return message }
+            return "Asking."
+        case .readText:
+            readText()
+            if case let .done(message) = reader { return message }
+            return "Reading."
+        case .pauseWarnings:
+            guard !paused else { return "Warnings are already paused." }
+            setPaused(true)
+            return "Warnings paused."
+        case .resumeWarnings:
+            guard paused else { return "Warnings are not paused." }
+            setPaused(false)
+            return "Resuming warnings."
+        case .stopSpeaking:
+            stopSpeaking()
+            return "Stopped."
+        }
+    }
+
+    /// Cuts a reading or description that is being read out. Hazard words and "System off" are never cut.
+    private func stopSpeaking() {
+        if reader != .idle {
+            readToken += 1
+            alerts.stopReading()
+            reader = .idle
+        }
+        cancelDescription()
     }
 
     // MARK: Settings

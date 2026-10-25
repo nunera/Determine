@@ -13,6 +13,7 @@ struct DetermineApp: App {
                 MainView()
             }
             .environmentObject(model)
+            .onAppear { VoiceBridge.model = model }
         }
         .onChange(of: scenePhase) { _, newPhase in
             // Foreground only. `.inactive` (permission sheets, Control Center, call banners) keeps the process and
