@@ -5,6 +5,11 @@ ahead. Design: [`Determine-Architecture.html`](Determine-Architecture.html) (con
 [`Determine-Brief.html`](Determine-Brief.html) (8-page brief). Status: proposed design; untested with
 blind or low-vision users.
 
+**Platform plan:** Android is implemented; iOS is planned as a near-identical native app, built and deployed
+with [xtool](https://github.com/xtool-org/xtool). See the [iOS and Android parity plan](docs/ios-plan.md)
+for screen/behavior parity, engine conformance, Linux tooling and iPhone networking/background validation gates.
+No iOS build or device validation is claimed yet.
+
 <p align="center">
   <a href="Determine-Brief.pdf"><img src="docs/images/brief-1.png" width="49%" alt="Brief cover: a two-stave score where beeps speed up as an obstacle approaches"></a>
   <a href="Determine-Brief.pdf"><img src="docs/images/brief-3.png" width="49%" alt="Brief page 3: dumb glasses, the phone does the thinking"></a>

@@ -5,6 +5,11 @@ The phone is the only integrator (Arch §4): it receives the two boards' UDP str
 camera frames, and sends cue commands back to the cue board. This module is only the Android shell around the core:
 UDP socket, foreground service, detector, phone-side alerts, and the accessible UI.
 
+**Cross-platform target:** iOS is planned with matching screens, workflows and safety behavior, using a native
+Swift/SwiftUI app and xtool. Android remains the first implementation, not the only target.
+See the [iOS and Android parity plan](../docs/ios-plan.md); platform-specific permissions and lifecycle behavior
+must not silently weaken the common safety contract.
+
 | Piece | File | Notes |
 |---|---|---|
 | Foreground service | `service/DetermineService.kt` | type `connectedDevice`; partial wake lock + Wi-Fi lock; battery → `engine.setBatteryCritical` |

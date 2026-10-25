@@ -9,6 +9,10 @@ Gradle (Kotlin/JVM 17) project with two modules:
 
 The Android app (`../android`) consumes `core` through `includeBuild("../phone")`.
 
+**Planned iOS peer:** this is Kotlin/JVM, not an iOS-ready shared library. The xtool-first plan uses a Swift
+engine checked against the same protocol vectors and behavioral traces, with native platform adapters.
+See the [iOS and Android parity plan](../docs/ios-plan.md) for the duplication tradeoff and conformance gates.
+
 ## Build and test
 
 ```sh
