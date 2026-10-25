@@ -128,7 +128,7 @@ struct JudgeView: View {
                 DetailLine(title: "Cue to ACK p50 / p95", value: "\(msD(d?.ackP50Ms)) / \(msD(d?.ackP95Ms))")
 
                 SectionTitle(title: "Describe")
-                DetailLine(title: "Scene description", value: model.describeMessage ?? "Not available on iOS: no face blur, no upload")
+                DetailLine(title: "Scene description", value: describeSummary)
 
                 SectionTitle(title: "Debug panel")
                 debugPanel(d)
@@ -154,6 +154,16 @@ struct JudgeView: View {
         .navigationTitle("Judge diagnostics")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { model.refreshAddresses() }
+    }
+
+    private var describeSummary: String {
+        guard model.describeEnabled else { return "Off" }
+        let upload = model.describeUnredactedOptIn ? "unblurred upload on" : "unblurred upload off, nothing is sent"
+        switch model.describeState {
+        case .idle: return "Ready (\(upload))"
+        case .requesting: return "Requesting (\(upload))"
+        case let .done(text): return text
+        }
     }
 
     private var stateLine: String {

@@ -14,6 +14,14 @@ enum ReadTextState: Equatable {
     case done(String)
 }
 
+/// State of the Describe action shown on Main.
+enum DescribeState: Equatable {
+    case idle
+    case requesting
+    /// What was spoken (or why nothing was described).
+    case done(String)
+}
+
 /// Main-actor view model: persisted settings, the live session's published state, and the session lifecycle.
 ///
 /// The engine itself lives in `SessionHost` on its own queue; this type only receives value snapshots from it.
@@ -30,6 +38,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var spearcons: Bool
     @Published private(set) var frameSource: FrameSourceKind
     @Published private(set) var describeEnabled: Bool
+    @Published private(set) var describeUrl: String
+    /// The bearer key lives in the Keychain; only whether one is stored is published.
+    @Published private(set) var describeKeySet: Bool
+    /// Explicit consent to upload camera frames with faces unblurred. This build has no face redaction, so Describe
+    /// never runs without it. Default off.
+    @Published private(set) var describeUnredactedOptIn: Bool
     /// Engine tuning (bands, timing, link, EXPERIMENTAL approach and exploration). Persisted, applied live.
     @Published private(set) var tuning: Tuning
     /// Why the last tuning change was not applied.
@@ -53,7 +67,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var stopNotice: String?
     /// Camera permission feedback from the Settings → Camera choice.
     @Published private(set) var cameraMessage: String?
-    @Published private(set) var describeMessage: String?
+    @Published private(set) var describeState: DescribeState = .idle
     @Published private(set) var phoneAddresses: [LocalAddress] = []
     @Published private(set) var reader: ReadTextState = .idle
 
@@ -70,6 +84,7 @@ final class AppModel: ObservableObject {
     private var lastBand: Band = .none
     private var lastLinkWeak = false
     private var readToken = 0
+    private var describeToken = 0
 
     private enum Key {
         static let soundOutput = "determine.soundOutput"
@@ -78,6 +93,9 @@ final class AppModel: ObservableObject {
         static let spearcons = "determine.spearcons"
         static let frameSource = "determine.frameSource"
         static let describeEnabled = "determine.describeEnabled"
+        static let describeUrl = "determine.describeUrl"
+        static let describeUnredactedOptIn = "determine.describeUnredactedOptIn"
+        static let describeKeyAccount = "describeApiKey"
         static let tuningPrefix = "determine.tuning."
     }
 
@@ -105,6 +123,9 @@ final class AppModel: ObservableObject {
         self.spearcons = defaults.object(forKey: Key.spearcons) as? Bool ?? true
         self.frameSource = (defaults.string(forKey: Key.frameSource) == "phoneCamera") ? .phoneCamera : .camBoard
         self.describeEnabled = defaults.object(forKey: Key.describeEnabled) as? Bool ?? false
+        self.describeUrl = defaults.string(forKey: Key.describeUrl) ?? ""
+        self.describeKeySet = Keychain.get(Key.describeKeyAccount) != nil
+        self.describeUnredactedOptIn = defaults.object(forKey: Key.describeUnredactedOptIn) as? Bool ?? false
         self.tuning = Self.loadTuning(defaults)
         // The pre-0.3 single "output mode" setting is replaced by the sound output + layout above.
         defaults.removeObject(forKey: "determine.outputMode")
@@ -161,7 +182,7 @@ final class AppModel: ObservableObject {
         liveProfile = nil
         sound = SoundStats()
         stopNotice = nil
-        describeMessage = nil
+        describeState = .idle
         tuningMessage = nil
         reader = .idle
         lastBand = .none
@@ -198,6 +219,8 @@ final class AppModel: ObservableObject {
         readToken += 1
         reader = .idle
         alerts.stopReading()
+        describeToken += 1
+        describeState = .idle
         trace.log(notice == nil ? "Session stopped" : "Session stopped: app left the foreground")
         UIApplication.shared.isIdleTimerDisabled = false
         host.stop { [weak self] in
@@ -257,7 +280,26 @@ final class AppModel: ObservableObject {
     func setDescribeEnabled(_ enabled: Bool) {
         describeEnabled = enabled
         defaults.set(enabled, forKey: Key.describeEnabled)
-        if !enabled { describeMessage = nil }
+        if !enabled { cancelDescription() }
+    }
+
+    func setDescribeUrl(_ url: String) {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        describeUrl = trimmed
+        defaults.set(trimmed, forKey: Key.describeUrl)
+    }
+
+    /// An empty key removes the stored one.
+    func setDescribeKey(_ key: String) {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        Keychain.set(trimmed.isEmpty ? nil : trimmed, account: Key.describeKeyAccount)
+        describeKeySet = Keychain.get(Key.describeKeyAccount) != nil
+    }
+
+    func setDescribeUnredactedOptIn(_ optIn: Bool) {
+        describeUnredactedOptIn = optIn
+        defaults.set(optIn, forKey: Key.describeUnredactedOptIn)
+        if !optIn { cancelDescription() }
     }
 
     // MARK: Tuning
@@ -379,21 +421,106 @@ final class AppModel: ObservableObject {
         alerts.speakReading(spoken)
     }
 
-    /// MID/NEAR alerts and system off cut a reading in progress. Only the reading is stopped: a hazard word or
-    /// "System off" that replaced it is never cut.
+    /// MID/NEAR alerts and system off cut a reading or a description in progress or being spoken. Only that speech
+    /// is stopped: a hazard word or "System off" that replaced it is never cut.
     private func interruptReadingIfNeeded() {
-        guard reader != .idle else { return }
         guard state == .unavailable || hazardActive else { return }
-        readToken += 1
-        alerts.stopReading()
-        reader = .idle
+        if reader != .idle {
+            readToken += 1
+            alerts.stopReading()
+            reader = .idle
+        }
+        if describeState != .idle {
+            describeToken += 1
+            alerts.stopReading()
+            describeState = .idle
+        }
     }
 
-    // MARK: Describe (fail closed)
+    // MARK: Describe
 
-    /// There is no face redaction or upload path on iOS: every request refuses, nothing is captured or sent.
+    private var describeEndpoint: DescribeEndpoint? {
+        guard !describeUrl.isEmpty, let key = Keychain.get(Key.describeKeyAccount) else { return nil }
+        return DescribeEndpoint(baseUrl: describeUrl, apiKey: key)
+    }
+
+    /// Cancels a request in flight or the description being spoken. The response of a cancelled request is dropped.
+    private func cancelDescription() {
+        guard describeState != .idle else { return }
+        describeToken += 1
+        alerts.stopReading()
+        describeState = .idle
+    }
+
+    /// Describe: one camera frame to the describe-api on the wearer's explicit request, never automatically and
+    /// never read by hazard logic. This build has no face redaction, so it needs the wearer's explicit opt-in to
+    /// upload unblurred frames. A second tap while a request is in flight cancels it.
     func requestDescription() {
-        describeMessage = "Description unavailable: this iPhone build cannot blur faces or upload, so no camera frame was sent."
+        guard running, let host else { return }
+        if describeState == .requesting {
+            cancelDescription()
+            describeState = .done("Description cancelled.")
+            return
+        }
+        guard describeUnredactedOptIn else {
+            describeState = .done("Description unavailable: it uploads camera frames with faces unblurred, which is off. Turn it on in Settings first. Nothing was sent.")
+            return
+        }
+        guard let endpoint = describeEndpoint else {
+            describeState = .done("Description unavailable: set the server URL and key in Settings. Nothing was sent.")
+            return
+        }
+        guard state != .unavailable, !hazardActive else {
+            describeState = .done("Not describing: a warning is active or the system is off.")
+            return
+        }
+        describeToken += 1
+        let token = describeToken
+        let gen = generation
+        describeState = .requesting
+        host.describeFrame { [weak self] frame in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.sendDescription(frame, to: endpoint, token: token, generation: gen) }
+            }
+        }
+    }
+
+    private func sendDescription(_ frame: AssembledFrame?, to endpoint: DescribeEndpoint, token: Int, generation gen: Int) {
+        guard token == describeToken, gen == generation, running else { return }
+        guard let frame else {
+            finishDescribing(.failed(code: "no_frame", retryable: true), token: token, generation: gen)
+            return
+        }
+        trace.log("Describe: sending one unblurred \(frame.w)x\(frame.h) frame (\(frame.jpeg.count) bytes)")
+        Task { [weak self] in
+            let result = await DescribeClient.send(endpoint: endpoint, jpeg: frame.jpeg, width: frame.w, height: frame.h)
+            self?.finishDescribing(result, token: token, generation: gen)
+        }
+    }
+
+    private func finishDescribing(_ result: DescribeResult, token: Int, generation gen: Int) {
+        guard token == describeToken, gen == generation, running else { return }
+        guard state != .unavailable, !hazardActive else {
+            describeState = .idle
+            return
+        }
+        let spoken: String
+        switch result {
+        case let .text(text):
+            spoken = "May be wrong. \(text)"
+            trace.log("Describe: answered")
+        case let .failed(code, _):
+            trace.log("Describe failed: \(code)")
+            switch code {
+            case "no_frame": spoken = "No fresh camera image"
+            case "unauthorized": spoken = "Description failed: the server refused the key"
+            case "bad_url": spoken = "Description unavailable: check the server URL and key in Settings"
+            case "timeout", "network", "unavailable": spoken = "Description unavailable: the server did not answer"
+            default: spoken = "Description failed"
+            }
+        }
+        describeState = .done(spoken)
+        alerts.speakReading(spoken)
     }
 
     // MARK: Published events

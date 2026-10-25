@@ -11,7 +11,12 @@
     <key>NSLocalNetworkUsageDescription</key>
     <string>Determine talks to the glasses' cue and camera boards on this phone's Personal Hotspot network to read the forward distance sensor and drive the temple vibration.</string>
     <key>NSCameraUsageDescription</key>
-    <string>Only if you choose the iPhone camera in Settings: the back camera is used as a software fallback for the glasses' camera board. Frames stay on the phone.</string>
+    <string>Only if you choose the iPhone camera in Settings: the back camera is used as a software fallback for the glasses' camera board. Frames stay on the phone, except the one frame sent when you turn on Describe and ask what's ahead.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UIDeviceFamily</key>

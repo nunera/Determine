@@ -19,7 +19,8 @@ Request:
 | `request_id` | string | 8–64 chars `[A-Za-z0-9_-]`, chosen by the phone |
 | `image_jpeg_b64` | string | base64 JPEG, decoded size ≤ 512 KiB, must start `FFD8` |
 | `width`, `height` | int | 16–2048 |
-| `redacted` | bool | MUST be `true`: the phone blurred faces before upload. `false` → 400 |
+| `redacted` | bool | `true`: the phone blurred faces before upload. `false` is accepted only together with `unredacted_opt_in: true`, otherwise 400 |
+| `unredacted_opt_in` | bool, optional | `true` only when the wearer has explicitly opted in to uploading frames with faces unblurred (default off in the app). Ignored when `redacted` is `true` |
 | `locale` | string | `en` only in v1 |
 
 Response 200:

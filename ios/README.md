@@ -26,7 +26,14 @@ with a SwiftUI host. iOS 17+, unsigned IPA only. Do not use it while walking: no
   frames rotated upright (480×640), at most ~10 fps, JPEG quality 75, stamped with the engine clock. Permission
   denial, interruption and runtime errors are shown on Main and Judge; the engine independently reports
   `frame_stale` without fresh frames. It is labelled a software fallback. Changing the camera restarts the session.
-- **Describe** keeps its fail-closed refusal: no face blur and no upload exist on iOS.
+- **Describe** (Settings → Describe; on request only, never automatic): sends the newest camera frame (at most 500 ms
+  old, same freshness rule as Read text) to the describe-api in `cloud/` and speaks the answer prefixed "May be
+  wrong." This build has **no face blur**, so it uploads the frame as captured, including bystanders' faces, and works
+  only while *Upload frames with faces unblurred* is on (default off; with it off nothing is sent). The request
+  states `redacted: false` and `unredacted_opt_in: true`, which the API accepts only together. Server URL and bearer
+  key are set in Settings (the key is kept in the Keychain; plain `http://` is allowed for local-network addresses
+  only, via `NSAllowsLocalNetworking`). A MID/NEAR warning or system off cuts the request or the speech. Not
+  verified on a device or against a deployed server: see Real device tests.
 - **Read text** (Main button, also a VoiceOver custom action on the status panel): on-device OCR (Vision
   `VNRecognizeTextRequest`) of the newest camera frame (iPhone camera or camera board), only if the frame is at most
   500 ms old. The result is spoken as "Text, may be wrong: …", an empty result as "No text found", a stale or missing
@@ -93,9 +100,9 @@ not applied.
 ## Real device tests
 
 Device evidence comes from the user's reports, not independent observation. The user reported that every
-v0.2.0 feature worked after fitting the cue board's antenna, then reported that **everything in v0.3.0 works
-except exploration mode**. These are summary reports, not per-row logs; the table retains the earlier
-per-feature evidence below. Exploration remains a known issue.
+v0.2.0 feature worked after fitting the cue board's antenna, then reported that **every v0.3.0 feature works,
+including exploration mode** (an earlier report of exploration failing was withdrawn). These are summary
+reports, not per-row logs; the table retains the earlier per-feature evidence below.
 
 | Check | What to do | Status |
 |---|---|---|
@@ -114,8 +121,9 @@ per-feature evidence below. Exploration remains a known issue.
 | Speaker sound (debug) | Warning sounds → iPhone speaker; cues audible; Bluetooth connected gives system off | not yet tested on device |
 | Bluetooth headset sound | Warning sounds → Bluetooth headset; plays only on the headset; disconnect gives system off | not yet tested on device |
 | Read text | Point the camera at text; spoken "Text, may be wrong: …"; "No text found" otherwise; cut by a MID/NEAR alert | not yet tested on device |
-| Exploration mode | Main toggle; pulses strengthen as an object nears; silent with nothing in range | Not working (user, v0.3.0); unresolved |
+| Exploration mode | Main toggle; pulses strengthen as an object nears; silent with nothing in range | Works (user, v0.3.0); summary report, not independently observed |
 | Approach-speed escalation | Settings → Approach; walk toward a wall; band escalates by one step | not yet tested on device |
+| Describe | Settings → Describe: enable, turn on unblurred upload, set server URL and key; Main → What's ahead? with the iPhone camera running; a spoken "May be wrong. …" answer; with the opt-in off nothing is sent; a MID/NEAR warning cuts it | not yet tested on device (wire client smoke-tested on Linux against the real handler with a stub model; no deployed server or real model) |
 
 ## Unsigned IPA
 
@@ -175,7 +183,7 @@ by name (`swift build --product DeterminePhone`, `swift run DetermineEngineCheck
   Copy the binary out of `.build/release` first: the xtool container build shares `.build`. These scenarios use the
   simulated camera board; the iPhone-camera path is covered only by the engine's FallbackTest port.
 - **App:** native arm64 release build compiled with the Apple SDK and packaged as an unsigned IPA. The user
-  reports v0.3.0 features working on their iPhone **except exploration mode**, which remains unresolved.
+  reports all v0.3.0 features working on their iPhone, including exploration mode.
   No independent device or simulator observation of the UI, audio routes, camera, Vision, VoiceOver or
   lifecycle behaviour has been performed. See [Real device tests](#real-device-tests). Spearcon speech
   rate (0.62) is an estimate of Android's 1.8×.

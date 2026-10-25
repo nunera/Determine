@@ -302,6 +302,20 @@ final class SessionHost: @unchecked Sendable {
         }
     }
 
+    /// Describe: the newest camera frame if it is at most 500 ms old, read on the engine queue. The upload happens
+    /// elsewhere so the tick is never delayed. Never touches hazard logic.
+    func describeFrame(_ done: @escaping @Sendable (AssembledFrame?) -> Void) {
+        queue.async { [self] in
+            guard !stopped, let engine, let frame = engine.latestJpeg(),
+                  EngineClock.nowUs() - frame.capturePhoneUs <= DescribeSettings.maxFrameAgeUs
+            else {
+                done(nil)
+                return
+            }
+            done(frame)
+        }
+    }
+
     private func updateProfile(_ change: @escaping @Sendable (HearingProfile) throws -> HearingProfile) {
         queue.async { [self] in
             guard !stopped, let engine, let next = try? change(engine.profile) else { return }

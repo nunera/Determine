@@ -175,14 +175,30 @@ class ValidationTest(HandlerTestCase):
                 self.assertEqual(response["statusCode"], 200)
                 self.assertEqual(body["request_id"], good)
 
-    def test_redacted_must_be_true(self):
-        for value in [False, "true", 1, None]:
-            with self.subTest(redacted=value):
-                self.assertError(event(request_body(redacted=value)), 400, "bad_request", False, REQUEST_ID)
+    def test_unredacted_needs_explicit_opt_in(self):
+        for overrides in [
+            {"redacted": False},
+            {"redacted": False, "unredacted_opt_in": False},
+            {"redacted": False, "unredacted_opt_in": "true"},
+            {"redacted": False, "unredacted_opt_in": 1},
+            {"redacted": "true"},
+            {"redacted": 1},
+            {"redacted": None},
+            {"redacted": None, "unredacted_opt_in": True},
+            {"redacted": "false", "unredacted_opt_in": True},
+        ]:
+            with self.subTest(**overrides):
+                self.assertError(event(request_body(**overrides)), 400, "bad_request", False, REQUEST_ID)
         missing = request_body()
         del missing["redacted"]
         self.assertError(event(missing), 400, "bad_request", False, REQUEST_ID)
-        self.assertEqual(self.server.requests, [])  # nothing unredacted ever reaches a model
+        self.assertEqual(self.server.requests, [])  # nothing unredacted reaches a model without opt-in
+
+    def test_unredacted_with_opt_in_is_accepted(self):
+        response, body, _, _ = invoke(event(request_body(redacted=False, unredacted_opt_in=True)))
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(body["request_id"], REQUEST_ID)
+        self.assertEqual(len(self.server.requests), 1)
 
     def test_locale(self):
         for value in ["fr", "EN", "", None]:

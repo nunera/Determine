@@ -67,6 +67,6 @@ Parked ideas, not part of the HackTX 26 build or any current claim.
 
 - Vector embeddings: explore embedding-based features (scope not yet defined).
 - Session record and replay: log real RANGE/CUE/state from walks and replay them through the simulator to tune warning distances. Deferred by the user (24 Oct 2026); keep the engine's timestamped-input design compatible with it.
-- Describe without mandatory face blur: redaction becomes an optional setting (user decision 24 Oct 2026).
+- Describe without mandatory face blur: redaction becomes an optional setting (user decision 24 Oct 2026). Partly built: the API accepts `redacted: false` only with `unredacted_opt_in: true`, and the iPhone app sends unblurred frames only with that opt-in (default off). Android still blurs; an optional blur setting is not built.
 - Lateral sensing (second Distance on the owned TCA9548A) and head-yaw input (Modulino Movement): parked, parts not owned.
 - Candidate tagline: "Smart phone, dumb glasses." Matches principle 2: the wearable decides nothing; the phone decides everything.

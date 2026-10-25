@@ -1,7 +1,7 @@
 # cloud/describe-api — Graviton2 Lambda
 
 Implements `cloud/API.md` §1 and §3: `POST /v1/describe` with bearer auth, request validation (`redacted` must be
-true), the fixed prompt, a 6 s inference budget, and the safety filter (≤ 2 sentences, ≤ 240 chars, no reassurance,
+true unless the request also carries `unredacted_opt_in: true`), the fixed prompt, a 6 s inference budget, and the safety filter (≤ 2 sentences, ≤ 240 chars, no reassurance,
 no guesses about people). Python 3.12 on `arm64` (Graviton2). Logs one JSON line per request: id, sizes, backend,
 status, timings — never image bytes or answer text.
 

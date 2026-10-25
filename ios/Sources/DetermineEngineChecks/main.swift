@@ -22,6 +22,7 @@ policyCueChecks(harness)
 engineChecks(harness)
 tuningChecks(harness)
 fallbackChecks(harness)
+describeChecks(harness)
 
 print("")
 print("vectors: \(vectors.count) loaded from \(vectorsPath)")

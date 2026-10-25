@@ -199,9 +199,13 @@ def _parse_request(raw: bytes, log: dict) -> DescribeRequest:
         raise ApiError("bad_request", False, "bad request_id")
     log["request_id"] = request_id
 
-    if payload.get("redacted") is not True:
-        # Invariant: only face-redacted frames may leave the phone. Refuse anything else outright.
-        raise ApiError("bad_request", False, "redacted must be true")
+    redacted = payload.get("redacted")
+    if redacted is not True:
+        # Invariant: a frame leaves the phone face-redacted unless the wearer explicitly opted in to unredacted
+        # upload, which the phone states with `unredacted_opt_in: true`. Anything else is refused outright.
+        if redacted is not False or payload.get("unredacted_opt_in") is not True:
+            raise ApiError("bad_request", False, "redacted must be true unless unredacted_opt_in is true")
+    log["redacted"] = redacted
     if payload.get("locale") not in LOCALES:
         raise ApiError("bad_request", False, "unsupported locale")
     width = _dimension(payload, "width")

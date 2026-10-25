@@ -6,6 +6,8 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     @State private var strengthDraft: Double = 255
+    @State private var describeUrlDraft = ""
+    @State private var describeKeyDraft = ""
 
     var body: some View {
         ScreenContent {
@@ -64,8 +66,31 @@ struct SettingsView: View {
             Toggle("Scene description on request", isOn: Binding(
                 get: { model.describeEnabled }, set: { model.setDescribeEnabled($0) }
             ))
-            Text("Requests explicitly fail closed: this iPhone build cannot blur faces, so no camera frame is ever uploaded and no description is generated. Warning decisions never depend on Describe.")
+            Text("Only when you ask, never automatically. Describe sends one camera frame to your describe server and speaks its answer, prefixed \"May be wrong.\" Warning decisions never depend on it.")
                 .font(.body)
+            Toggle("Upload frames with faces unblurred", isOn: Binding(
+                get: { model.describeUnredactedOptIn }, set: { model.setDescribeUnredactedOptIn($0) }
+            ))
+            Callout(text: "This iPhone build has no face blurring. Describe uploads the frame as the camera saw it, including the faces of people near you, and works only while this is on. It is off by default; with it off nothing is sent.", color: .primary)
+            TextField("Server URL (https://… or http://<laptop-ip>:8787)", text: $describeUrlDraft)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+                .textContentType(.URL)
+                .onSubmit { model.setDescribeUrl(describeUrlDraft) }
+            SecureField(model.describeKeySet ? "Key saved (type to replace)" : "Server key", text: $describeKeyDraft)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .onSubmit { saveDescribeKey() }
+            Button("Save Describe server") {
+                model.setDescribeUrl(describeUrlDraft)
+                saveDescribeKey()
+            }
+            if model.describeKeySet {
+                Button("Remove saved key", role: .destructive) { model.setDescribeKey("") }
+            }
+            Text("The key is kept in this iPhone's Keychain. Plain http works only for addresses on your local network.")
+                .font(.callout)
 
             SectionTitle(title: "Camera (software fallback)")
             Picker("Camera", selection: Binding(
@@ -111,8 +136,15 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             strengthDraft = Double(model.hapticMax)
+            describeUrlDraft = model.describeUrl
             model.refreshAddresses()
         }
+    }
+
+    private func saveDescribeKey() {
+        guard !describeKeyDraft.isEmpty else { return }
+        model.setDescribeKey(describeKeyDraft)
+        describeKeyDraft = ""
     }
 }
 #endif

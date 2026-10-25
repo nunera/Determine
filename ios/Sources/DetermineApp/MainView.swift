@@ -121,11 +121,20 @@ struct MainView: View {
             }
 
             if model.running && model.describeEnabled {
-                BigAction(title: "Request what's ahead?", primary: false) { model.requestDescription() }
-                Text("On request only. This iPhone build cannot blur faces or upload, so it always answers that no description is available.")
-                    .font(.callout)
-                if let message = model.describeMessage {
-                    Text(message).font(.headline)
+                BigAction(title: model.describeState == .requesting ? "Cancel description" : "What's ahead?", primary: false) { model.requestDescription() }
+                switch model.describeState {
+                case .idle:
+                    Text("On request only. Sends one camera frame to your describe server, with faces unblurred if you turned that on in Settings. It can be wrong and never affects warnings.")
+                        .font(.callout)
+                case .requesting:
+                    Text("Asking the describe server…")
+                        .font(.headline)
+                        .accessibilityAddTraits(.updatesFrequently)
+                case let .done(text):
+                    Text(text)
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
                         .accessibilityAddTraits(.updatesFrequently)
                 }
             }

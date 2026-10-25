@@ -65,7 +65,8 @@ nix run .#android-demo -- --sim approach_centre        # the real APK in an Andr
 ```
 
 The desktop app runs the Android app's own screens and engine (shared code in [`app-shared/`](app-shared)); it
-uses the single forward distance reading, has no face blur and never uploads for Describe. Desktop audio does
+uses the single forward distance reading, has no face blur and never uploads for Describe (the iPhone app can, with an
+explicit unblurred-upload opt-in; see [`ios/README.md`](ios/README.md)). Desktop audio does
 not verify a physical Bluetooth headset. Details: [`desktop/README.md`](desktop/README.md).
 
 ## App screenshots
