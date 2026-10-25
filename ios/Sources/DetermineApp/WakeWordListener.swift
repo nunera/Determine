@@ -25,13 +25,16 @@ enum WakeWordEvent: Sendable {
     /// The wake phrase was heard; a command may follow.
     case wake
     case command(VoiceCommand)
+    /// Words after the wake phrase that match no fixed command, as plain text for the optional AI router.
+    case unmatched(String)
     case log(String)
 }
 
 /// "Hey Determine": always-on listening for a wake phrase and one command, on the iPhone's built-in microphone, with
-/// Apple's on-device speech recognizer (`SpeechAnalyzer`, iOS 26). No audio or text leaves the phone. Experimental:
+/// Apple's on-device speech recognizer (`SpeechAnalyzer`, iOS 26). Audio never leaves the phone; words after the wake
+/// phrase leave it, as text only, only if the wearer turned on AI understanding in Settings. Experimental:
 /// battery, heat and false triggers while walking are not measured. It only ever asks the app to run a command that
-/// is already on Main (`VoiceCommand`); it never reaches the hazard decision.
+/// is already on Main (`VoiceCommand`) or to answer a question; it never reaches the hazard decision.
 final class WakeWordListener: @unchecked Sendable {
     private let emit: @Sendable (WakeWordEvent) -> Void
     private var task: Task<Void, Never>?
@@ -58,6 +61,12 @@ final class WakeWordListener: @unchecked Sendable {
         core = nil
         PhoneAudioSession.shared.setRecording(false)
     }
+}
+
+/// What one recognizer session heard.
+private enum Heard: Sendable {
+    case command(VoiceCommand)
+    case unmatched(String)
 }
 
 private enum WakeError: Error {
@@ -180,10 +189,16 @@ private final class SpeechWakeCore: @unchecked Sendable {
         var failures = 0
         while !isStopped, !Task.isCancelled {
             do {
-                if let command = try await listenOnce(locale: locale) {
+                switch try await listenOnce(locale: locale) {
+                case let .command(command)?:
                     emit(.command(command))
                     // A fresh recognizer next time: the words just handled are not in its context.
                     try? await Task.sleep(for: .milliseconds(800))
+                case let .unmatched(words)?:
+                    emit(.unmatched(words))
+                    try? await Task.sleep(for: .milliseconds(800))
+                case nil:
+                    break
                 }
                 failures = 0
             } catch is CancellationError {
@@ -215,8 +230,9 @@ private final class SpeechWakeCore: @unchecked Sendable {
         }
     }
 
-    /// One recognizer session: ends with the command that was heard, or nil if the result stream ended without one.
-    private func listenOnce(locale: Locale) async throws -> VoiceCommand? {
+    /// One recognizer session: ends with what was heard (a command, or words no fixed command matched), or nil if
+    /// the result stream ended without either.
+    private func listenOnce(locale: Locale) async throws -> Heard? {
         let transcriber = SpeechTranscriber(
             locale: locale, transcriptionOptions: [], reportingOptions: [.volatileResults], attributeOptions: []
         )
@@ -230,20 +246,20 @@ private final class SpeechWakeCore: @unchecked Sendable {
         try startEngineIfNeeded()
         emit(.state(.listening))
 
-        var command: VoiceCommand?
+        var heard: Heard?
         var failure: Error?
         do {
-            command = try await consume(transcriber)
+            heard = try await consume(transcriber)
         } catch {
             failure = error
         }
         input.detach()
         await analyzer.cancelAndFinishNow()
         if let failure { throw failure }
-        return command
+        return heard
     }
 
-    private func consume(_ transcriber: SpeechTranscriber) async throws -> VoiceCommand? {
+    private func consume(_ transcriber: SpeechTranscriber) async throws -> Heard? {
         var candidate: VoiceCommand?
         var candidateSince = ContinuousClock.now
         var windowUntil: ContinuousClock.Instant?
@@ -257,6 +273,7 @@ private final class SpeechWakeCore: @unchecked Sendable {
                 wakeAnnounced = false
             }
             var command: VoiceCommand?
+            var spoken: String?
             let parsed = VoicePhrases.parse(text)
             if parsed.wakeHeard {
                 if !wakeAnnounced {
@@ -265,15 +282,22 @@ private final class SpeechWakeCore: @unchecked Sendable {
                     emit(.wake)
                 }
                 command = parsed.command
+                spoken = VoicePhrases.utterance(afterWakeIn: text)
             } else if windowUntil != nil {
                 command = VoicePhrases.command(in: text)
+                spoken = VoicePhrases.normalize(text)
             }
             if command != candidate {
                 candidate = command
                 candidateSince = now
             }
             if let candidate, result.isFinal || now - candidateSince >= Self.stableFor {
-                return candidate
+                return .command(candidate)
+            }
+            // Finished words after the wake phrase that match no fixed command: a question or an odd phrasing. One
+            // word is noise ("yes", "um"); two or more go to the AI router if the wearer enabled it.
+            if result.isFinal, command == nil, let spoken, spoken.split(separator: " ").count >= 2 {
+                return .unmatched(spoken)
             }
         }
         return nil

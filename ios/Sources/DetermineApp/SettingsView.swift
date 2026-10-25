@@ -68,6 +68,11 @@ struct SettingsView: View {
             ))
             Text("While Determine runs, it listens on the iPhone's own microphone, never the headset's, for \"Hey Determine\" and then: what's ahead, read text, pause warnings, resume warnings, stop. Everything is recognised on this iPhone and nothing is recorded or sent. Needs iOS 26 and microphone access; the first use downloads Apple's speech model. It costs battery and can mishear in traffic or wind, and a pause always reminds you and resumes by itself. It never starts Determine and never changes what you are warned about.")
                 .font(.body)
+            Toggle("Understand other questions with AI", isOn: Binding(
+                get: { model.wakeAIEnabled }, set: { model.setWakeAIEnabled($0) }
+            ))
+            Text("Off by default. When on, words after \"Hey Determine\" that match no fixed command are sent, as text only, to your describe server, which decides whether they are one of the fixed commands or a question about what the camera sees (\"is the door open?\"). A question uploads one camera frame, with faces unblurred, the same as What's ahead, so it needs Describe set up below and the unblurred-upload switch on. A mis-heard phrase can therefore send one frame. Audio is never sent.")
+                .font(.callout)
             if model.wakeWordEnabled, model.running {
                 DetailLine(title: "Voice listening", value: model.wakeState.label)
             }

@@ -40,6 +40,13 @@ public enum VoicePhrases {
     /// Wake phrase, then the command that follows the last one. Text without a wake phrase never has a command here;
     /// use `command(in:)` for the words spoken in the window after a wake phrase on its own.
     public static func parse(_ text: String) -> Parse {
+        guard let tail = tail(afterWakeIn: text) else { return Parse(wakeHeard: false, command: nil) }
+        return Parse(wakeHeard: true, command: match(tail))
+    }
+
+    /// The words after the last wake phrase, normalised and padded with a space at each end; nil without a wake
+    /// phrase.
+    private static func tail(afterWakeIn text: String) -> String? {
         let words = " " + normalize(text) + " "
         var tailStart: String.Index?
         for phrase in wakePhrases {
@@ -51,8 +58,15 @@ public enum VoicePhrases {
                 search = after..<words.endIndex
             }
         }
-        guard let start = tailStart else { return Parse(wakeHeard: false, command: nil) }
-        return Parse(wakeHeard: true, command: match(String(words[start...])))
+        return tailStart.map { String(words[$0...]) }
+    }
+
+    /// What was said after the last wake phrase, as plain words ("is the door open"), or nil when there is no wake
+    /// phrase or nothing follows it. This is what goes to the AI router when no fixed command matched.
+    public static func utterance(afterWakeIn text: String) -> String? {
+        guard let tail = tail(afterWakeIn: text) else { return nil }
+        let words = tail.trimmingCharacters(in: .whitespaces)
+        return words.isEmpty ? nil : words
     }
 
     /// The command in text spoken without a wake phrase.

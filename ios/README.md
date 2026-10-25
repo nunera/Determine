@@ -63,6 +63,14 @@ with a SwiftUI host. iOS 17+, unsigned IPA only. Do not use it while walking: no
   downloads Apple's speech model, so it needs a connection once, and asks for microphone access (inside
   LiveContainer that permission belongs to LiveContainer, not to the app: not checked). The phrase parsing is
   unit-tested (`VoiceChecks`); the microphone, recognizer and audio session are compile-verified only.
+- **AI understanding of other speech** (Settings → Voice → "Understand other questions with AI", default off):
+  words after "Hey Determine" that match none of the five fixed phrases are sent, as text only (never audio or an
+  image), to the describe server's `POST /v1/voice` (cloud/API.md §1b). The server asks **Jev**, TypeSafe's
+  decision model, one Choice question and gets back a route and its probability in about 0.3 s: a fixed command (run
+  as if it had been said), a question about what the camera sees (one frame is then uploaded with the question, the
+  same as What's ahead, so it needs Describe set up and the unblurred-upload switch on), or nothing. Below 0.6 it
+  does nothing, and "Didn't catch that" is spoken. Because a mis-heard phrase can therefore upload one frame, it is
+  a separate switch from the wake word itself. The fixed phrases never leave the phone.
 - **Link quality**: when the engine reports `linkWeak` (cue board RSSI below the threshold for the hold time) Main shows
   an orange "Weak connection" banner and Judge highlights the RSSI. The engine speaks "weak connection" once. It is
   informational and never changes the system state.
@@ -150,6 +158,7 @@ reports, not per-row logs; the table retains the earlier per-feature evidence be
 | Siri voice commands | Install the Siri build; say each phrase with a session running; Settings → Siri may need the app enabled | not yet tested on device. Open risks: whether a sideloaded, re-signed app keeps the index, and whether the sideloading tool rewrites the bundle id (then pass it in `SIRI_EXTRA_BUNDLE_IDS`) |
 | Pause guard | Pause warnings; "Warnings are paused" repeats every 30 s; warnings resume by themselves at 120 s | not yet tested on device |
 | Wake word | Settings → Voice on; grant the microphone; first use downloads the speech model; with a session running say "Hey Determine, what's ahead", "read text", "pause warnings", "resume warnings", "stop"; wait for "Listening" then speak the command separately; check headset cues keep playing in high quality and speech is still audible | not yet tested on device. Open risks: LiveContainer's microphone and speech permissions, false triggers in traffic, battery and heat, the audio-session switch to play-and-record, and whether the headset stays on A2DP |
+| AI understanding | Settings → Voice → AI on, Describe set up (server URL, key, unblurred upload on); say "Hey Determine" then a free-form phrase ("hold the warnings for a minute", "is the door open?", "what colour is that car") | not yet tested on device (the router was probed live from the home server with 15 phrases; the Swift client was smoke-tested against the real handler with a stub model). Open risks: latency of the full chain, false triggers uploading a frame |
 
 ## Unsigned IPA
 

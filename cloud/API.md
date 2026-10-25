@@ -43,25 +43,32 @@ Response 200:
 
 ### 1b. Voice routing: `POST /v1/voice`
 
-Same bearer key and error format. What the wearer said after the wake phrase goes to a router model (default
-`typesafe/jev-router`, set with `OPENROUTER_ROUTER_MODEL`) with three tools. Only the transcript text is sent: no
-audio and no image. The phone tries its own fixed phrases first and calls this only when none matched.
+Same bearer key and error format. What the wearer said after the wake phrase goes to Jev, TypeSafe's decision model
+(`typesafe/jev-1.14`, set with `OPENROUTER_ROUTER_MODEL`), through OpenRouter's Decisions API
+(`POST https://openrouter.ai/api/alpha/decisions`). Jev is not a chat model: it answers one typed Choice question,
+"which of these routes does the wearer want", with the chosen route and a probability for every route, in about 0.3 s
+(measured from the home server). Only the transcript text is sent: no audio and no image. The phone tries its own
+fixed phrases first and calls this only when none matched.
 
 Request: `{"request_id":str,"transcript":str (1–300 chars),"locale":"en"}`
 
 Response 200:
 
 ```json
-{"request_id":"…","action":"command","command":"pauseWarnings","model":"openai/gpt-6-luna","backend":"openrouter",
- "timings_ms":{"inference":412,"api":3,"total":415}}
+{"request_id":"…","action":"command","command":"pauseWarnings","model":"typesafe/jev-1.14-20261014","backend":"openrouter",
+ "confidence":0.99,"timings_ms":{"inference":270,"api":3,"total":273}}
 ```
 
-- `action` is `command` (with `command` ∈ `whatsAhead` | `readText` | `pauseWarnings` | `resumeWarnings` |
-  `stopSpeaking`), `ask` (with a cleaned `question`: the phone then calls `/v1/describe` with one frame and that
-  question), or `none`. Anything the model returns that is not exactly one of those, including an unknown command,
-  an empty or over-long question or malformed arguments, is `none`: the phone does nothing.
-- The transcript is untrusted: it is passed as one JSON-quoted string and the model is told it is data. It is
-  never logged; only its length is.
+- Routes: `whatsAhead`, `readText`, `pauseWarnings`, `resumeWarnings`, `stopSpeaking`, `askAboutScene`, `none`.
+- `action` is `command` (the first five routes), `ask` (`askAboutScene`: the phone then calls `/v1/describe` with one
+  frame and `question`, which is what the wearer said as cleaned plain text), or `none`. `confidence` is Jev's
+  probability for the chosen route.
+- The route is acted on only when `confidence` ≥ `VOICE_MIN_CONFIDENCE` (default 0.6); otherwise `action` is `none`.
+  Anything else unusable (a route that is not one of the seven, a missing or non-numeric probability, a malformed
+  answer) is also `none`: the phone does nothing.
+- The transcript is untrusted but cannot instruct anything: it is Jev's state, and the only possible output is one of
+  the seven routes. It is never logged; only its length is. The Decisions API has no data-collection option, so the
+  transcript goes to TypeSafe under OpenRouter's default policy.
 - Budget 4 s; failures use the same codes (`unavailable` for a missing key, rate limit or no credits, `timeout`).
 
 ## 2. describe-api → inference server

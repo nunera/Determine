@@ -59,4 +59,12 @@ func voiceChecks(_ t: Harness) {
         t.eq(VoiceCommand.pauseWarnings, VoicePhrases.command(in: "pause warnings"))
         t.isNil(VoicePhrases.command(in: "nice weather today"))
     }
+
+    t.test("voice: what was said after the last wake phrase is kept as plain words for the AI router") {
+        t.eq("is the door open", VoicePhrases.utterance(afterWakeIn: "Hey Determine, is the door open?"))
+        t.eq("what colour is that car", VoicePhrases.utterance(afterWakeIn: "hey determine pause hey determine what colour is that car"))
+        t.eq("whats the weather", VoicePhrases.utterance(afterWakeIn: "ok determine what's the weather"))
+        t.isNil(VoicePhrases.utterance(afterWakeIn: "Hey Determine"))
+        t.isNil(VoicePhrases.utterance(afterWakeIn: "is the door open"))
+    }
 }

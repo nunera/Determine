@@ -202,8 +202,11 @@ class FakeOpenRouterServer:
         self.payload: dict | None = None  # full response override
         self.content: str | None = "A door is open on your left. Two steps go up ahead."
         self.model = "openai/gpt-6-luna"
-        self.tool_call: tuple[str, dict] | None = None
-        self.raw_arguments: str | None = None  # tool arguments sent verbatim instead of json.dumps(args)
+        # Decisions API (`/alpha/decisions`, used for voice routing): the chosen route and a probability per route,
+        # or a full `answers` override for malformed-answer tests.
+        self.decision: tuple[str, dict] | None = ("none", {"none": 0.95})
+        self.decision_model = "typesafe/jev-1.14-20261001"
+        self.decision_answers: object | None = None
         self.delay_s = 0.0
         self.requests: list[dict] = []
         owner = self
@@ -219,16 +222,16 @@ class FakeOpenRouterServer:
                     payload = owner.payload
                 elif owner.status != 200:
                     payload = {"error": {"code": owner.status, "message": "scripted failure"}}
+                elif self.path.endswith("/alpha/decisions"):
+                    if owner.decision_answers is not None:
+                        answers = owner.decision_answers
+                    else:
+                        choice, probabilities = owner.decision
+                        answers = {"route": {"type": "choice", "choice": choice, "confidence": 0.5, "probabilities": probabilities}}
+                    payload = {"id": "gen-dec-1", "model": owner.decision_model, "provider": "TypeSafe", "answers": answers,
+                               "usage": {"input_tokens": 300, "output_tokens": 20, "cost": 0.00001}}
                 else:
                     message: dict = {"role": "assistant", "content": owner.content}
-                    if owner.tool_call is not None:
-                        name, args = owner.tool_call
-                        arguments = owner.raw_arguments if owner.raw_arguments is not None else json.dumps(args)
-                        message = {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": name, "arguments": arguments}}],
-                        }
                     payload = {"id": "gen-1", "model": owner.model, "choices": [{"index": 0, "message": message}]}
                 data = json.dumps(payload).encode("utf-8")
                 try:

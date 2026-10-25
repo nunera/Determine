@@ -18,7 +18,8 @@ Environment:
   DESCRIBE_BACKEND=openrouter                 any vision model OpenRouter serves (see openrouter.py)
   OPENROUTER_API_KEY | OPENROUTER_API_KEY_PARAM   OpenRouter key, or SSM SecureString name holding it
   OPENROUTER_MODEL                            vision model (default openai/gpt-6-luna)
-  OPENROUTER_ROUTER_MODEL                     voice router model for /v1/voice (default typesafe/jev-router)
+  OPENROUTER_ROUTER_MODEL                     Jev model for /v1/voice (default typesafe/jev-1.14, Decisions API)
+  VOICE_MIN_CONFIDENCE                        act on a voice route only above this probability (default 0.6)
   OPENROUTER_ZDR=1                            only zero-data-retention endpoints
 """
 
@@ -403,6 +404,7 @@ def _handle_voice(raw: bytes, log: dict) -> dict:
         "action": decision.action,
         "model": decision.model,
         "backend": "openrouter",
+        "confidence": round(decision.confidence, 3),
     }
     if decision.command:
         answer["command"] = decision.command

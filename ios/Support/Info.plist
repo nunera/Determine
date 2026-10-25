@@ -5,15 +5,15 @@
     <key>CFBundleDisplayName</key>
     <string>Determine</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.5.0</string>
+    <string>0.6.0</string>
     <key>CFBundleVersion</key>
-    <string>6</string>
+    <string>7</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Determine talks to the glasses' cue and camera boards on this phone's Personal Hotspot network to read the forward distance sensor and drive the temple vibration.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Only if you turn on "Hey Determine" in Settings: the iPhone's own microphone listens for the wake phrase and one command. Speech is recognised on this iPhone and is never recorded or sent anywhere.</string>
+    <string>Only if you turn on "Hey Determine" in Settings: the iPhone's own microphone listens for the wake phrase and one command. The audio is never recorded or sent anywhere. If you also turn on AI understanding, the words you say after the wake phrase are sent, as text only, to your own describe server.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Only if you turn on "Hey Determine" in Settings: Apple's on-device speech recognition understands the wake phrase and the command that follows it. Nothing is sent to a server.</string>
+    <string>Only if you turn on "Hey Determine" in Settings: Apple's on-device speech recognition understands the wake phrase and the command that follows it. Recognition happens on this iPhone.</string>
     <key>NSCameraUsageDescription</key>
     <string>Only if you choose the iPhone camera in Settings: the back camera is used as a software fallback for the glasses' camera board. Frames stay on the phone, except the one frame sent when you turn on Describe and ask what's ahead.</string>
     <key>NSAppTransportSecurity</key>

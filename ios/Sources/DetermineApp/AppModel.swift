@@ -47,6 +47,9 @@ final class AppModel: ObservableObject {
     /// "Hey Determine" listening (iOS 26, experimental, default off). While a session runs it listens on the
     /// iPhone's built-in microphone; see `WakeWordListener`.
     @Published private(set) var wakeWordEnabled: Bool
+    /// Optional: words after "Hey Determine" that match no fixed command go, as text only, to the describe server's
+    /// router, which decides between a command and a question about the camera view. Default off.
+    @Published private(set) var wakeAIEnabled: Bool
     @Published private(set) var wakeState: WakeWordState = .off
     /// Engine tuning (bands, timing, link, EXPERIMENTAL approach and exploration). Persisted, applied live.
     @Published private(set) var tuning: Tuning
@@ -89,6 +92,7 @@ final class AppModel: ObservableObject {
     private var lastLinkWeak = false
     private var readToken = 0
     private var describeToken = 0
+    private var routeToken = 0
     private var pauseGuard: Task<Void, Never>?
 
     private enum Key {
@@ -102,6 +106,7 @@ final class AppModel: ObservableObject {
         static let describeUnredactedOptIn = "determine.describeUnredactedOptIn"
         static let describeKeyAccount = "describeApiKey"
         static let wakeWordEnabled = "determine.wakeWordEnabled"
+        static let wakeAIEnabled = "determine.wakeAIEnabled"
         static let tuningPrefix = "determine.tuning."
     }
 
@@ -133,6 +138,7 @@ final class AppModel: ObservableObject {
         self.describeKeySet = Keychain.get(Key.describeKeyAccount) != nil
         self.describeUnredactedOptIn = defaults.object(forKey: Key.describeUnredactedOptIn) as? Bool ?? false
         self.wakeWordEnabled = defaults.object(forKey: Key.wakeWordEnabled) as? Bool ?? false
+        self.wakeAIEnabled = defaults.object(forKey: Key.wakeAIEnabled) as? Bool ?? false
         self.tuning = Self.loadTuning(defaults)
         // The pre-0.3 single "output mode" setting is replaced by the sound output + layout above.
         defaults.removeObject(forKey: "determine.outputMode")
@@ -231,6 +237,7 @@ final class AppModel: ObservableObject {
         reader = .idle
         alerts.stopReading()
         describeToken += 1
+        routeToken += 1
         describeState = .idle
         trace.log(notice == nil ? "Session stopped" : "Session stopped: app left the foreground")
         UIApplication.shared.isIdleTimerDisabled = false
@@ -369,6 +376,68 @@ final class AppModel: ObservableObject {
             // Pause and resume announce themselves; the others acknowledge, and a refusal always says why.
             if !reply.ok || command == .whatsAhead || command == .readText || command == .stopSpeaking {
                 alerts.speak(reply.text)
+            }
+        case let .unmatched(words):
+            guard wakeAIEnabled else {
+                trace.log("Voice: no fixed command in \"\(words)\" (AI understanding is off)")
+                alerts.speak("Didn't catch that")
+                return
+            }
+            routeVoice(words)
+        }
+    }
+
+    func setWakeAIEnabled(_ enabled: Bool) {
+        wakeAIEnabled = enabled
+        defaults.set(enabled, forKey: Key.wakeAIEnabled)
+        if !enabled { routeToken += 1 }
+    }
+
+    /// Words no fixed command matched, sent as text (never audio or an image) to the describe server's router. It
+    /// answers with a fixed command to run, a question to ask about the camera view (one frame is then uploaded with
+    /// it, the same as What's ahead), or nothing. Needs the Describe settings and an explicit opt-in to upload.
+    private func routeVoice(_ words: String) {
+        guard describeEnabled, let endpoint = describeEndpoint else {
+            trace.log("Voice: AI understanding needs Describe set up in Settings")
+            alerts.speak("Set up Describe in Settings first")
+            return
+        }
+        routeToken += 1
+        let token = routeToken
+        let gen = generation
+        trace.log("Voice: asking the server what \"\(words)\" means (text only)")
+        Task { [weak self] in
+            let decision = await DescribeClient.route(endpoint: endpoint, transcript: words)
+            self?.finishRouting(decision, token: token, generation: gen)
+        }
+    }
+
+    private func finishRouting(_ decision: VoiceDecision, token: Int, generation gen: Int) {
+        guard token == routeToken, gen == generation, running else { return }
+        switch decision {
+        case let .command(command):
+            trace.log("Voice: AI chose \(command.rawValue)")
+            let reply = perform(command)
+            if !reply.ok || command == .whatsAhead || command == .readText || command == .stopSpeaking {
+                alerts.speak(reply.text)
+            }
+        case let .ask(question):
+            trace.log("Voice: AI chose a question about the camera view")
+            requestDescription(question: question)
+            if case let .done(message) = describeState {
+                alerts.speak(message)
+            } else {
+                alerts.speak("Looking.")
+            }
+        case .none:
+            trace.log("Voice: AI chose no action")
+            alerts.speak("Didn't catch that")
+        case let .failed(code, _):
+            trace.log("Voice: router failed: \(code)")
+            switch code {
+            case "unauthorized": alerts.speak("The server refused the key")
+            case "timeout", "network", "unavailable": alerts.speak("The assistant did not answer")
+            default: alerts.speak("Didn't catch that")
             }
         }
     }
@@ -580,7 +649,7 @@ final class AppModel: ObservableObject {
     /// Describe: one camera frame to the describe-api on the wearer's explicit request, never automatically and
     /// never read by hazard logic. This build has no face redaction, so it needs the wearer's explicit opt-in to
     /// upload unblurred frames. A second tap while a request is in flight cancels it.
-    func requestDescription() {
+    func requestDescription(question: String? = nil) {
         guard running, let host else { return }
         if describeState == .requesting {
             cancelDescription()
@@ -605,12 +674,12 @@ final class AppModel: ObservableObject {
         describeState = .requesting
         host.describeFrame { [weak self] frame in
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { self?.sendDescription(frame, to: endpoint, token: token, generation: gen) }
+                MainActor.assumeIsolated { self?.sendDescription(frame, to: endpoint, question: question, token: token, generation: gen) }
             }
         }
     }
 
-    private func sendDescription(_ frame: AssembledFrame?, to endpoint: DescribeEndpoint, token: Int, generation gen: Int) {
+    private func sendDescription(_ frame: AssembledFrame?, to endpoint: DescribeEndpoint, question: String?, token: Int, generation gen: Int) {
         guard token == describeToken, gen == generation, running else { return }
         guard let frame else {
             finishDescribing(.failed(code: "no_frame", retryable: true), token: token, generation: gen)
@@ -618,7 +687,7 @@ final class AppModel: ObservableObject {
         }
         trace.log("Describe: sending one unblurred \(frame.w)x\(frame.h) frame (\(frame.jpeg.count) bytes)")
         Task { [weak self] in
-            let result = await DescribeClient.send(endpoint: endpoint, jpeg: frame.jpeg, width: frame.w, height: frame.h)
+            let result = await DescribeClient.send(endpoint: endpoint, jpeg: frame.jpeg, width: frame.w, height: frame.h, question: question)
             self?.finishDescribing(result, token: token, generation: gen)
         }
     }
