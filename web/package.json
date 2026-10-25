@@ -1,0 +1,36 @@
+{
+  "name": "determine-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "live": "node scripts/live.mjs",
+    "auth": "node server/index.mjs",
+    "test": "node --test server/*.test.mjs",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "preview": "vite preview --host 127.0.0.1",
+    "format": "prettier --plugin=prettier-plugin-svelte --write src/*.svelte src/components/*.svelte src/*.ts src/app.css server/*.mjs scripts/*.mjs *.ts *.js *.json index.html"
+  },
+  "dependencies": {
+    "@fontsource/atkinson-hyperlegible-mono": "^5.3.0",
+    "@fontsource/atkinson-hyperlegible-next": "^5.3.0",
+    "better-auth": "1.7.6",
+    "svelte": "^5.57.2",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@types/node": "^22.20.5",
+    "@types/three": "^0.186.0",
+    "prettier": "^3.9.10",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "^6.0.2",
+    "vite": "^8.3.4"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

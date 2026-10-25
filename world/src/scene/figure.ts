@@ -1,6 +1,6 @@
 /**
- * Stylised maquette figure (no face, no realism): capsules and a sphere in clay, sized for a 1.74 m adult whose
- * brow is at the sensor height (1.6 m). Used for the wearer and for pedestrians.
+ * Smooth, stylised human figure (intentionally faceless), sized for a 1.74 m adult whose brow is at the sensor
+ * height (1.6 m). Used for the wearer and pedestrians; materials distinguish their roles.
  */
 import * as THREE from "three";
 
@@ -22,7 +22,7 @@ export function createFigure(mat: THREE.Material): Figure {
   root.add(body);
 
   const limb = (len: number, r: number): THREE.Mesh => {
-    const g = new THREE.CapsuleGeometry(r, len - 2 * r, 6, 14);
+    const g = new THREE.CapsuleGeometry(r, len - 2 * r, 8, 24);
     g.translate(0, -len / 2, 0);              // pivot at the top joint
     return new THREE.Mesh(g, mat);
   };
@@ -37,22 +37,22 @@ export function createFigure(mat: THREE.Material): Figure {
     legs.push(hip);
   }
   // pelvis + torso
-  const pelvis = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.08, 6, 16), mat);
+  const pelvis = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.08, 8, 24), mat);
   pelvis.rotation.z = Math.PI / 2;
   pelvis.scale.set(1, 1, 0.75);
   pelvis.position.y = HIP_Y + 0.02;
   body.add(pelvis);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.36, 8, 18), mat);
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.36, 8, 24), mat);
   torso.scale.set(1.05, 1, 0.66);
   torso.position.y = 1.18;
   body.add(torso);
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 12), mat);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 24), mat);
   neck.position.y = 1.5;
   body.add(neck);
   // head (sphere, no face)
   const head = new THREE.Group();
   head.position.y = BROW_Y;
-  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.105, 28, 20), mat);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.105, 32, 24), mat);
   skull.scale.set(0.92, 1.08, 1);
   skull.position.y = 0.01;
   head.add(skull);

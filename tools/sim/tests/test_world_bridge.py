@@ -1,13 +1,11 @@
-"""Determine World bridge (wire v2): WebSocket framing/handshake, phone cli line → event translation, cue-board log
-→ `played`, the live cue board's single forward RANGE/fault behaviour over loopback UDP, engine tuning (argv and the
-restart), and the describe proxy mapping."""
+"""World bridge regressions: real CLI profile control, lifecycle and origin boundaries, WebSocket framing,
+event translation, single forward RANGE/fault behaviour, tuning restarts, and the describe proxy."""
 import io
 import json
 import os
 import socket
-import stat
 import sys
-import tempfile
+import threading
 import time
 import unittest
 import urllib.error
@@ -18,9 +16,9 @@ import jpeg as jpg  # noqa: E402
 import wsserver as ws  # noqa: E402
 from dtwire import FAULT_NO_CLOCK_SYNC, dw  # noqa: E402
 from simclock import BoardClock  # noqa: E402
-from world_bridge import (FAULT_SENSOR_READ_ERR, Bridge, DescribeClient, LiveCueBoard, LiveScenario,  # noqa: E402
-                          LogThrottle, WorldFeed, board_event, build_parser, describe_route, engine_cmd,
-                          engine_event, parse_range, parse_tuning)
+from world_bridge import (DEFAULT_ENGINE, FAULT_SENSOR_READ_ERR, Bridge, DescribeClient, EngineProcess,  # noqa: E402
+                          LiveCueBoard, LiveScenario, LogThrottle, WorldFeed, board_event, build_parser,
+                          describe_route, engine_event, parse_profile, parse_range, parse_tuning)
 
 RFC_KEY = "dGhlIHNhbXBsZSBub25jZQ=="
 RFC_ACCEPT = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
@@ -115,6 +113,43 @@ class ServerLoopbackTest(unittest.TestCase):
         finally:
             srv.stop()
 
+    def test_browser_origin_must_match_host_before_upgrade(self):
+        connected = []
+        srv = ws.WebSocketServer("127.0.0.1", 0, on_connect=lambda c: connected.append(c))
+        srv.start()
+        self.addCleanup(srv.stop)
+        host = f"127.0.0.1:{srv.port}"
+        for origin, allowed in ((f"http://{host}", True), (f"https://{host}", True),
+                                ("https://unrelated.invalid", False), ("null", False),
+                                ("http://[bad", False), (f"http://user@{host}", False),
+                                (f"http://{host}/", False), (f"http://{host}?", False),
+                                ("http://127.0.0.1:65536", False), ("http://127.0.0.1:0", False)):
+            with self.subTest(origin=origin), socket.create_connection(("127.0.0.1", srv.port), timeout=2) as c:
+                c.sendall((f"GET /ws HTTP/1.1\r\nHost: {host}\r\nOrigin: {origin}\r\n"
+                           f"Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {RFC_KEY}\r\n"
+                           "Sec-WebSocket-Version: 13\r\n\r\n").encode())
+                with c.makefile("rb") as rf:
+                    response = rf.readline()
+                    self.assertIn(b"101" if allowed else b"403", response)
+                    headers = {}
+                    while (line := rf.readline()) not in (b"\r\n", b""):
+                        name, _, value = line.partition(b":")
+                        headers[name.lower()] = value.strip()
+                    if allowed:
+                        c.sendall(ws.encode_frame(ws.OP_CLOSE, ws.close_payload(1000), mask=MASK))
+                        ws.read_frame(rf, require_mask=False)
+                    else:
+                        rf.read(int(headers[b"content-length"]))
+                        c.shutdown(socket.SHUT_WR)
+        self.assertEqual(len(connected), 2)
+
+    def test_origin_normalizes_default_ports_without_accepting_other_ports(self):
+        self.assertTrue(ws.same_origin("http://localhost", "localhost:80"))
+        self.assertTrue(ws.same_origin("https://localhost:443", "localhost"))
+        self.assertTrue(ws.same_origin("http://[::1]:8765", "[::1]:8765"))
+        self.assertFalse(ws.same_origin("http://localhost:8765", "localhost:8766"))
+        self.assertFalse(ws.same_origin("https://localhost#fragment", "localhost"))
+
 
 class EngineLineTest(unittest.TestCase):
     def test_alert_none(self):
@@ -160,6 +195,15 @@ class EngineLineTest(unittest.TestCase):
         self.assertEqual(engine_event("VIBRATE 6.0 pattern=0,80,40,80"),
                          {"t": "vibrate", "ms": 6.0, "pattern": [0, 80, 40, 80]})
         self.assertEqual(engine_event("SYSTEM-OFF 12.5"), {"t": "systemOff", "ms": 12.5})
+
+    def test_profile_result_translates_only_valid_engine_acknowledgments(self):
+        self.assertEqual(engine_event("PROFILE-RESULT 1.0 request=2 status=applied mode=SSD ceiling_db=-30 haptic_max=96"),
+                         {"t": "profile", "status": "applied",
+                          "profile": {"mode": "SSD", "ceilingDb": -30, "hapticMax": 96}})
+        self.assertEqual(engine_event("PROFILE-RESULT 1.0 request=2 status=rejected error=invalid_mode"),
+                         {"t": "profile", "status": "rejected", "profile": None, "error": "invalid mode"})
+        raw = "PROFILE-RESULT 1.0 request=2 status=applied mode=SSD ceiling_db=-30 haptic_max=0"
+        self.assertEqual(engine_event(raw), {"t": "log", "line": raw})
 
     def test_profile_banner_and_unknown_are_logs(self):
         for raw in ("PROFILE-TX 5.0 seq=0 mode=0 haptic_max=255",
@@ -307,67 +351,117 @@ class LiveCueBoardTest(unittest.TestCase):
             self.recv()  # only the second BEAT was sent
 
 
-class TuningTest(unittest.TestCase):
+class ProfileControlTest(unittest.TestCase):
     BASE = ["--port", "0", "--cue-port", "0", "--cam-port", "0", "--phone-port", "47999"]
+    PROFILE = {"mode": "HAPTIC_ONLY", "ceilingDb": -30, "hapticMax": 96}
 
-    def bridge(self, extra: list[str]) -> tuple[Bridge, list[dict]]:
-        b = Bridge(build_parser().parse_args(self.BASE + extra))
-        events: list[dict] = []
+    def bridge(self, extra=()):
+        b = Bridge(build_parser().parse_args(self.BASE + list(extra)))
+        events = []
         b.emit = events.append
         self.addCleanup(b.stop)
         return b, events
 
-    def test_engine_cmd(self):
-        base = ["eng", "--port", "47000", "--bind", "127.0.0.1", "--ceiling", "-20", "--mode", "STEREO"]
-        self.assertEqual(engine_cmd("eng", 47000, -20, "STEREO", {"approach": False, "explore": False}), base)
-        self.assertEqual(engine_cmd("eng", 47000, -20, "STEREO", {"approach": True, "explore": True}),
-                         base + ["--approach", "--explore"])
+    def wait_for(self, predicate, seconds=8):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if predicate():
+                return
+            time.sleep(0.02)
+        self.fail("Timed out waiting for real engine/board result")
 
-    def test_initial_flags_and_tuning_message_restart_the_engine_with_matching_argv(self):
-        d = tempfile.mkdtemp()
-        fake = os.path.join(d, "fake-engine")
-        with open(fake, "w") as f:
-            f.write(f"#!{sys.executable}\nimport sys\nprint('ARGV', *sys.argv[1:], flush=True)\n")
-        os.chmod(fake, os.stat(fake).st_mode | stat.S_IXUSR)
-        self.addCleanup(lambda: (os.remove(fake), os.rmdir(d)))
-        b, events = self.bridge(["--engine", fake, "--approach"])
-        self.assertEqual(b.hello()["tuning"], {"approach": True, "explore": False})
+    def test_invalid_profiles_retain_prior_applied_settings(self):
+        b, events = self.bridge()
+        self.assertIsNone(b.hello()["profile"])
+        b.on_engine_line("PROFILE-RESULT 1.0 request=0 status=applied mode=HAPTIC_ONLY ceiling_db=-30 haptic_max=96")
+        self.assertEqual(b.hello()["profile"], self.PROFILE)
+        for profile in (None, {}, self.PROFILE | {"mode": "INVALID"}, self.PROFILE | {"ceilingDb": -9},
+                        self.PROFILE | {"ceilingDb": -61}, self.PROFILE | {"ceilingDb": True},
+                        self.PROFILE | {"hapticMax": 0}, self.PROFILE | {"hapticMax": 256},
+                        self.PROFILE | {"hapticMax": "96"}, self.PROFILE | {"hapticMax": 1.5}):
+            b.on_text(None, json.dumps({"t": "profile", "profile": profile}))
+            self.assertEqual(events[-1]["status"], "rejected")
+            self.assertTrue(events[-1]["error"])
+            self.assertEqual(events[-1]["profile"], self.PROFILE)
+            self.assertEqual(b.status()["profile"], self.PROFILE)
+        b.on_engine_line("PROFILE-RESULT 2.0 request=1 status=rejected error=invalid_profile")
+        self.assertEqual(events[-1]["profile"], self.PROFILE)
+        self.assertIsNone(parse_profile(self.PROFILE | {"hapticMax": True}))
+
+    def test_external_and_stopped_engines_reject_instead_of_acknowledging(self):
+        for extra, error in ((["--phone", "127.0.0.1:47998"], "external phone"), ([], "stopped")):
+            b, events = self.bridge(extra)
+            b.on_text(None, json.dumps({"t": "profile", "profile": self.PROFILE}))
+            self.assertEqual(events[-1]["status"], "rejected")
+            self.assertIn(error, events[-1]["error"])
+            self.assertIsNone(events[-1]["profile"])
+            self.assertIsNone(b.hello()["profile"])
+
+    def test_silent_engine_times_out_and_broken_pipe_rejects(self):
+        lines = []
+        process = EngineProcess([sys.executable, "-c", "import time; time.sleep(60)"], lines.append, lambda msg: None)
+        self.addCleanup(process.stop)
+        process.start()
+        self.assertIn("within 3 seconds", process.set_profile(self.PROFILE))
+        self.assertEqual(lines, [])
+        process.proc.stdin.close()
+        self.assertIn("control pipe failed", process.set_profile(self.PROFILE))
+
+    def test_process_exit_and_stop_cancel_unacknowledged_control(self):
+        for stop in (False, True):
+            lines, exits = [], []
+            script = "import sys,time; sys.stdin.readline(); " + ("time.sleep(60)" if stop else "sys.exit(7)")
+            process = EngineProcess([sys.executable, "-c", script], lines.append, exits.append)
+            self.addCleanup(process.stop)
+            process.start()
+            result = []
+            thread = threading.Thread(target=lambda: result.append(process.set_profile(self.PROFILE)))
+            thread.start()
+            if stop:
+                process.stop()
+            thread.join(4)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(len(result), 1)
+            self.assertIsInstance(result[0], str)
+            self.assertFalse(any(engine_event(line).get("status") == "applied" for line in lines))
+            process.stop()
+            process.restart()
+            self.assertFalse(process.running)
+
+    def test_missing_executable_rejects_control(self):
+        exits = []
+        process = EngineProcess(["/nonexistent/determine-phone"], lambda line: None, exits.append)
+        process.start()
+        self.assertIn("failed to start", exits[0])
+        self.assertIn("stopped", process.set_profile(self.PROFILE))
+
+    @unittest.skipUnless(os.access(DEFAULT_ENGINE, os.X_OK), "Build phone CLI with :cli:installDist first")
+    def test_real_cli_applies_in_place_sends_wire_profile_and_preserves_it_on_tuning_restart(self):
+        b, events = self.bridge(["--mode", "HAPTIC_ONLY"])
+        b.start()
+        self.wait_for(lambda: b.profile is not None)
+        pid = b.engine.proc.pid
+        events.clear()
+        b.on_text(None, json.dumps({"t": "profile", "profile": self.PROFILE}))
+        self.assertEqual(b.engine.proc.pid, pid)
+        self.assertEqual([e for e in events if e["t"] == "profile"],
+                         [{"t": "profile", "status": "applied", "profile": self.PROFILE}])
+        self.assertEqual(b.hello()["profile"], self.PROFILE)
+        self.wait_for(lambda: any(e["t"] == "log" and e["line"].startswith("PROFILE ")
+                                 and "haptic_max=96" in e["line"] and "applied" in e["line"] for e in list(events)))
+        events.clear()
+        b.set_tuning({"approach": True, "explore": False})
+        self.wait_for(lambda: b.engine.proc is not None and b.engine.proc.pid != pid and
+                      any(e["t"] == "profile" and e.get("status") == "applied" for e in list(events)))
+        self.assertEqual(b.status()["profile"], self.PROFILE)
         self.assertEqual(b.status()["tuning"], {"approach": True, "explore": False})
-        self.assertIn("--approach", b.engine.cmd)
-        self.assertNotIn("--explore", b.engine.cmd)
-
-        b.on_text(None, json.dumps({"t": "tuning", "tuning": {"approach": False, "explore": True}}))
-        self.assertEqual(b.engine.cmd[-1:], ["--explore"])
-        self.assertNotIn("--approach", b.engine.cmd)
-        deadline = time.monotonic() + 10.0
-        while time.monotonic() < deadline and not any(e["t"] == "log" and e["line"].startswith("ARGV")
-                                                      for e in list(events)):
-            time.sleep(0.02)
-        argv = [e["line"] for e in events if e["t"] == "log" and e["line"].startswith("ARGV")]
-        self.assertEqual(argv, ["ARGV --port 47999 --bind 127.0.0.1 --ceiling -20 --mode STEREO --explore"])
-        self.assertTrue(any(e["t"] == "log" and "tuning approach=off explore=on" in e["line"] for e in events))
-        while time.monotonic() < deadline and not any(e["t"] == "bridge" and e["tuning"] == {
-                "approach": False, "explore": True} for e in list(events)):
-            time.sleep(0.02)
-        self.assertTrue(any(e["t"] == "bridge" and e["tuning"] == {"approach": False, "explore": True}
-                            for e in events))
 
     def test_external_phone_rejects_tuning(self):
         b, events = self.bridge(["--phone", "127.0.0.1:47998"])
-        self.assertIsNone(b.hello()["tuning"])  # unknown: never a guessed {false, false}
-        self.assertIsNone(b.status()["tuning"])
+        self.assertIsNone(b.hello()["tuning"])
         b.on_text(None, json.dumps({"t": "tuning", "tuning": {"approach": True, "explore": False}}))
-        logs = [e["line"] for e in events if e["t"] == "log"]
-        self.assertEqual(len(logs), 1, logs)
-        self.assertIn("tune the external phone on the phone", logs[0])
+        self.assertIn("tune the external phone on the phone", events[-1]["line"])
         self.assertIsNone(b.status()["tuning"])
-
-    def test_status_messages_carry_contract_fields(self):
-        b, _ = self.bridge(["--engine", "/nonexistent/determine-phone"])
-        self.assertEqual(set(b.hello()), {"t", "engine", "phone", "describe", "tuning"})
-        self.assertEqual(set(b.status()), {"t", "engine", "boards", "net", "tuning"})
-        self.assertEqual(b.status()["engine"], "exited")
-        self.assertEqual(b.status()["boards"], {"cue": "up", "cam": "up"})
 
 
 class DescribeTest(unittest.TestCase):

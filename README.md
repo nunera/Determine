@@ -71,6 +71,151 @@ uses the single forward distance reading, has no face blur and never uploads for
 explicit unblurred-upload opt-in; see [`ios/README.md`](ios/README.md)). Desktop audio does
 not verify a physical Bluetooth headset. Details: [`desktop/README.md`](desktop/README.md).
 
+## Product website
+
+The product site and live engineering cockpit are in [`web/`](web/). The studio embeds the existing
+Determine World runtime and controls the real phone engine through the World bridge; it is not a local
+configuration-draft editor.
+
+```sh
+# Node.js 22.13+, Python 3, JDK 17 on PATH
+cd web
+npm ci
+npm run live
+# On Nix: nix shell nixpkgs#nodejs_22 nixpkgs#jdk17 -c npm run live
+# http://127.0.0.1:5175/ — product site
+# http://127.0.0.1:5175/#/studio — live engineering studio
+# http://127.0.0.1:5175/#/studio/hitl — hardware-in-the-loop entry
+# http://127.0.0.1:5175/#/professionals — guided setup, APIs and compatibility
+```
+
+The compact translucent navigation opens grouped project/studio links by click, pointer hover where
+supported, or keyboard (Enter/Space or Arrow Down; Escape closes). The product page has a single global
+navigation bar, a CAD hero, a transparent Bracket distance/response interaction, and a native-scroll
+CAD image sequence. The three images crossfade within one sticky stage as the document scrolls;
+there is no wheel interception or scroll snapping. A theme-aware cane/glasses pictogram follows,
+with “Complementary by Design” as the heading and concise labels beside it. Public cue labels are
+Close / Medium / Far; engine wire bands remain NEAR / MID / FAR. Direct studio routes select
+SIM/HITL without automatically connecting; changing routes tears down the previous browser producer.
+The compact footer keeps the tagline beneath the wordmark and groups its navigation in one
+content-aligned block, without a separate repeated-brand row.
+
+`live` builds `phone/cli` and World, installs World's dependencies if absent, then supervises Vite,
+the account service on loopback 8770, and two isolated bridges. **Connect bridge** explicitly opens a browser session:
+
+| Preset | HTTP / WebSocket | Engine UDP | Board transport |
+|---|---|---|---|
+| SIM | `127.0.0.1:8765` | `127.0.0.1:47000` | Software cue/camera boards on UDP 47001/47002 |
+| HITL | `127.0.0.1:8766` | `127.0.0.1:47110` | Real boards send to this laptop on UDP 47100 |
+
+Both launcher sessions start `HAPTIC_ONLY`, audio ceiling −20 dBFS, haptic maximum 96/255. HITL starts
+with real range and real camera input. Configure the boards' phone/relay destination for the bench LAN;
+replies must reach their fixed UDP 47001/47002 listeners. This uses the existing Wi-Fi/UDP hardware path,
+not USB pairing or firmware flashing. Pillow is optional for real-camera compositing; unavailable
+compositing is disabled rather than substituted. See [HITL setup](tools/sim/README.md#real-hardware-in-the-loop-hitl).
+
+The studio supplies course/view/transport controls, fresh range/band/ACK telemetry, SIM-only board
+dropouts and jitter, and live hearing/audio/haptic profile changes. **Apply** waits for the actual engine's
+acknowledgement; it does not restart the engine. Experiment switches explicitly restart it, preserving
+the last acknowledged profile. HITL offers real/world/fused range, camera compositing, virtual target
+geometry/reflectance, packet discovery/age/RSSI/faults and tagged engine-input JPEG preview. Missing
+hardware stays missing; the ESP32 camera module is working per the current bench update. An ACK is command acceptance,
+not measured physical motor onset or validated wearable performance.
+
+The **Professionals → Get started** action opens three-step onboarding: connection, output profile,
+then review. **Connect & apply profile** explicitly starts one browser session, waits for the live
+bridge and running engine, verifies that the bridge's SIM/HITL mode matches the requested setup,
+then applies the requested profile once. An already matching, engine-confirmed profile needs no write.
+Initial offline replay is not a disconnect; loss after connection, rejection or timeout invalidates
+guided confirmation and never automatically reapplies.
+Use **Live profile** for later changes. **Download setup** exports the requested configuration, not
+an ACK or clinical calibration. HITL onboarding requires a supervised bench acknowledgement.
+
+The professional **Scene AI** inspector reuses World's user-requested JPEG → bridge → Describe API
+path. Configure `DESCRIBE_URL` + `DESCRIBE_KEY` in `web/.env` for the existing service, or set
+`OPENROUTER_API_KEY` to launch the project's OpenRouter/OpenAI-model backend locally on loopback
+8771. `OPENROUTER_MODEL` selects the vision model; see [provider setup](web/.env.example) and the
+[Describe contract](cloud/API.md). Provider/bearer keys stay out of the browser. A bridge hello
+advertises configuration only; a successful response supplies the actual backend/model/timings.
+Missing service configuration disables the request; upstream failures are shown, not replaced with
+sample narration. The browser describes a **rendered World head view even in HITL**, not the
+physical ESP32 feed. The mobile camera-description path is separate. Description is optional and
+never drives the hazard loop.
+
+The API/compatibility area distinguishes the implemented [Meta camera-profile export study](world/README-profiles.md)
+from hardware support: a portrait crop/resample study is not DAT SDK pairing, live Meta capture,
+validated optics or a replacement for Determine's range/haptic hardware.
+
+Disconnect removes the browser World and its sensor stream; **the bridge, phone engine and physical
+hardware can keep running**. Ctrl-C in `npm run live` shuts down its managed processes. Use one World
+producer per bridge. External phones reject browser profile/tuning changes. HTTP endpoints may be edited
+explicitly; credentials and HTTPS-to-HTTP embedding are rejected. Browser WebSockets require an Origin
+matching the bridge Host. The iframe accepts only the same origin or local website ports 5175/4175,
+with exact source/origin checks in both directions.
+
+Paper, Midnight and Cobalt change the page and Three.js materials. The hero uses 15 original slim-study
+CAD meshes; [`manifest.json`](web/public/model/manifest.json) records their sources. Floating `Determine`
+typography is rendered behind the model and refracted by the actual front-window geometry—not CSS
+blur patches. These are illustrative optics, not calibrated lenses or production hardware. Motion
+supports pause/reduced motion, suspends offscreen, and falls back to an illustration without WebGL.
+The shared header/emblem SVG and favicon use the same open-left, constant-thickness D geometry.
+Header/emblem color inherits the active theme. The three scroll images are compressed WebP copies of
+`hardware/glasses/renders/slim_{hero,front,exploded}.png`, not photos of finished hardware.
+
+World's presentation uses cool architectural materials, procedural reflections, softer shadow filtering
+and SMAA antialiasing. The embedded studio uses `?quality=balanced`: shadows and antialiasing remain,
+while contact AO is disabled to avoid its additional geometry pass. Full quality adds subtle AO;
+low/adaptive tiers lower resolution and remove shadows but retain antialiasing. These are rendering
+changes only: course geometry, collider dimensions/reflectance, sensor model/rates and warning
+decisions are unchanged. Camera input still comes from the actual rendered scene.
+
+For site-only development, run `npm run auth` and `npm run dev -- --port 5175 --strictPort` in separate
+terminals (start bridges separately for the studio). Checks: `npm test` for real isolated account/security
+regressions, `npm run check`, and `npm run build`. Build World with `npm run build` in `world/`, CLI with
+`./gradlew :cli:test :cli:installDist` in `phone/`, and bridge tests with
+`python3 -m unittest discover -s tools/sim/tests` from the repository root.
+
+UI stack: Svelte 5, Vite, Three.js and Atkinson Hyperlegible. Bracket's Button, Tabs, Dialog, Slider and
+dependencies are vendored under `web/src/vendor/bracket/` with the original MIT license. Product styling
+lives in `web/src/app.css`; cue, story, awareness and live-cockpit components have scoped styles.
+
+### Accounts and Google sign-in
+
+Accounts use Better Auth 1.7.6 with private, persistent SQLite storage. The sign-in dialog supports
+password account creation/sign-in, existing-account email codes, verification links, password reset,
+session persistence and logout. **Accounts are optional for local simulation and HITL sessions.**
+Vite development and preview proxy same-origin `/api` requests to the loopback account service;
+a built static site alone cannot authenticate.
+
+Optional settings belong in `web/.env`; see [`web/.env.example`](web/.env.example). Never use `VITE_`
+prefixes for secrets. Development creates `.auth/secret` and `.auth/accounts.sqlite`, excluded from
+version control and denied by Vite. Keep this private storage when restarting the service.
+
+Google is deliberately unavailable until **both** `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are
+configured. Create a Google Web OAuth client with authorized JavaScript origin
+`http://127.0.0.1:5175` and exact authorized redirect URI
+`http://127.0.0.1:5175/api/auth/callback/google`. Restart the account service after changing settings.
+Google uses existing, verified, same-email accounts; create and verify an account first. For a different
+host or preview port, change `BETTER_AUTH_URL` and the registered callback together. The actual Google
+consent/callback round trip has not been verified: no Google credentials are provisioned locally.
+When unconfigured, the dialog offers **Set up Google sign-in** instead of an inert Continue button;
+it opens `#/professionals/google` with the exact callback read from the account service. A configured
+client opened at the wrong origin links to the canonical account address. Account return destinations
+preserve professional routes as well as direct studio routes.
+
+**Local email is not sent.** Development verification/reset links and codes appear only in the
+account-server console. Never expose the development service publicly or share its email logs.
+Codes are hashed, single-use, valid for five minutes, limited to three guesses and three sends per
+minute/address and IP; resends rotate the challenge. First-time email proof—link or code—removes
+passwords and sessions created before mailbox ownership was proven. Use password reset to set a new
+password afterward. Resetting a password revokes existing sessions.
+
+Production requires `NODE_ENV=production`, an HTTPS `BETTER_AUTH_URL`, an explicit strong
+`BETTER_AUTH_SECRET`, private persistent storage, and a same-origin reverse proxy for `/api` to
+loopback 8770. Email features require a Resend key, verified sender, and nonempty recipient allowlist;
+otherwise they stay unavailable. Delivery errors return failures, not a fake “email sent” result.
+External Resend delivery has not been verified without provider credentials.
+
 ## App screenshots
 
 Current v2 app on an Android API 28 emulator, with no Bluetooth headset or connected boards. These captures prove
@@ -199,6 +344,12 @@ an engine mirror, a sound/vibration score, fault injection and experimental TTC/
 nix shell nixpkgs#jdk17 -c python3 tools/sim/world_bridge.py --serve world/dist
 # Open http://127.0.0.1:8765/ (build phone/cli above first)
 ```
+The [hardware-in-the-loop guide](docs/research/hitl.md) connects real board traffic to this same World and engine:
+`--hitl 0.0.0.0:47100 --engine-port 47010 --port 8766`. It supports conservative real/virtual range fusion,
+camera-frame compositing, and a `?view=camera` monitor view for optical camera stimulation. A monitor cannot
+give the physical ToF sensor the rendered object's depth; that requires a real target. Real-board ACKs report
+command acceptance, not measured vibration onset. Physical end-to-end validation is still required.
+
 
 [Research and experiment decisions](docs/research/README.md) link the competitor landscape, simulation fidelity,
 Annapurna Labs/Austin and Meta findings. [Work tracking](docs/research/WORKLOG.md) separates implemented behaviour

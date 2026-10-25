@@ -1,0 +1,279 @@
+{
+  "name": "Determine slim-frame design study",
+  "source": "hardware/glasses/generated/slim/scene.json",
+  "units": "millimetres",
+  "coordinateSystem": "CAD: X horizontal, Y rearward, Z up. Original mesh coordinates retained.",
+  "notice": "Size-allocation design study, not production hardware. Electronics allocations and wiring are intentionally omitted. Lenses are plano surrogates, not certified optical or protective hardware.",
+  "parts": [
+    {
+      "name": "Front_ClearFrame",
+      "label": "Front ClearFrame",
+      "file": "Front_ClearFrame.stl",
+      "role": "shell",
+      "color": [
+        0.7300000190734863,
+        0.8299999833106995,
+        0.8500000238418579,
+        1.0
+      ],
+      "note": "Rim, bridge, hinges and transparent browline cable conduit.",
+      "bounds_mm": [
+        148.598,
+        9.099,
+        49.5
+      ]
+    },
+    {
+      "name": "Left_ClearTemple",
+      "label": "Left ClearTemple",
+      "file": "Left_ClearTemple.stl",
+      "role": "shell",
+      "color": [
+        0.7300000190734863,
+        0.8299999833106995,
+        0.8500000238418579,
+        1.0
+      ],
+      "note": "",
+      "bounds_mm": [
+        10.482,
+        148.816,
+        39.724
+      ]
+    },
+    {
+      "name": "Left_RemovableTempleCover",
+      "label": "Left RemovableTempleCover",
+      "file": "Left_RemovableTempleCover.stl",
+      "role": "lid",
+      "color": [
+        0.7300000190734863,
+        0.8299999833106995,
+        0.8500000238418579,
+        1.0
+      ],
+      "note": "Concept side cover; fastening and repeated-cycle retention require physical iteration.",
+      "bounds_mm": [
+        1.2,
+        113.2,
+        11.2
+      ]
+    },
+    {
+      "name": "Left_HingePin",
+      "label": "Left HingePin",
+      "file": "Left_HingePin.stl",
+      "role": "metal",
+      "color": [
+        0.4000000059604645,
+        0.4300000071525574,
+        0.44999998807907104,
+        1.0
+      ],
+      "note": "Proposed pin geometry; no supplier hinge selected; open pose only.",
+      "bounds_mm": [
+        1.199,
+        1.2,
+        6.6
+      ]
+    },
+    {
+      "name": "Left_NosePad",
+      "label": "Left NosePad",
+      "file": "Left_NosePad.stl",
+      "role": "silicone",
+      "color": [
+        0.25999999046325684,
+        0.30000001192092896,
+        0.3100000023841858,
+        1.0
+      ],
+      "note": "Proposed nose-pad envelope; face fit and skin-contact material unvalidated.",
+      "bounds_mm": [
+        5.194,
+        5.185,
+        5.2
+      ]
+    },
+    {
+      "name": "Right_ClearTemple",
+      "label": "Right ClearTemple",
+      "file": "Right_ClearTemple.stl",
+      "role": "shell",
+      "color": [
+        0.7300000190734863,
+        0.8299999833106995,
+        0.8500000238418579,
+        1.0
+      ],
+      "note": "",
+      "bounds_mm": [
+        10.481,
+        148.814,
+        39.723
+      ]
+    },
+    {
+      "name": "Right_RemovableTempleCover",
+      "label": "Right RemovableTempleCover",
+      "file": "Right_RemovableTempleCover.stl",
+      "role": "lid",
+      "color": [
+        0.7300000190734863,
+        0.8299999833106995,
+        0.8500000238418579,
+        1.0
+      ],
+      "note": "Concept side cover; fastening and repeated-cycle retention require physical iteration.",
+      "bounds_mm": [
+        1.2,
+        113.2,
+        11.2
+      ]
+    },
+    {
+      "name": "Right_HingePin",
+      "label": "Right HingePin",
+      "file": "Right_HingePin.stl",
+      "role": "metal",
+      "color": [
+        0.4000000059604645,
+        0.4300000071525574,
+        0.44999998807907104,
+        1.0
+      ],
+      "note": "Proposed pin geometry; no supplier hinge selected; open pose only.",
+      "bounds_mm": [
+        1.199,
+        1.2,
+        6.6
+      ]
+    },
+    {
+      "name": "Right_NosePad",
+      "label": "Right NosePad",
+      "file": "Right_NosePad.stl",
+      "role": "silicone",
+      "color": [
+        0.25999999046325684,
+        0.30000001192092896,
+        0.3100000023841858,
+        1.0
+      ],
+      "note": "Proposed nose-pad envelope; face fit and skin-contact material unvalidated.",
+      "bounds_mm": [
+        5.194,
+        5.185,
+        5.2
+      ]
+    },
+    {
+      "name": "Left_LensChamber",
+      "label": "Left LensChamber",
+      "file": "Left_LensChamber.stl",
+      "role": "lens_chamber",
+      "color": [
+        0.800000011920929,
+        0.8799999952316284,
+        0.8999999761581421,
+        1.0
+      ],
+      "note": "Hollow transparent lens: perimeter wall, rim flange and continuous rear eye shield. Plano surrogate; no prescription, optical-quality or impact certification.",
+      "bounds_mm": [
+        56.401,
+        8.1,
+        40.401
+      ]
+    },
+    {
+      "name": "Left_LensFrontWindow",
+      "label": "Left LensFrontWindow",
+      "file": "Left_LensFrontWindow.stl",
+      "role": "lens_window",
+      "color": [
+        0.800000011920929,
+        0.8799999952316284,
+        0.8999999761581421,
+        1.0
+      ],
+      "note": "Removable front window with OPEN sensor ports; ToF light never passes through clear plastic.",
+      "bounds_mm": [
+        55.6,
+        1.2,
+        39.601
+      ]
+    },
+    {
+      "name": "Right_LensChamber",
+      "label": "Right LensChamber",
+      "file": "Right_LensChamber.stl",
+      "role": "lens_chamber",
+      "color": [
+        0.800000011920929,
+        0.8799999952316284,
+        0.8999999761581421,
+        1.0
+      ],
+      "note": "Hollow transparent lens: perimeter wall, rim flange and continuous rear eye shield. Plano surrogate; no prescription, optical-quality or impact certification.",
+      "bounds_mm": [
+        56.401,
+        8.1,
+        40.401
+      ]
+    },
+    {
+      "name": "Right_LensFrontWindow",
+      "label": "Right LensFrontWindow",
+      "file": "Right_LensFrontWindow.stl",
+      "role": "lens_window",
+      "color": [
+        0.800000011920929,
+        0.8799999952316284,
+        0.8999999761581421,
+        1.0
+      ],
+      "note": "Removable front window with OPEN sensor ports; ToF light never passes through clear plastic.",
+      "bounds_mm": [
+        55.6,
+        1.2,
+        39.601
+      ]
+    },
+    {
+      "name": "ForwardToF_OpticalGasket",
+      "label": "ForwardToF OpticalGasket",
+      "file": "ForwardToF_OpticalGasket.stl",
+      "role": "gasket",
+      "color": [
+        0.029999999329447746,
+        0.029999999329447746,
+        0.029999999329447746,
+        1.0
+      ],
+      "note": "Opaque compressible gasket around the sensor port; blocks light piping in the window.",
+      "bounds_mm": [
+        9.4,
+        0.43,
+        6.9
+      ]
+    },
+    {
+      "name": "ForwardCamera_OpticalGasket",
+      "label": "ForwardCamera OpticalGasket",
+      "file": "ForwardCamera_OpticalGasket.stl",
+      "role": "gasket",
+      "color": [
+        0.029999999329447746,
+        0.029999999329447746,
+        0.029999999329447746,
+        1.0
+      ],
+      "note": "Opaque compressible gasket around the sensor port; blocks light piping in the window.",
+      "bounds_mm": [
+        9.4,
+        0.43,
+        9.4
+      ]
+    }
+  ]
+}

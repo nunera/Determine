@@ -12,3 +12,8 @@ __pycache__/
 node_modules/
 world/dist/
 .impeccable/
+web/dist/
+web/.auth/
+web/.env
+web/.env.*
+!web/.env.example

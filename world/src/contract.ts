@@ -58,20 +58,89 @@ export interface EngineTuning {
   explore: boolean;
 }
 
-/** Browser → bridge, JSON text frames. Camera JPEGs go as binary frames: byte 0 = 0x01, then the JPEG bytes. */
+/** Live phone profile. Applying it does not restart the engine; wire hard caps still apply. */
+export interface LiveProfile {
+  mode: "HAPTIC_ONLY" | "STEREO" | "SSD";
+  ceilingDb: number;
+  hapticMax: number;
+}
+
+// ---------------------------------------------------------------- hardware in the loop (tools/sim world_bridge.py --hitl)
+
+/** How the bridge builds the RANGE the engine sees from the real cue board's reading and the World raycast. */
+export type HitlRangeMode = "real" | "world" | "fuse";
+export const HITL_RANGE_MODES: readonly HitlRangeMode[] = ["real", "world", "fuse"];
+/** `real` also serves optical screen-in-the-loop (real camera pointed at `?view=camera`); `composite` blends the
+ *  World overlay PNG into the real JPEG. */
+export type HitlCameraMode = "real" | "composite";
+export const HITL_CAMERA_MODES: readonly HitlCameraMode[] = ["real", "composite"];
+/** Which reading the bridge forwarded to the engine. */
+export type HitlRangeSource = "real" | "world" | "real-stale-world";
+
+export interface HitlHello {
+  enabled: boolean;
+  /** LISTEN host:port of the relay socket, null when HITL is disabled. */
+  listen: string | null;
+  range: HitlRangeMode;
+  camera: HitlCameraMode;
+  /** False when the bridge lacks Pillow: composite mode is refused. */
+  compositeAvailable: boolean;
+}
+
+export interface HitlBoardStatus {
+  /** "ip:port" learned from the board's packets, null until it has been heard. */
+  addr: string | null;
+  /** ms since the board's last packet. */
+  ageMs: number | null;
+  rssi: number | null;
+  faults: number | null;
+}
+
+/** Range statuses are the wire numbers (RANGE_VALID / RANGE_NO_TARGET / RANGE_UNKNOWN); null = no reading yet. */
+export interface HitlRangeStatus {
+  mode: HitlRangeMode;
+  realMm: number | null; realStatus: number | null;
+  worldMm: number | null; worldStatus: number | null; worldAgeMs: number | null;
+  outMm: number | null; outStatus: number | null;
+  source: HitlRangeSource;
+}
+
+export interface HitlCameraStatus {
+  mode: HitlCameraMode;
+  framesOut: number;
+  composited: number;
+  lastError: string | null;
+}
+
+/** Binary frame tags on /ws: byte 0, then the image bytes. */
+export const WS_TAG_CAMERA_JPEG = 0x01;     // browser → bridge: simulated camera board JPEG
+export const WS_TAG_HITL_OVERLAY = 0x02;    // browser → bridge: HITL overlay PNG (RGBA, transparent, 320×240)
+export const WS_TAG_HITL_PREVIEW = 0x11;    // bridge → browser: frame as sent to the engine (real or composited)
+export const HITL_OVERLAY_WIDTH = 320;
+export const HITL_OVERLAY_HEIGHT = 240;
+/** Overlay PNG upper rate (contract: ≤ 8 fps). */
+export const HITL_OVERLAY_FPS = 8;
+
+/** Browser → bridge, JSON text frames. Camera JPEGs go as binary frames: byte 0 = 0x01, then the JPEG bytes; HITL
+ *  overlay PNGs: byte 0 = 0x02, then the PNG bytes. */
 export type ToBridge =
   | { t: "range"; simMs: number; mm: number; status: number }     // mm 0 unless status = RANGE_VALID
   | { t: "board"; board: BoardName; down: boolean }                // simulate unplugging a board
   | { t: "net"; profile: "clean" | "wifi_jitter" }                 // tools/sim/netem.py profiles
   | { t: "engine"; action: "restart" }
-  | { t: "tuning"; tuning: EngineTuning };
+  | { t: "tuning"; tuning: EngineTuning }
+  | { t: "profile"; profile: LiveProfile }
+  | { t: "hitl"; range?: HitlRangeMode; camera?: HitlCameraMode }; // HITL modes (bridge logs and ignores when off)
 
-/** Bridge → browser, JSON text frames. `ms` is ms since the engine started (cli clock) unless noted. */
+/** Bridge → browser, JSON text frames. `ms` is ms since the engine started (cli clock) unless noted. Binary frames
+ *  tagged 0x11 carry the HITL preview JPEG. */
 export type FromBridge =
-  /** `tuning` is null when the engine is an external phone: the bridge cannot know its settings. */
-  | { t: "hello"; engine: "spawned" | "external"; phone: string; describe: boolean; tuning: EngineTuning | null }
+  /** `tuning` is null when the engine is an external phone: the bridge cannot know its settings. `hitl` is absent
+   *  from bridges that predate HITL. */
+  | { t: "hello"; engine: "spawned" | "external"; phone: string; describe: boolean; tuning: EngineTuning | null;
+      hitl?: HitlHello; profile?: LiveProfile | null }
   | { t: "bridge"; engine: "running" | "exited" | "external"; boards: Record<BoardName, "up" | "down">; net: string;
-      tuning: EngineTuning | null }
+      tuning: EngineTuning | null; profile?: LiveProfile | null }
   | { t: "state"; ms: number; state: SystemState; reason: string }
   | { t: "alert"; ms: number; alert: { band: Band; distMm: number | null } | null }
   /** The phone's audio half of a cue (cli `AUDIO` line): what the phone plays on the headset. */
@@ -80,14 +149,20 @@ export type FromBridge =
   | { t: "cueTx"; ms: number; seq: number; cue: CueName; side: Side; haptic: HapticName; hl: number; hr: number;
       flags: number; ttlMs: number }
   /** What the simulated cue board did with a CUE, or its own watchdog LSS (`src: "watchdog"`). The bench board has
-   *  ONE Vibro motor and plays max(hl, hr): it cannot lateralise. */
+   *  ONE Vibro motor and plays max(hl, hr): it cannot lateralise. In HITL mode the event comes from the REAL cue
+   *  board's ACK and carries `source: "real"`: command acceptance only, NOT measured physical motor onset. */
   | { t: "played"; hostMs: number; seq: number | null; cue: CueName; side: Side; status: AckStatus;
-      haptic: HapticName; hl: number; hr: number; hapticMax: number; src: "phone" | "watchdog"; lateUs: number }
+      haptic: HapticName; hl: number; hr: number; hapticMax: number; src: "phone" | "watchdog"; lateUs: number;
+      source?: "real" }
   | { t: "speak"; ms: number; text: string }
   | { t: "vibrate"; ms: number; pattern: number[] }
   | { t: "systemOff"; ms: number }
   | { t: "diag"; ms: number; kv: Record<string, string> }
-  | { t: "log"; line: string };
+  | { t: "log"; line: string }
+  | { t: "profile"; status: "applied" | "rejected"; profile: LiveProfile | null; error?: string }
+  /** HITL telemetry, 5–10 Hz while HITL is enabled. */
+  | { t: "hitl"; cue: HitlBoardStatus; cam: HitlBoardStatus & { fps: number | null }; range: HitlRangeStatus;
+      camera: HitlCameraStatus };
 
 /** POST /api/describe (proxied by the bridge to cloud/describe-api). Body: image/jpeg. */
 export interface DescribeResult {
@@ -134,6 +209,21 @@ export interface SensorFrame {
   truthM: number | null;
 }
 
+/** Reflectance presets for the head-locked virtual target (VL53L4CD datasheet anchors; glass → UNKNOWN). */
+export type HitlReflectance = "white" | "grey" | "glass";
+export const HITL_TARGET_MIN_MM = 30;
+export const HITL_TARGET_MAX_MM = 1300;
+
+/** Head-locked virtual target: a thin box straight ahead of the brow sensor, in the ToF raycast and the HITL layer. */
+export interface HitlTargetSettings {
+  on: boolean;
+  /** Brow sensor → near face of the target along the heading, HITL_TARGET_MIN_MM…HITL_TARGET_MAX_MM. */
+  distanceMm: number;
+  widthMm: number;
+  heightMm: number;
+  reflectance: HitlReflectance;
+}
+
 export interface Events {
   // world → everyone
   courses: CourseInfo[];
@@ -152,11 +242,28 @@ export interface Events {
   setBoard: { board: BoardName; down: boolean };
   setNet: { profile: "clean" | "wifi_jitter" };
   setTuning: EngineTuning;
+  setProfile: LiveProfile;
+  restartEngine: Record<string, never>;
   setMuted: { muted: boolean };
   describe: Record<string, never>;            // user pressed "What's ahead?"
   describeResult: DescribeResult & { pending: boolean };
+  /** HITL panel → bridge: requested modes (the panel shows the bridge's ACTUAL modes from `hitl` telemetry). */
+  setHitl: { range?: HitlRangeMode; camera?: HitlCameraMode };
+  /** HITL panel → world (and the `?view=camera` screen via BroadcastChannel). */
+  hitlTarget: HitlTargetSettings;
+  /** HITL panel → world: also draw the course's sensed set pieces into the overlay layer. */
+  hitlOverlayCourse: { on: boolean };
+  /** Screen-in-the-loop leader page → `?view=camera` world: follow this course time exactly. */
+  syncCourse: { id: string; tS: number; playing: boolean };
   // world → link
   cameraJpeg: { jpeg: Blob; simMs: number };
+  /** Studio-only capture metadata, not a second image feed or proof of delivery to the engine. */
+  cameraFrame: { simMs: number };
+  /** HITL overlay PNG (only while hello.hitl.enabled and the bridge's camera mode is composite). */
+  hitlOverlayPng: { png: Blob; simMs: number };
+  // link → HITL panel
+  /** Bridge 0x11 frame: the JPEG as sent to the engine (real or composited). */
+  hitlPreview: { jpeg: Blob };
 }
 
 type Handler<T> = (payload: T) => void;
@@ -190,7 +297,10 @@ export interface WorldHandle {
   captureHeadJpeg(width: number, height: number, quality: number): Promise<Blob>;
   dispose(): void;
 }
-export type CreateWorld = (canvas: HTMLCanvasElement, bus: Bus) => WorldHandle;
+/** `camera`: the screen-in-the-loop page (`?view=camera`): only the head camera, rendered to the canvas at display
+ *  resolution; no ToF stream, no camera board, no bridge link. */
+export interface WorldOptions { view: "full" | "camera" }
+export type CreateWorld = (canvas: HTMLCanvasElement, bus: Bus, options?: WorldOptions) => WorldHandle;
 export type CreateHud = (root: HTMLElement, bus: Bus) => void;
 export type CreateAudio = (bus: Bus) => void;
 export type CreateLink = (bus: Bus, world: WorldHandle) => void;

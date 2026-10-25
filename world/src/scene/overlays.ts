@@ -1,5 +1,5 @@
 /**
- * In-world visualisation of what the system measures and decides (overlay layer: excluded from AO, edges and the
+ * In-world visualisation of what the system measures and decides (overlay layer: excluded from AO and the
  * camera feed):
  *  - the ToF cone (18°, 1.2 m) with ring marks at the proposed band edges 0.5 / 0.9 / 1.2 m;
  *  - the beam to the measured return (VALID: ink, NEAR distances in hazard yellow; UNKNOWN: dashed grey);
@@ -50,10 +50,10 @@ export class SensorOverlay {
     const coneGeo = new THREE.ConeGeometry(R_AT(len), len, 48, 1, true);
     coneGeo.translate(0, -len / 2, 0);
     coneGeo.rotateX(Math.PI / 2);                     // apex at the origin, opening along −Z
-    this.coneMat = new THREE.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide });
+    this.coneMat = new THREE.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.045, depthWrite: false, side: THREE.DoubleSide });
     this.group.add(new THREE.Mesh(coneGeo, this.coneMat));
     // silhouette + band rings
-    this.lineMat = new THREE.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.45 });
+    this.lineMat = new THREE.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.32 });
     const edges: THREE.Vector3[] = [];
     for (let k = 0; k < 4; k++) {
       const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
@@ -75,7 +75,7 @@ export class SensorOverlay {
       cam.push(new THREE.Vector3(x, y, -0.32), new THREE.Vector3(nx, ny, -0.32));
     });
     this.group.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(cam),
-      new THREE.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.22 })));
+      new THREE.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.14 })));
     // measured beam, unknown beam, ground truth beyond range
     this.beam = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), this.beamMat);
     this.dashed = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), this.dashedMat);
@@ -90,7 +90,7 @@ export class SensorOverlay {
     const fp = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, 0, -0.13), new THREE.Vector3(-R_AT(len), 0, -0.13 - len), new THREE.Vector3(R_AT(len), 0, -0.13 - len),
     ]);
-    this.floorGroup.add(new THREE.Mesh(fp, new THREE.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide })));
+    this.floorGroup.add(new THREE.Mesh(fp, new THREE.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.055, depthWrite: false, side: THREE.DoubleSide })));
     this.floorGroup.add(new THREE.LineLoop(fp, this.lineMat));
     // engine-target outline
     this.outline = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), this.outlineMat);
@@ -139,8 +139,8 @@ export class SensorOverlay {
   /** Engine not READY: keep drawing the physics, but visibly de-emphasised. */
   setTrusted(trusted: boolean): void {
     this.dim = trusted ? 1 : 0.4;
-    this.coneMat.opacity = 0.07 * this.dim;
-    this.lineMat.opacity = 0.45 * this.dim;
+    this.coneMat.opacity = 0.045 * this.dim;
+    this.lineMat.opacity = 0.32 * this.dim;
     this.nearRingMat.opacity = 0.95 * this.dim;
   }
 
