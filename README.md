@@ -5,10 +5,12 @@ ahead. Design: [`Determine-Architecture.html`](Determine-Architecture.html) (con
 [`Determine-Brief.html`](Determine-Brief.html) (8-page brief). Status: proposed design; untested with
 blind or low-vision users.
 
-**Platform status:** Android is implemented. [`ios/`](ios/README.md) is now a live iPhone app: a Swift port of the
-phone engine over Personal Hotspot UDP, haptic-only warnings on the cue board's Vibro, and an iPhone-camera fallback.
-It ships as an unsigned IPA; the Swift engine passes the same simulator end-to-end scenarios as the Kotlin cli, but
-the app itself has not yet run on a device. No headset audio or hearing calibration on iOS yet. Plan: [iOS plan](docs/ios-plan.md).
+**Platform status:** Android is implemented. [`ios/`](ios/README.md) is a native iPhone app with the Swift hazard
+engine, Personal Hotspot UDP, headband-camera input, haptics, optional warning audio and an iPhone-camera fallback.
+The user reports the camera and existing app working together on the bench; walking performance remains unvalidated.
+The latest unsigned IPA adds streaming scene answers, local/cloud voice choices, live preview/alignment,
+transcript/replay and length/style settings. The new UI is native-build verified, not independently device-tested.
+OpenRouter speech reuses the existing server key; direct OpenAI/ElevenLabs remain optional. Hearing calibration is not available on iOS.
 
 **Current design (24 Oct 2026, wire v2).** One Arduino Modulino Distance gives a single forward
 distance; the purchased module identifies as VL53L4ED (0xECAA), not the originally assumed VL53L4CD. The

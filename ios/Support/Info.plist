@@ -5,9 +5,9 @@
     <key>CFBundleDisplayName</key>
     <string>Determine</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.6.0</string>
+    <string>0.7.1</string>
     <key>CFBundleVersion</key>
-    <string>7</string>
+    <string>9</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Determine talks to the glasses' cue and camera boards on this phone's Personal Hotspot network to read the forward distance sensor and drive the temple vibration.</string>
     <key>NSMicrophoneUsageDescription</key>

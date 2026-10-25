@@ -60,6 +60,8 @@ enum HostEvent: Sendable {
     /// `setTuning` refused the value (the engine keeps the previous tuning).
     case tuningRejected(String)
     case testBuzz(pattern: Int, intensity: Int, sent: Bool)
+    /// Display-only copy of the existing stream; never used for decisions.
+    case preview(AssembledFrame)
 }
 
 private struct ForwardingListener: EngineListener {
@@ -96,6 +98,10 @@ final class SessionHost: @unchecked Sendable {
     /// RANGE samples seen since the last slow publish, oldest first (chart feed).
     private var pendingRanges: [RangeSnapshot] = []
     private var lastRangeBoardUs: Int64?
+    private var previewEnabled = false
+    private var nextPreviewUs: Int64 = 0
+    private var lastPreviewCaptureUs: Int64?
+    private var correctHeadbandMirror = true
 
     init(options: HostOptions, alerts: IosPhoneAlerts, publish: @escaping @Sendable (HostEvent) -> Void) {
         self.options = options
@@ -177,6 +183,13 @@ final class SessionHost: @unchecked Sendable {
             nextPublishUs = now + Self.publishIntervalUs
             publishSlow()
         }
+        if previewEnabled, now >= nextPreviewUs {
+            nextPreviewUs = now + 200_000
+            if let frame = engine.latestJpeg(), frame.capturePhoneUs != lastPreviewCaptureUs {
+                lastPreviewCaptureUs = frame.capturePhoneUs
+                publish(.preview(frame))
+            }
+        }
     }
 
     /// Slower-changing views for the UI (forward range, link, camera), 10 Hz.
@@ -216,6 +229,17 @@ final class SessionHost: @unchecked Sendable {
             engine = nil
             DispatchQueue.main.async(execute: completion)
         }
+    }
+
+    func setPreviewEnabled(_ enabled: Bool) {
+        queue.async { [self] in
+            previewEnabled = enabled
+            if !enabled { lastPreviewCaptureUs = nil }
+        }
+    }
+
+    func setHeadbandMirrorCorrection(_ enabled: Bool) {
+        queue.async { [self] in correctHeadbandMirror = enabled }
     }
 
     func setPaused(_ paused: Bool) {
@@ -288,9 +312,10 @@ final class SessionHost: @unchecked Sendable {
                 return
             }
             let jpeg = frame.jpeg
+            let mirrored = options.frameSource == .camBoard && correctHeadbandMirror
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    if let text = try TextRecognition.recognize(jpeg: jpeg) {
+                    if let text = try TextRecognition.recognize(jpeg: jpeg, mirrored: mirrored) {
                         done(.text(text))
                     } else {
                         done(.noText)
@@ -312,7 +337,19 @@ final class SessionHost: @unchecked Sendable {
                 done(nil)
                 return
             }
-            done(frame)
+            guard options.frameSource == .camBoard && correctHeadbandMirror else {
+                done(frame)
+                return
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let jpeg = CameraImageCorrection.mirroredJPEG(frame.jpeg),
+                      EngineClock.nowUs() - frame.capturePhoneUs <= DescribeSettings.maxFrameAgeUs else {
+                    done(nil)
+                    return
+                }
+                done(AssembledFrame(frameId: frame.frameId, captureBoardUs: frame.captureBoardUs,
+                                    capturePhoneUs: frame.capturePhoneUs, w: frame.w, h: frame.h, jpeg: jpeg))
+            }
         }
     }
 

@@ -41,6 +41,82 @@ public enum DescribeClient {
         }
     }
 
+    /// Safe sentence increments, received while the provider is still generating. Cancellation closes the socket.
+    public static func stream(
+        endpoint: DescribeEndpoint, jpeg: [UInt8], width: Int, height: Int, question: String? = nil,
+        options: DescriptionOptions = DescriptionOptions(),
+        onDelta: @escaping @Sendable (String) async -> Void
+    ) async -> DescribeResult {
+        guard jpeg.count <= DescribeSettings.maxJpegBytes else { return .failed(code: "too_large", retryable: false) }
+        guard let url = url(for: endpoint, path: "/v1/describe/stream"), !endpoint.apiKey.isEmpty,
+              let base = try? DescribeWire.requestBody(requestId: DescribeWire.makeRequestId(), jpeg: jpeg,
+                                                       width: width, height: height, question: question),
+              var object = (try? JSONSerialization.jsonObject(with: base)) as? [String: Any]
+        else { return .failed(code: "bad_url", retryable: false) }
+        object["length"] = options.length.rawValue
+        object["style"] = options.style.rawValue
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = try? JSONSerialization.data(withJSONObject: object)
+        request.setValue("Bearer \(endpoint.apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 25
+        var pending = Data()
+        var status = 0
+        var assembled = ""
+        do {
+            for try await event in HTTPStream.events(for: request) {
+                try Task.checkCancellation()
+                switch event {
+                case let .response(response):
+                    status = response.statusCode
+                    if status == 200 && !(response.value(forHTTPHeaderField: "Content-Type") ?? "").contains("application/x-ndjson") {
+                        return .failed(code: "bad_response", retryable: false)
+                    }
+                case let .data(data):
+                    pending.append(data)
+                    guard pending.count <= 64 * 1024 else { return .failed(code: "bad_response", retryable: false) }
+                    if status != 200 { continue }
+                    while let newline = pending.firstIndex(of: 10) {
+                        let line = pending[..<newline]
+                        pending.removeSubrange(...newline)
+                        guard let payload = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else {
+                            return .failed(code: "bad_response", retryable: false)
+                        }
+                        switch payload["type"] as? String {
+                        case "delta":
+                            guard let text = payload["text"] as? String, assembled.count + text.count <= 2000 else {
+                                return .failed(code: "bad_response", retryable: false)
+                            }
+                            assembled += text
+                            await onDelta(text)
+                        case "done":
+                            guard let text = payload["text"] as? String, !text.isEmpty, text == assembled else {
+                                return .failed(code: "bad_response", retryable: false)
+                            }
+                            return .text(text)
+                        case "error":
+                            return .failed(code: payload["error"] as? String ?? "inference_failed",
+                                           retryable: payload["retryable"] as? Bool ?? false)
+                        default: return .failed(code: "bad_response", retryable: false)
+                        }
+                    }
+                }
+            }
+            try Task.checkCancellation()
+            if status != 200 { return DescribeWire.parse(status: status, body: pending) }
+            return .failed(code: "incomplete_stream", retryable: true)
+        } catch is CancellationError {
+            return .failed(code: "cancelled", retryable: false)
+        } catch let error as URLError where error.code == .timedOut {
+            return .failed(code: "timeout", retryable: true)
+        } catch {
+            if Task.isCancelled { return .failed(code: "cancelled", retryable: false) }
+            return .failed(code: "network", retryable: true)
+        }
+    }
+
     /// What the wearer said after the wake phrase, as text. The phone calls this only when none of its own fixed
     /// phrases matched.
     public static func route(

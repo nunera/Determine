@@ -13,7 +13,7 @@ public enum DescribeSettings {
 }
 
 public enum DescribeResult: Equatable, Sendable {
-    /// The API's safety-filtered text (at most 2 sentences), spoken as returned.
+    /// The API's filtered text: legacy JSON is at most two sentences; streaming follows DescriptionOptions.
     case text(String)
     /// The API's `error` code (or a local one: `bad_url`, `too_large`, `network`, `timeout`, `bad_response`).
     case failed(code: String, retryable: Bool)

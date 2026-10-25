@@ -2,6 +2,7 @@
 import AVFoundation
 import AudioToolbox
 import DetermineEngine
+import DetermineLink
 import Foundation
 #if canImport(CoreHaptics)
 import CoreHaptics
@@ -31,6 +32,7 @@ final class IosPhoneAlerts: PhoneAlerts, @unchecked Sendable {
         private let synth = AVSpeechSynthesizer()
         /// True while the utterance being spoken is a Read text result (and nothing newer replaced it).
         private var readingActive = false
+        let reading = ReadingSpeech()
         #if canImport(CoreHaptics)
         private var haptics: CHHapticEngine?
         private var hapticsTried = false
@@ -43,6 +45,7 @@ final class IosPhoneAlerts: PhoneAlerts, @unchecked Sendable {
         func speak(_ text: String, alarm: Bool) {
             prepareAudioSession()
             readingActive = false
+            reading.cancel()
             synth.stopSpeaking(at: .immediate)
             let utterance = AVSpeechUtterance(string: text)
             utterance.rate = alarm ? AVSpeechUtteranceDefaultSpeechRate : Self.spearconRate
@@ -51,23 +54,33 @@ final class IosPhoneAlerts: PhoneAlerts, @unchecked Sendable {
             synth.speak(utterance)
         }
 
-        /// Read text output: normal rate, and `stopReading` can cut it without touching hazard speech.
         func speakReading(_ text: String) {
             prepareAudioSession()
-            synth.stopSpeaking(at: .immediate)
             readingActive = true
-            let utterance = AVSpeechUtterance(string: text)
-            utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-            utterance.volume = 1
-            utterance.voice = AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
-            synth.speak(utterance)
+            reading.speak(text)
+        }
+
+        func beginReading() {
+            prepareAudioSession()
+            readingActive = true
+            reading.begin()
+        }
+
+        func appendReading(_ text: String) {
+            guard readingActive else { return }
+            reading.append(text)
+        }
+
+        func finishReading() {
+            guard readingActive else { return }
+            reading.finish()
         }
 
         /// Stops the speech only if it is still a reading: a hazard word or "System off" that replaced it stays.
         func stopReading() {
             guard readingActive else { return }
             readingActive = false
-            synth.stopSpeaking(at: .immediate)
+            reading.cancel()
         }
 
         func vibrate(_ pattern: [Int64]) {
@@ -125,6 +138,7 @@ final class IosPhoneAlerts: PhoneAlerts, @unchecked Sendable {
 
         func stopAll() {
             readingActive = false
+            reading.cancel()
             synth.stopSpeaking(at: .immediate)
             #if canImport(CoreHaptics)
             haptics?.stop()
@@ -153,6 +167,19 @@ final class IosPhoneAlerts: PhoneAlerts, @unchecked Sendable {
     func speakReading(_ text: String) {
         onMain { $0.speakReading(text) }
     }
+
+    func configureReading(_ preferences: SpeechPreferences, endpoint: DescribeEndpoint?,
+                          onStatus: @escaping @Sendable (String) -> Void) {
+        onMain {
+            $0.reading.preferences = preferences
+            $0.reading.endpoint = endpoint
+            $0.reading.onStatus = onStatus
+        }
+    }
+
+    func beginReading() { onMain { $0.beginReading() } }
+    func appendReading(_ text: String) { onMain { $0.appendReading(text) } }
+    func finishReading() { onMain { $0.finishReading() } }
 
     /// Stops the speech only while a Read text result is the active utterance (hazard words stay).
     func stopReading() {

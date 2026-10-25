@@ -77,6 +77,20 @@ final class AppModel: ObservableObject {
     @Published private(set) var describeState: DescribeState = .idle
     @Published private(set) var phoneAddresses: [LocalAddress] = []
     @Published private(set) var reader: ReadTextState = .idle
+    @Published private(set) var previewJPEG: Data?
+    @Published private(set) var previewCaptureUs: Int64?
+    @Published private(set) var previewEnabled = false
+    @Published private(set) var previewRotation: Int
+    @Published private(set) var headbandMirrorCorrection: Bool
+    @Published private(set) var transcript: [TranscriptEntry] = []
+    @Published private(set) var streamedDescription = ""
+    @Published private(set) var requestPhase = ""
+    @Published private(set) var descriptionLength: DescriptionLength
+    @Published private(set) var descriptionStyle: DescriptionStyle
+    @Published private(set) var speechPreferences: SpeechPreferences
+    @Published private(set) var speechProviders: [CloudSpeechProvider] = []
+    @Published private(set) var speechMessage: String?
+    @Published private(set) var loadingVoices = false
 
     /// Chart history and event log for the Judge screen (kept out of this object so Main does not redraw at 10 Hz).
     let trace = DebugTrace()
@@ -94,6 +108,10 @@ final class AppModel: ObservableObject {
     private var describeToken = 0
     private var routeToken = 0
     private var pauseGuard: Task<Void, Never>?
+    private var descriptionTask: Task<Void, Never>?
+    private var activeTranscriptID: UUID?
+    private var activeQuestion: String?
+    private var catalogTask: Task<Void, Never>?
 
     private enum Key {
         static let soundOutput = "determine.soundOutput"
@@ -108,6 +126,11 @@ final class AppModel: ObservableObject {
         static let wakeWordEnabled = "determine.wakeWordEnabled"
         static let wakeAIEnabled = "determine.wakeAIEnabled"
         static let tuningPrefix = "determine.tuning."
+        static let previewRotation = "determine.previewRotation"
+        static let headbandMirrorCorrection = "determine.headbandMirrorCorrection"
+        static let descriptionLength = "determine.descriptionLength"
+        static let descriptionStyle = "determine.descriptionStyle"
+        static let speech = "determine.speech"
     }
 
     /// Every `Tuning` field with its persistence key. A value that fails validation on load is dropped as a whole.
@@ -140,9 +163,21 @@ final class AppModel: ObservableObject {
         self.wakeWordEnabled = defaults.object(forKey: Key.wakeWordEnabled) as? Bool ?? false
         self.wakeAIEnabled = defaults.object(forKey: Key.wakeAIEnabled) as? Bool ?? false
         self.tuning = Self.loadTuning(defaults)
+        let rotation = defaults.integer(forKey: Key.previewRotation)
+        self.previewRotation = [0, 90, 180, 270].contains(rotation) ? rotation : 0
+        // This OV3660 headband was observed to reverse left/right. Correct the image before all consumers.
+        self.headbandMirrorCorrection = defaults.object(forKey: Key.headbandMirrorCorrection) as? Bool ?? true
+        defaults.removeObject(forKey: "determine.previewMirrored")
+        self.descriptionLength = defaults.string(forKey: Key.descriptionLength).flatMap(DescriptionLength.init(rawValue:)) ?? .standard
+        self.descriptionStyle = defaults.string(forKey: Key.descriptionStyle).flatMap(DescriptionStyle.init(rawValue:)) ?? .direct
+        var speech = defaults.data(forKey: Key.speech).flatMap { try? JSONDecoder().decode(SpeechPreferences.self, from: $0) } ?? SpeechPreferences()
+        if !speech.rate.isFinite { speech.rate = 1 }
+        speech.rate = min(1.2, max(0.7, speech.rate))
+        self.speechPreferences = speech
         // The pre-0.3 single "output mode" setting is replaced by the sound output + layout above.
         defaults.removeObject(forKey: "determine.outputMode")
         refreshAddresses()
+        configureSpeech()
     }
 
     private static func loadTuning(_ defaults: UserDefaults) -> Tuning {
@@ -169,6 +204,7 @@ final class AppModel: ObservableObject {
     // MARK: Derived
 
     var paused: Bool { running && state == .paused }
+    var cameraImageNeedsMirroring: Bool { frameSource == .camBoard && headbandMirrorCorrection }
 
     /// Engine mode: HAPTIC_ONLY exactly when no warning sound output is chosen.
     var mode: HearingMode { soundOutput == .off ? .hapticOnly : audioLayout }
@@ -217,6 +253,8 @@ final class AppModel: ObservableObject {
         }
         self.host = host
         host.start()
+        host.setPreviewEnabled(previewEnabled)
+        host.setHeadbandMirrorCorrection(headbandMirrorCorrection)
         startWakeWord()
     }
 
@@ -237,6 +275,13 @@ final class AppModel: ObservableObject {
         reader = .idle
         alerts.stopReading()
         describeToken += 1
+        descriptionTask?.cancel()
+        descriptionTask = nil
+        markTranscriptInterrupted()
+        previewJPEG = nil
+        previewCaptureUs = nil
+        streamedDescription = ""
+        requestPhase = ""
         routeToken += 1
         describeState = .idle
         trace.log(notice == nil ? "Session stopped" : "Session stopped: app left the foreground")
@@ -257,6 +302,7 @@ final class AppModel: ObservableObject {
     /// Say so and stop (PINGs end, the board watchdog fires). Returning never resumes by itself. `.inactive`
     /// (permission sheets, Control Center, call banners) does not come here: the process keeps running.
     func sceneEnteredBackground() {
+        alerts.stopReading()
         guard running else { return }
         alerts.systemOff()
         stop(notice: "Determine stopped because the app went to the background. Warnings are off. Open the app and tap Start Determine to resume.")
@@ -322,13 +368,14 @@ final class AppModel: ObservableObject {
     }
 
     /// Cuts a reading or description that is being read out. Hazard words and "System off" are never cut.
-    private func stopSpeaking() {
+    func stopSpeaking() {
         if reader != .idle {
             readToken += 1
             alerts.stopReading()
             reader = .idle
         }
         cancelDescription()
+        alerts.stopReading()
     }
 
     // MARK: Wake word
@@ -444,6 +491,136 @@ final class AppModel: ObservableObject {
 
     // MARK: Settings
 
+    func setDescriptionLength(_ length: DescriptionLength) {
+        descriptionLength = length
+        defaults.set(length.rawValue, forKey: Key.descriptionLength)
+    }
+
+    func setDescriptionStyle(_ style: DescriptionStyle) {
+        descriptionStyle = style
+        defaults.set(style.rawValue, forKey: Key.descriptionStyle)
+    }
+
+    func setSpeechPreferences(_ preferences: SpeechPreferences) {
+        stopSpeaking()
+        var next = preferences
+        next.rate = next.rate.isFinite ? min(1.2, max(0.7, next.rate)) : 1
+        speechPreferences = next
+        defaults.set(try? JSONEncoder().encode(next), forKey: Key.speech)
+        speechMessage = nil
+        configureSpeech()
+    }
+
+    private func configureSpeech() {
+        alerts.configureReading(speechPreferences, endpoint: describeEndpoint) { [weak self] message in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.speechMessage = message
+                    if !self.running || (self.state != .unavailable && !self.hazardActive) {
+                        self.alerts.speak("Cloud voice unavailable. The answer is in the transcript.")
+                    }
+                }
+            }
+        }
+    }
+
+    func sampleVoice() {
+        guard !running || (state != .unavailable && !hazardActive) else { return }
+        stopSpeaking()
+        speechMessage = nil
+        alerts.speakReading("A doorway is ahead, with a chair on the left. This is your description voice.")
+    }
+
+    func refreshSpeechProviders() {
+        catalogTask?.cancel()
+        speechProviders = []
+        guard let endpoint = describeEndpoint else {
+            speechMessage = "Set the description server URL and key to load cloud voices."
+            loadingVoices = false
+            return
+        }
+        loadingVoices = true
+        speechMessage = nil
+        catalogTask = Task { [weak self] in
+            var base = endpoint.baseUrl
+            while base.hasSuffix("/") { base.removeLast() }
+            guard let url = URL(string: base + "/v1/speech/voices") else {
+                self?.loadingVoices = false
+                self?.speechMessage = "Check the description server URL."
+                return
+            }
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(endpoint.apiKey)", forHTTPHeaderField: "Authorization")
+            request.timeoutInterval = 15
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                try Task.checkCancellation()
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+                let catalog = try JSONDecoder().decode(SpeechCatalog.self, from: data)
+                self?.speechProviders = catalog.providers
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.speechMessage = "Could not load cloud voices. Check the server connection and key, then refresh."
+            }
+            self?.loadingVoices = false
+        }
+    }
+
+    func setPreviewEnabled(_ enabled: Bool) {
+        previewEnabled = enabled
+        host?.setPreviewEnabled(enabled)
+        if !enabled {
+            previewJPEG = nil
+            previewCaptureUs = nil
+        }
+    }
+
+    func setPreviewRotation(_ rotation: Int) {
+        previewRotation = ((rotation % 360) + 360) % 360
+        defaults.set(previewRotation, forKey: Key.previewRotation)
+    }
+
+    func setHeadbandMirrorCorrection(_ enabled: Bool) {
+        stopSpeaking()
+        headbandMirrorCorrection = enabled
+        defaults.set(enabled, forKey: Key.headbandMirrorCorrection)
+        host?.setHeadbandMirrorCorrection(enabled)
+    }
+
+    func clearTranscript() {
+        stopSpeaking()
+        streamedDescription = ""
+        describeState = .idle
+        reader = .idle
+        transcript.removeAll()
+        activeTranscriptID = nil
+    }
+
+    func repeatLastAnswer() {
+        guard let entry = transcript.last(where: { !$0.text.isEmpty }) else { return }
+        repeatAnswer(entry)
+    }
+
+    func repeatAnswer(_ entry: TranscriptEntry) {
+        guard !entry.text.isEmpty, !running || (state != .unavailable && !hazardActive) else { return }
+        stopSpeaking()
+        alerts.speakReading(entry.text)
+    }
+
+    private func addTranscript(_ text: String, kind: TranscriptKind, question: String? = nil) {
+        transcript.append(TranscriptEntry(id: UUID(), date: Date(), kind: kind, question: question,
+                                          text: text, interrupted: false))
+        if transcript.count > 50 { transcript.removeFirst(transcript.count - 50) }
+    }
+
+    private func markTranscriptInterrupted() {
+        if let id = activeTranscriptID, let index = transcript.firstIndex(where: { $0.id == id }) {
+            transcript[index].interrupted = true
+        }
+        activeTranscriptID = nil
+    }
+
     func setSoundOutput(_ output: SoundOutput) {
         guard output != soundOutput else { return }
         soundOutput = output
@@ -481,6 +658,11 @@ final class AppModel: ObservableObject {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         describeUrl = trimmed
         defaults.set(trimmed, forKey: Key.describeUrl)
+        stopSpeaking()
+        catalogTask?.cancel()
+        speechProviders = []
+        loadingVoices = false
+        configureSpeech()
     }
 
     /// An empty key removes the stored one.
@@ -488,6 +670,11 @@ final class AppModel: ObservableObject {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         Keychain.set(trimmed.isEmpty ? nil : trimmed, account: Key.describeKeyAccount)
         describeKeySet = Keychain.get(Key.describeKeyAccount) != nil
+        stopSpeaking()
+        catalogTask?.cancel()
+        speechProviders = []
+        loadingVoices = false
+        configureSpeech()
     }
 
     func setDescribeUnredactedOptIn(_ optIn: Bool) {
@@ -588,6 +775,7 @@ final class AppModel: ObservableObject {
             reader = .done("Not reading: a warning is active or the system is off.")
             return
         }
+        cancelDescription()
         readToken += 1
         let token = readToken
         let gen = generation
@@ -612,6 +800,7 @@ final class AppModel: ObservableObject {
         }
         if case let .failed(why) = result { trace.log("Read text failed: \(why)") }
         reader = .done(spoken)
+        if case .text = result { addTranscript(spoken, kind: .reading) }
         alerts.speakReading(spoken)
     }
 
@@ -619,12 +808,18 @@ final class AppModel: ObservableObject {
     /// is stopped: a hazard word or "System off" that replaced it is never cut.
     private func interruptReadingIfNeeded() {
         guard state == .unavailable || hazardActive else { return }
+        // Replay and voice previews have no request state, but must yield to warnings too.
+        alerts.stopReading()
         if reader != .idle {
             readToken += 1
             alerts.stopReading()
             reader = .idle
         }
         if describeState != .idle {
+            descriptionTask?.cancel()
+            descriptionTask = nil
+            markTranscriptInterrupted()
+            requestPhase = ""
             describeToken += 1
             alerts.stopReading()
             describeState = .idle
@@ -642,6 +837,10 @@ final class AppModel: ObservableObject {
     private func cancelDescription() {
         guard describeState != .idle else { return }
         describeToken += 1
+        descriptionTask?.cancel()
+        descriptionTask = nil
+        markTranscriptInterrupted()
+        requestPhase = ""
         alerts.stopReading()
         describeState = .idle
     }
@@ -668,6 +867,10 @@ final class AppModel: ObservableObject {
             describeState = .done("Not describing: a warning is active or the system is off.")
             return
         }
+        stopSpeaking()
+        streamedDescription = ""
+        requestPhase = "Capturing image"
+        activeQuestion = question
         describeToken += 1
         let token = describeToken
         let gen = generation
@@ -686,10 +889,30 @@ final class AppModel: ObservableObject {
             return
         }
         trace.log("Describe: sending one unblurred \(frame.w)x\(frame.h) frame (\(frame.jpeg.count) bytes)")
-        Task { [weak self] in
-            let result = await DescribeClient.send(endpoint: endpoint, jpeg: frame.jpeg, width: frame.w, height: frame.h, question: question)
+        requestPhase = "Asking"
+        let options = DescriptionOptions(length: descriptionLength, style: descriptionStyle)
+        alerts.beginReading()
+        descriptionTask = Task { [weak self] in
+            let result = await DescribeClient.stream(endpoint: endpoint, jpeg: frame.jpeg, width: frame.w,
+                                                      height: frame.h, question: question, options: options) { [weak self] delta in
+                await MainActor.run { self?.receiveDescription(delta, token: token, generation: gen) }
+            }
             self?.finishDescribing(result, token: token, generation: gen)
         }
+    }
+
+    private func receiveDescription(_ delta: String, token: Int, generation gen: Int) {
+        guard token == describeToken, gen == generation, running, state != .unavailable, !hazardActive else { return }
+        streamedDescription += delta
+        requestPhase = "Receiving answer"
+        if activeTranscriptID == nil {
+            addTranscript("", kind: .description, question: activeQuestion)
+            activeTranscriptID = transcript.last?.id
+        }
+        if let id = activeTranscriptID, let index = transcript.firstIndex(where: { $0.id == id }) {
+            transcript[index].text = streamedDescription
+        }
+        alerts.appendReading(delta)
     }
 
     private func finishDescribing(_ result: DescribeResult, token: Int, generation gen: Int) {
@@ -702,8 +925,12 @@ final class AppModel: ObservableObject {
         switch result {
         case let .text(text):
             spoken = text
+            alerts.finishReading()
+            activeTranscriptID = nil
             trace.log("Describe: answered")
         case let .failed(code, _):
+            markTranscriptInterrupted()
+            alerts.stopReading()
             trace.log("Describe failed: \(code)")
             switch code {
             case "no_frame": spoken = "No fresh camera image"
@@ -714,7 +941,9 @@ final class AppModel: ObservableObject {
             }
         }
         describeState = .done(spoken)
-        alerts.speakReading(spoken)
+        requestPhase = ""
+        descriptionTask = nil
+        if case .failed = result { alerts.speak(spoken) }
     }
 
     // MARK: Published events
@@ -758,6 +987,10 @@ final class AppModel: ObservableObject {
                 let dbm = d.cue.rssiDbm.map { " (\($0) dBm)" } ?? ""
                 trace.log(d.linkWeak ? "Link weak\(dbm)" : "Link recovered\(dbm)")
             }
+        case let .preview(frame):
+            guard previewEnabled else { return }
+            previewJPEG = Data(frame.jpeg)
+            previewCaptureUs = frame.capturePhoneUs
         case let .slow(range: r, ranges: batch, link: l, camera: c, profile: p, sound: snd):
             if let r { range = r }
             link = l

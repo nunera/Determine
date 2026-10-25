@@ -11,9 +11,11 @@ status, timings — never image bytes or answer text.
 | `app/safety.py` | §3 filter: sentence split (abbreviations, decimals), deny lists |
 | `app/backends.py` | `InferenceBackend` (inf2/trn2 server, urllib) and `BedrockBackend` (Nova Lite Converse, lazy boto3) |
 | `template.yaml` | SAM: arm64 function, Function URL, optional VPC, SSM + conditional Bedrock IAM, 7-day logs |
-| `local_server.py` | Same handler behind a local HTTP server for phone development |
+| `local_server.py` | HTTP wrapper: legacy JSON routes plus streaming descriptions and speech |
+| `app/streaming.py` | OpenRouter SSE ingestion, preference validation, sentence gating and NDJSON |
+| `app/speech.py` | Authenticated OpenRouter/direct-provider voice catalogs and streamed PCM proxy |
 
-Backend selection: `DESCRIBE_BACKEND=inf2|trn2|bedrock`; `DESCRIBE_FALLBACK=bedrock` is used only if the primary is
+Backend selection: `DESCRIBE_BACKEND=inf2|trn2|bedrock|openrouter`; `DESCRIBE_FALLBACK=bedrock` is used only if the primary is
 unavailable or times out, and the response's `backend`/`silicon` say which one answered.
 
 ## Deploy
@@ -32,9 +34,41 @@ The output `DescribeUrl` plus the api-key value go into the app (Settings → De
 ## Local
 
 ```sh
-python3 -m unittest discover -s cloud/describe-api/tests        # 84 tests
+python3 -m unittest discover -s cloud/describe-api/tests
 DESCRIBE_API_KEY=apikey INFERENCE_URL=http://127.0.0.1:8080 INFERENCE_KEY=devkey \
   python3 cloud/describe-api/local_server.py --port 8787
 ```
 
-Point the app at `http://<laptop-ip>:8787` with key `apikey` (debug builds allow http; release builds are HTTPS-only).
+Point the app at `http://<laptop-ip>:8787` with key `apikey`; plain HTTP is allowed only for local-network addresses.
+
+## Streaming deployment on Mansfield
+
+The phone-facing base URL is `https://mansfield.tail06a975.ts.net/describe` (tailnet access).
+`determine-describe-api.service` runs the HTTP wrapper on `127.0.0.1:8792`; the existing HTTPS proxy preserves
+the `/describe` prefix. See `cloud/API.md` §1c–1d for streaming contracts. The Lambda/SAM entry point remains
+buffered and does not serve the streaming or speech routes.
+
+The OpenRouter speech release lives at `/var/lib/determine-describe/releases/20261024-openrouter`;
+`/var/lib/determine-describe/current` selects it. A persistent drop-in at
+`/usr/local/lib/systemd/system/determine-describe-api.service.d/20-streaming.conf` replaces only `ExecStart`;
+the original NixOS unit's sandbox, user, port, environment and restart policy remain in force.
+`/var/lib/determine-describe/python` is an indirect Nix GC root for the service interpreter.
+This administrative drop-in is outside the NixOS source configuration and should be accounted for when
+changing that unit declaratively. Removing this drop-in and reloading/restarting systemd restores the
+original Nix-store launch path.
+
+Credentials stay in `/etc/determine/describe.env`. The existing `OPENROUTER_API_KEY` now supplies both
+description generation and speech; no separate account/key is needed for OpenRouter's routed speech models.
+The catalog offers four live-verified mono 24 kHz PCM models: ElevenLabs Flash/Multilingual and
+Microsoft MAI Voice/Flash. Voice lists come from OpenRouter and refresh server-side every five minutes.
+The speech proxy validates the chosen model/voice and audio format before forwarding bytes.
+
+Direct providers remain optional: add `OPENAI_API_KEY` and/or `ELEVENLABS_API_KEY`, restart the service,
+then refresh voices in the app. No direct-provider keys were configured during verification.
+Never put provider keys in the app. OpenRouter usage is billed to the existing OpenRouter account.
+
+Verification: 121 Python tests passed; all four routed models returned compatible PCM in live probes.
+The staged HTTP proxy streamed ElevenLabs Flash and Microsoft MAI Voice Flash. The deployed HTTPS
+catalog and OpenRouter speech endpoint were exercised, and the authenticated sideload download matched
+the local IPA's SHA-256. Native arm64 IPA packaging passed, including five Siri intents/shortcuts.
+Actual iPhone listening remains a device-side check.

@@ -24,6 +24,7 @@ tuningChecks(harness)
 fallbackChecks(harness)
 describeChecks(harness)
 voiceChecks(harness)
+cameraImageChecks(harness)
 
 print("")
 print("vectors: \(vectors.count) loaded from \(vectorsPath)")

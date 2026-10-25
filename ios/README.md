@@ -2,7 +2,7 @@
 
 The iPhone is the phone half of Determine: a Swift port of the Kotlin phone engine (`phone/core`) driven by the
 cue board's forward distance sensor over the iPhone's Personal Hotspot (wire v2 UDP, `protocol/PROTOCOL.md`),
-with a SwiftUI host. iOS 17+, unsigned IPA only. Do not use it while walking: nothing here has been run on a device.
+with a SwiftUI host. iOS 17+, unsigned IPA only. Bench prototype: not validated for use while walking.
 
 ## What the app does
 
@@ -26,19 +26,37 @@ with a SwiftUI host. iOS 17+, unsigned IPA only. Do not use it while walking: no
   frames rotated upright (480×640), at most ~10 fps, JPEG quality 75, stamped with the engine clock. Permission
   denial, interruption and runtime errors are shown on Main and Judge; the engine independently reports
   `frame_stale` without fresh frames. It is labelled a software fallback. Changing the camera restarts the session.
-- **Describe** (Settings → Describe; on request only, never automatic): sends the newest camera frame (at most 500 ms
-  old, same freshness rule as Read text) to the describe-api in `cloud/` and speaks the answer as returned. This build
-  has **no face blur**, so it uploads the frame as captured, including bystanders' faces, and works
-  only while *Upload frames with faces unblurred* is on (default off; with it off nothing is sent). The request
-  states `redacted: false` and `unredacted_opt_in: true`, which the API accepts only together. Server URL and bearer
-  key are set in Settings (the key is kept in the Keychain; plain `http://` is allowed for local-network addresses
-  only, via `NSAllowsLocalNetworking`). A MID/NEAR warning or system off cuts the request or the speech.
-  A permanent instance runs on the home server (tailnet only): URL `https://mansfield.tail06a975.ts.net/describe`, so
-  the iPhone must be on the tailnet. It sends the frame to a vision model on OpenRouter (default `openai/gpt-6-luna`;
-  measured from the server on 6 real photos: 2.1-4.0 s and about $0.0001 per answer, against 1.2 s and $0.0005 for
-  Gemini 3.1 Flash-Lite and $0.0025 for GPT-5.6 Terra), after the earlier local SmolVLM-256M proved unable to describe
-  real scenes. The key is in `/etc/determine/describe.env` on that server. Not verified from the app on a device: see
-  Real device tests.
+- **Describe** (Settings → Descriptions; on request only): sends one fresh camera frame (at most 500 ms old)
+  to `/v1/describe/stream`. Complete sentences pass the server's safety heuristic before being displayed and
+  queued for speech, while the model continues generating. Choose **Brief / Standard / Detailed** and
+  **Direct / Conversational / Spatial**. A MID/NEAR warning, backgrounding, Stop speaking or cancellation ends
+  the network request and reading. This is not a safety-certified description or a navigation instruction.
+  Uploads require the explicit **Allow unblurred image uploads** opt-in (default off); this build has no face blur.
+  Server URL and bearer key are configured in Settings; the key stays in Keychain.
+  The live home-server URL remains `https://mansfield.tail06a975.ts.net/describe` (requires the tailnet).
+  Streaming uses its OpenRouter backend; the old JSON endpoint remains available for Android.
+- **Voice & playback:** choose any installed Apple voice, including downloaded Enhanced/Premium voices, and
+  set speed (0.7–1.2×). Automatic prefers the highest-quality installed voice for the current language.
+  **OpenRouter** is the primary cloud option, reusing the existing server key. Choose a speech model and its
+  supported voice; ElevenLabs Flash/Multilingual and Microsoft MAI Voice/Flash are offered after live PCM checks.
+  Direct **OpenAI** and **ElevenLabs** connections remain optional. Only spoken text, not images, is sent for TTS.
+  Audio plays progressively as 24 kHz PCM, with pitch-preserving speed control on the iPhone.
+  Provider keys stay server-side. Failures leave the text in Transcript without silent provider fallback;
+  warning words always remain local and preempt optional speech.
+- **Live camera:** optional home-screen preview of the existing frame stream (display throttled to 5 Hz,
+  JPEG decoding off the main actor). Alignment shows a visual grid, forward distance and preview rotation.
+  **Correct mirrored headband image** is enabled by default for the user's horizontally reversed OV3660.
+  It corrects preview pixels before display rotation, reflects the JPEG before a description upload, and
+  tells Vision to interpret OCR input as horizontally mirrored. The iPhone-camera fallback is unaffected.
+  Correction/encoding runs off the main and hazard-engine queues; original capture timestamps and freshness
+  checks remain intact. Changing correction cancels pending descriptions/readings so old-orientation results
+  cannot arrive afterwards. Preview rotation alone remains display-only. Stale images are dimmed and labelled;
+  the grid does not represent the distance sensor's field of view. No extra stream or preview upload is started.
+- **Transcript:** the last 50 scene descriptions and successful OCR readings, including partial/interrupted
+  descriptions, stay in memory only. Repeat the latest answer or replay a specific entry, including after stopping
+  the session. During a session, replay is blocked by system-off or MID/NEAR warnings. Clear cancels optional speech/requests and removes the text.
+- **Connections:** separate, freshness-based status for camera, distance/vibration board and warning audio.
+  Debugging details remain in Settings → Setup & diagnostics.
 - **Read text** (Main button, also a VoiceOver custom action on the status panel): on-device OCR (Vision
   `VNRecognizeTextRequest`) of the newest camera frame (iPhone camera or camera board), only if the frame is at most
   500 ms old. The result is spoken as read, an empty result as "No text found", a stale or missing
@@ -161,6 +179,60 @@ reports, not per-row logs; the table retains the earlier per-feature evidence be
 | Pause guard | Pause warnings; "Warnings are paused" repeats every 30 s; warnings resume by themselves at 120 s | not yet tested on device |
 | Wake word | Settings → Voice on; grant the microphone; first use downloads the speech model; with a session running say "Hey Determine, what's ahead", "read text", "pause warnings", "resume warnings", "stop"; wait for "Listening" then speak the command separately; check headset cues keep playing in high quality and speech is still audible | not yet tested on device. Open risks: LiveContainer's microphone and speech permissions, false triggers in traffic, battery and heat, the audio-session switch to play-and-record, and whether the headset stays on A2DP |
 | AI understanding | Settings → Voice → AI on, Describe set up (server URL, key, unblurred upload on); say "Hey Determine" then a free-form phrase ("hold the warnings for a minute", "is the door open?", "what colour is that car") | not yet tested on device (the router was probed live from the home server with 15 phrases; the Swift client was smoke-tested against the real handler with a stub model). Open risks: latency of the full chain, false triggers uploading a frame |
+
+## Release verification
+
+### v0.7.1 — Headband mirror correction (25 Oct)
+
+- User reported the headband JPEG reversing left/right and therefore reversing descriptions. The previous
+  Mirror preview control changed display only; it never corrected the image sent to the model.
+- Replaced that control with **Correct mirrored headband image**, in Settings → Camera and alignment.
+  Defaults on for this reported camera; disable it if a replacement camera already has correct orientation.
+  Preview, uploaded descriptions and OCR now use the same correction setting. No firmware reflash is required.
+- The packed-pixel reflection used by preview/upload passed even-width, odd-width, row-order, color-channel,
+  single-column and double-reflection regression checks: 137 checks / 821 assertions overall. A standalone
+  asymmetric image smoke also rendered the corrected left/right positions without changing top/bottom.
+- Native arm64 build and packaging passed with five Siri intents/shortcuts. Uploaded IPA download was
+  verified through the authenticated Caddy route and matched the local SHA-256.
+- Native ImageIO encoding, Vision OCR and the physical camera view still require an iPhone check:
+  put a distinct object on the wearer's left and request a new description (not replay of an old answer).
+- Server copy: `/srv/files/personal/Determine-v0.7.1-camera-fix-unsigned.ipa`.
+
+### v0.7.0 — OpenRouter speech (25 Oct)
+
+- OpenRouter speech uses the existing server key, with a live, cached catalog of model-specific voices.
+  Default cloud model: `elevenlabs/eleven-flash-v2.5`. Offline Apple voices remain the default provider;
+  choosing a cloud provider is explicit and may incur usage charges.
+- Four models were probed against the live account and returned streamed mono 24 kHz PCM.
+  The actual HTTP proxy was also exercised for ElevenLabs Flash and Microsoft MAI Voice Flash.
+- Model/voice mismatches and incompatible audio-format metadata are refused. Existing saved speech
+  settings retain their provider, voice and rate when the new model field is added.
+- Native arm64 build and packaging passed with five Siri intents and shortcuts. No independent
+  on-phone listening/VoiceOver observation was possible from this workstation.
+- Server copy for sideloading: `/srv/files/personal/Determine-v0.7.0-openrouter-unsigned.ipa`.
+
+
+### App polish (24 Oct)
+
+- User reports the ESP32-CAM and existing iPhone app working together. The camera was independently flashed
+  and booted with OV3660 and PSRAM, and joined the hotspot.
+- New release: native Apple-SDK arm64 build and unsigned IPA packaging passed, including five Siri intents and
+  five shortcuts. The Swift engine checks passed: 134 checks, 817 assertions.
+- Real Swift streaming client → Mansfield → OpenRouter smoke passed: three sentence increments arrived,
+  and the terminal text equalled their concatenation. First sentence was observed at about 5.0 s and completion
+  at 5.4 s for one screenshot input; this is one smoke measurement, not a response-time guarantee.
+- Local HTTP smoke proved a first description sentence and first PCM bytes arrived while their upstream
+  producers were deliberately blocked. It also checked authorization and final text/audio consistency.
+- Swift transport smoke also passed Unicode text, malformed NDJSON, missing terminal event, mismatched final text,
+  authorization failure and cancellation. Cancellation returned immediately while the test server stayed open.
+- Mansfield's HTTPS `/describe/v1/speech/voices` route is reachable. Neither speech provider has credentials
+  configured there yet, so both correctly report unavailable. Real provider audio quality/playback is untested.
+- No iPhone was attached to this workstation for independent rendered UI, VoiceOver, local/cloud audio or
+  physical camera-preview observation. Install the IPA and check these on the actual phone.
+
+Implementation references: Apple's [installed speech voices](https://developer.apple.com/documentation/avfaudio/avspeechsynthesisvoice/speechvoices())
+and [PCM scheduling](https://developer.apple.com/documentation/avfaudio/avaudioplayernode/schedulebuffer(_:completioncallbacktype:completionhandler:));
+provider contracts are linked in `cloud/API.md` §1d.
 
 ## Unsigned IPA
 

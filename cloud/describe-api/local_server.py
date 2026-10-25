@@ -22,6 +22,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "app"))
 
 import handler as describe_handler  # noqa: E402  (path set above)
+import json
+import backends
+import streaming
+import speech
 
 # Lambda Function URLs reject request payloads above 6 MB before the function runs; mirror that.
 MAX_PAYLOAD_BYTES = 6 * 1024 * 1024
@@ -90,10 +94,83 @@ class DescribeRequestHandler(BaseHTTPRequestHandler):
             k = key.lower()
             headers[k] = f"{headers[k]},{value}" if k in headers else value
         event = build_event(self.command, self.path, headers, body, self.client_address[0])
+        path = self.path.partition("?")[0].rstrip("/")
+        if path.endswith(("/v1/describe/stream", "/v1/speech", "/v1/speech/voices")):
+            self._extended(event, path, body)
+            return
         result = describe_handler.handler(event, _Context())
         payload = result.get("body") or ""
         data = base64.b64decode(payload) if result.get("isBase64Encoded") else payload.encode("utf-8")
         self._write(int(result.get("statusCode", 200)), result.get("headers") or {}, data)
+
+    def _extended(self, event, path, body):
+        started = False
+        try:
+            describe_handler._check_auth(describe_handler._headers(event))
+            expected = "GET" if path.endswith("/voices") else "POST"
+            if self.command != expected:
+                raise describe_handler.ApiError("method_not_allowed")
+            if path.endswith("/voices"):
+                self._write(200, {"Content-Type": "application/json", "Cache-Control": "no-store"},
+                            json.dumps(speech.catalog()).encode())
+                return
+            if path.endswith("/describe/stream"):
+                req, length, style = streaming.prepare(event)
+                events = streaming.events(req, length, style)
+                # Start upstream before committing status; later errors are explicit NDJSON events.
+                first = next(events)
+                self._stream_headers("application/x-ndjson")
+                started = True
+                try:
+                    self._event(first)
+                    for item in events:
+                        self._event(item)
+                finally:
+                    events.close()
+            else:
+                with speech.open_stream(body) as response:
+                    self._stream_headers("audio/pcm")
+                    started = True
+                    total = 0
+                    while True:
+                        chunk = response.read1(4096)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > 8 * 1024 * 1024:
+                            raise describe_handler.ApiError("too_large")
+                        self.wfile.write(chunk)
+                        self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except (describe_handler.ApiError, backends.BackendError) as exc:
+            if started and path.endswith("/describe/stream"):
+                try:
+                    self._event({"type": "error", "error": exc.code, "retryable": exc.retryable})
+                except OSError:
+                    pass
+            elif not started:
+                self._write(describe_handler.ERROR_STATUS.get(exc.code, 502),
+                            {"Content-Type": "application/json", "Cache-Control": "no-store"},
+                            json.dumps({"error": exc.code, "retryable": exc.retryable}).encode())
+        except (OSError, ValueError, StopIteration):
+            if not started:
+                self._write(502, {"Content-Type": "application/json"},
+                            b'{"error":"inference_failed","retryable":true}')
+        finally:
+            self.close_connection = True
+
+    def _stream_headers(self, content_type):
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Connection", "close")
+        self.end_headers()
+
+    def _event(self, event):
+        self.wfile.write((json.dumps(event, ensure_ascii=False) + "\n").encode())
+        self.wfile.flush()
 
     def _write(self, status: int, headers: dict, data: bytes) -> None:
         self.send_response(status)

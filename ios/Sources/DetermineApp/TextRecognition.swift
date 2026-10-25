@@ -7,13 +7,13 @@ import Vision
 enum TextRecognition {
     /// Recognised lines top to bottom joined by spaces; nil when nothing was found. Blocking: run off the engine
     /// queue and the main thread. Throws only for an undecodable image or a Vision failure.
-    static func recognize(jpeg: [UInt8]) throws -> String? {
+    static func recognize(jpeg: [UInt8], mirrored: Bool) throws -> String? {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
         request.automaticallyDetectsLanguage = true
         // Both frame sources deliver upright JPEGs (the iPhone camera is rotated to portrait before encoding).
-        let handler = VNImageRequestHandler(data: Data(jpeg), orientation: .up, options: [:])
+        let handler = VNImageRequestHandler(data: Data(jpeg), orientation: mirrored ? .upMirrored : .up, options: [:])
         try handler.perform([request])
         let lines = (request.results ?? [])
             .sorted { $0.boundingBox.midY > $1.boundingBox.midY }

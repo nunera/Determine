@@ -74,6 +74,82 @@ Response 200:
   transcript goes to TypeSafe under OpenRouter's default policy.
 - Budget 4 s; failures use the same codes (`unavailable` for a missing key, rate limit or no credits, `timeout`).
 
+### 1c. Streamed descriptions: `POST /v1/describe/stream`
+
+Implemented by `describe-api/local_server.py` with `DESCRIBE_BACKEND=openrouter`. The Lambda handler and its
+existing JSON endpoint remain buffered; deploying the SAM template alone does not enable this streaming route.
+Same bearer key, image limits, locale and privacy validation as §1. Additional request fields:
+
+| Field | Choices | Default |
+|---|---|---|
+| `length` | `brief` (1 sentence / 180 characters), `standard` (2 / 360), `detailed` (5 / 1000) | `standard` |
+| `style` | `direct`, `conversational`, `spatial` (image positions, not walking directions) | `direct` |
+
+The prompt applies these preferences. Before emission, every complete sentence passes the existing reassurance
+and person-attribute heuristics. The first increment therefore waits for a complete sentence, not just a token.
+These heuristics are conservative checks, not safety certification. No unfiltered token is emitted first.
+
+Response: `Content-Type: application/x-ndjson`, `Cache-Control: no-store`; each line is one JSON object:
+
+```json
+{"type":"delta","text":"A chair is on the left."}
+{"type":"delta","text":" A door is ahead."}
+{"type":"done","text":"A chair is on the left. A door is ahead.","request_id":"example_123"}
+```
+
+Concatenate deltas exactly (including leading spaces); `done.text` must equal that concatenation.
+Failures before the first safe sentence use the ordinary JSON/status contract. A later failure sends
+`{"type":"error","error":"inference_failed","retryable":true}` and closes the stream, with no `done`.
+An EOF without `done` is a failure, not a complete answer. Cancelling the client closes its connection;
+the server closes upstream on its next attempted write. The upstream request has a 20 s socket timeout and
+checks elapsed time between events; the client has a 25 s idle / 45 s resource timeout. No automatic retries.
+OpenRouter cancellation/billing depends on its selected upstream provider.
+
+### 1d. Optional cloud speech
+
+Both routes are implemented by the HTTP wrapper, not the Lambda handler, and use the same bearer authorization:
+
+- `GET /v1/speech/voices` → `{"providers":[{"id":"openrouter","name":"OpenRouter","available":true,
+  "reason":null,"voices":[],"models":[{"id":"elevenlabs/eleven-flash-v2.5","name":"ElevenLabs: Eleven Flash v2.5",
+  "voices":[{"id":"george","name":"George"}]}]}, ...]}`. Direct providers use the top-level `voices` list.
+  OpenRouter models/voices come from its live speech-model catalog, cached for five minutes. Only the
+  four PCM-compatible models below are offered. An unavailable catalog disables that provider explicitly.
+- `POST /v1/speech` → progressively forwarded `audio/pcm`: signed 16-bit little-endian, mono, 24 kHz.
+  Example: `{"provider":"openrouter","model":"elevenlabs/eleven-flash-v2.5","voice":"george",
+  "text":"A chair is on the left.","speed":1.0}`. Provider is `openrouter`, `openai` or `elevenlabs`;
+  text is 1–2000 characters, speed 0.7–1.2. OpenRouter validates both model and model-specific voice against
+  its catalog, including colon/dot-containing Microsoft voice IDs. Other providers retain their existing limits.
+
+OpenRouter uses the existing `OPENROUTER_API_KEY` (or `OPENROUTER_API_KEY_PARAM`) and its `/audio/speech`
+endpoint. No direct-provider account is required. Supported models:
+
+| Model | Default voice |
+|---|---|
+| `elevenlabs/eleven-flash-v2.5` (default model) | `george` |
+| `elevenlabs/eleven-multilingual-v2` | Choose from its live voice list |
+| `microsoft/mai-voice-2.1-flash` | Choose from its live voice list |
+| `microsoft/mai-voice-2.1` | Choose from its live voice list |
+
+All four were independently probed on 25 Oct with the live key and returned
+`audio/pcm;rate=24000;channels=1`. The proxy refuses mismatched rate/channel metadata rather than playing
+audio at the wrong pitch/speed. Model availability and voice lists remain provider-dependent.
+The iPhone applies cloud playback speed locally using `AVAudioUnitTimePitch`, bypassed at 1×; it sends
+speed 1 to the server. Thus model-specific speed support cannot cause silent inconsistencies.
+
+Optional direct connections still use `OPENAI_API_KEY` / `ELEVENLABS_API_KEY`. Missing credentials disable
+the relevant provider and yield 503 if requested. Keys never go into the IPA or catalog.
+Direct OpenAI uses `gpt-4o-mini-tts`; direct ElevenLabs uses `eleven_flash_v2_5`.
+Provider charges and retention policies apply. OpenRouter receives the same data-collection/ZDR routing
+preferences as descriptions. Only speech text leaves this route, never the camera image.
+The app labels cloud voices as AI-generated. PCM is played incrementally and cancelled for urgent warnings;
+warning speech always stays local. Failed reads are reported without silently switching providers.
+
+Sources: [OpenRouter streaming](https://openrouter.ai/docs/api/reference/streaming),
+[OpenRouter TTS](https://openrouter.ai/docs/guides/overview/multimodal/tts),
+[OpenAI speech](https://platform.openai.com/docs/api-reference/audio/createSpeech),
+[ElevenLabs streaming speech](https://elevenlabs.io/docs/api-reference/text-to-speech/stream).
+
+
 ## 2. describe-api → inference server
 
 `POST /v1/generate` · `X-Determine-Key: <INFERENCE_KEY>` · JSON
