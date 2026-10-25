@@ -5,10 +5,10 @@ ahead. Design: [`Determine-Architecture.html`](Determine-Architecture.html) (con
 [`Determine-Brief.html`](Determine-Brief.html) (8-page brief). Status: proposed design; untested with
 blind or low-vision users.
 
-**Platform plan:** Android is implemented; iOS is planned as a near-identical native app, built and deployed
-with [xtool](https://github.com/xtool-org/xtool). See the [iOS and Android parity plan](docs/ios-plan.md)
-for screen/behavior parity, engine conformance, Linux tooling and iPhone networking/background validation gates.
-No iOS build or device validation is claimed yet.
+**Platform status:** Android is implemented; [`ios/`](ios/README.md) now contains a native SwiftUI interactive
+prototype translating its four main workflows, packaged for [xtool](https://github.com/xtool-org/xtool).
+The prototype uses explicitly synthetic inputs, not live hardware. Its Swift model runs on Linux, and an unsigned
+arm64 iOS IPA now builds with xtool. Phone runtime and native visual verification remain outstanding. Full parity: [iOS plan](docs/ios-plan.md).
 
 <p align="center">
   <a href="Determine-Brief.pdf"><img src="docs/images/brief-1.png" width="49%" alt="Brief cover: a two-stave score where beeps speed up as an obstacle approaches"></a>
@@ -42,6 +42,7 @@ Main · Judge diagnostics · Judge during an approach (NEAR at 0.5 m) · Setting
 | [`firmware/cam-board/`](firmware/cam-board/README.md) | ESP32-CAM: JPEG capture, chunked FRAME stream, PSRAM fallback | `pio run -e esp32cam`, `pio test -e native` |
 | [`phone/`](phone/README.md) | Kotlin hazard engine (`core`) + headless phone (`cli`) | `./gradlew build` |
 | [`android/`](android/README.md) | Android app: service, MediaPipe detector, TTS/vibration, judge + calibration UI, Describe client with on-phone face blur, phone-camera and phone-audio fallbacks | `./gradlew assembleDebug testDebugUnitTest` |
+| [`ios/`](ios/README.md) | Native SwiftUI interactive prototype: Main, Judge, virtual Calibration, Settings; synthetic inputs only, no live boards/audio/uploads | `nix-shell -p swift swiftpm --run 'swift run DetermineSmoke'` from `ios/`; native build requires xtool + Apple SDK |
 | [`cloud/`](cloud/README.md) | Describe loop on Annapurna silicon: Graviton2 Lambda API + SmolVLM server on Inferentia2 | `python3 -m unittest discover -s cloud/describe-api/tests` (and `cloud/inference/tests`) |
 | [`tools/sim/`](tools/sim/README.md) | Two-board simulator, bench tool for real boards, end-to-end harness | `python3 -m unittest discover -s tools/sim/tests` |
 | [`docs/flows/`](docs/flows/README.md) | Hardware flow maps and software flowcharts (Mermaid) | `nix shell nixpkgs#mermaid-cli -c python3 docs/flows/render.py` |

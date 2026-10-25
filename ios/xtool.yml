@@ -1,0 +1,4 @@
+version: 1
+bundleID: org.determine.prototype
+product: DetermineApp
+infoPath: Support/Info.plist

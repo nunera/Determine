@@ -5,10 +5,10 @@ The phone is the only integrator (Arch §4): it receives the two boards' UDP str
 camera frames, and sends cue commands back to the cue board. This module is only the Android shell around the core:
 UDP socket, foreground service, detector, phone-side alerts, and the accessible UI.
 
-**Cross-platform target:** iOS is planned with matching screens, workflows and safety behavior, using a native
-Swift/SwiftUI app and xtool. Android remains the first implementation, not the only target.
-See the [iOS and Android parity plan](../docs/ios-plan.md); platform-specific permissions and lifecycle behavior
-must not silently weaken the common safety contract.
+**Cross-platform target:** [`../ios/`](../ios/README.md) contains a native SwiftUI interactive prototype of
+these workflows, with explicitly synthetic inputs and xtool packaging. It is not yet a live hardware client.
+Android remains the first implementation; the [iOS and Android parity plan](../docs/ios-plan.md) defines the
+remaining device gates. Platform-specific permissions and lifecycle behavior must not weaken the safety contract.
 
 | Piece | File | Notes |
 |---|---|---|

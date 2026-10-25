@@ -1,6 +1,6 @@
 # iOS app and Android parity plan
 
-Status: planned, not implemented or device-validated. Android remains the first implementation; iOS is a target platform, not a separate reduced-feature product. This plan supplements the Android-first architecture contract without claiming an iOS build exists. Event work must still follow the HackTX build-on-site rule.
+Status: native SwiftUI interactive prototype implemented in [`../ios/`](../ios/README.md), with a Linux-exercised synthetic workflow model and a compiled unsigned arm64 iOS IPA. Live iOS hardware support and device validation remain outstanding. Android remains the first full implementation; iOS is a target platform, not a separate reduced-feature product. This plan supplements the Android-first architecture contract. Event work must still follow the HackTX build-on-site rule.
 
 ## Product contract: essentially the same app
 
@@ -21,7 +21,7 @@ Keep a single reviewed inventory of strings, design tokens, cue definitions and 
 
 ## Implementation decision
 
-Plan a native Swift/SwiftUI iOS app in a future `ios/` SwiftPM package, built, signed and deployed with [xtool](https://github.com/xtool-org/xtool). Keep Android native. xtool is the iOS toolchain, not a cross-platform UI framework or an Android-to-iOS converter.
+A native Swift/SwiftUI interactive prototype now lives in `ios/`, packaged as a SwiftPM app for [xtool](https://github.com/xtool-org/xtool). It translates the four main workflows with explicit synthetic inputs; it is not the live Swift hazard engine described below. Keep Android native. xtool is the iOS toolchain, not a cross-platform UI framework or an Android-to-iOS converter.
 
 The existing `phone/core` is Kotlin/JVM 17, **not** an iOS-ready shared library: its Gradle target is JVM and production code uses `java.util.BitSet`, `Locale` and `ConcurrentLinkedQueue`. Do not plan to load its JAR on iOS or assume that switching a Gradle target makes it portable.
 
@@ -45,9 +45,9 @@ Use upstream [Linux installation instructions](https://xtool.sh/documentation/xt
 2. Run `xtool setup` for authentication and SDK extraction. Upstream supports paid-program API-key authentication and Apple-ID password authentication using private Apple APIs. Prefer API keys when membership is available; keep credentials out of the repository and CI logs.
 3. Create the SwiftPM app with `xtool new`; configure its bundle identifier and bundling in `xtool.yml`. Keep core logic independently runnable on Linux where possible.
 4. Pair a physical iPhone over USB, trust the computer/developer identity and enable Developer Mode as required. Run `xtool dev` from the app package to build, sign and install, then launch and inspect the app on the phone.
-5. Record the working tool versions, device/iOS version, signing method and reproducible commands in the future `ios/README.md` only after the workflow succeeds. Development installation is not evidence of TestFlight/App Store distribution; distribution, account eligibility and required entitlements need their own validation before public release.
+5. Record working tool versions, device/iOS version when tested, signing method if used and reproducible commands in `ios/README.md` as each gate succeeds. Current evidence covers the model and an unsigned native IPA, not phone execution. Neither unsigned packaging nor development installation is evidence of TestFlight/App Store distribution; public distribution needs separate validation.
 
-Do not install tools, download the SDK, authenticate to Apple or create an empty iOS scaffold as part of this documentation-only change.
+The initial documentation-only plan has now been followed by a user-requested interactive prototype and unsigned IPA build. The user authenticated in Zen to obtain Xcode; the slim SDK was extracted in an isolated Swift container. No Apple signing authentication or device installation was performed. Implemented scope, tooling and executable checks are recorded in [`../ios/README.md`](../ios/README.md).
 
 ## iOS feasibility gates
 
@@ -73,4 +73,4 @@ Completion means every parity row and feasibility gate is demonstrated, or a mat
 
 ## Verification status
 
-This change records the plan only. No iOS package, xtool setup, SDK extraction, signing, device networking, background execution or App Store distribution has been exercised. Existing architecture/brief PDFs and app screenshots remain historical Android/design evidence and are intentionally unchanged.
+The interactive prototype's synthetic model has been compiled and exercised on Linux. Native arm64 iOS release compilation/linking and unsigned IPA packaging also passed using xtool 1.22.2, Swift 6.4.1 and a slim SDK extracted from Xcode 27.1. The IPA's payload, bundle metadata, device architecture and absence of code signature/provisioning profile were checked. This is not full parity, live wire-v2 support or phone runtime proof. Installation, native rendering, networking, background execution and distribution remain unverified. Existing architecture/brief PDFs and app screenshots remain historical Android/design evidence and are intentionally unchanged.
