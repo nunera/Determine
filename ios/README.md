@@ -33,10 +33,12 @@ with a SwiftUI host. iOS 17+, unsigned IPA only. Do not use it while walking: no
   states `redacted: false` and `unredacted_opt_in: true`, which the API accepts only together. Server URL and bearer
   key are set in Settings (the key is kept in the Keychain; plain `http://` is allowed for local-network addresses
   only, via `NSAllowsLocalNetworking`). A MID/NEAR warning or system off cuts the request or the speech.
-  A permanent instance runs on the home server (SmolVLM-256M on CPU, tailnet only, about 2 s per answer measured
-  with a 640×360 test image from a laptop client): URL `https://mansfield.tail06a975.ts.net/describe`, so the
-  iPhone must be on the tailnet. The key is in `/etc/determine/describe.env` on that server. Not verified from
-  the app on a device: see Real device tests.
+  A permanent instance runs on the home server (tailnet only): URL `https://mansfield.tail06a975.ts.net/describe`, so
+  the iPhone must be on the tailnet. It sends the frame to a vision model on OpenRouter (default `openai/gpt-6-luna`;
+  measured from the server on 6 real photos: 2.1-4.0 s and about $0.0001 per answer, against 1.2 s and $0.0005 for
+  Gemini 3.1 Flash-Lite and $0.0025 for GPT-5.6 Terra), after the earlier local SmolVLM-256M proved unable to describe
+  real scenes. The key is in `/etc/determine/describe.env` on that server. Not verified from the app on a device: see
+  Real device tests.
 - **Read text** (Main button, also a VoiceOver custom action on the status panel): on-device OCR (Vision
   `VNRecognizeTextRequest`) of the newest camera frame (iPhone camera or camera board), only if the frame is at most
   500 ms old. The result is spoken as read, an empty result as "No text found", a stale or missing
