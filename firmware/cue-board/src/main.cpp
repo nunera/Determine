@@ -124,7 +124,7 @@ static bool haptic_init_side(int side) {
   ledcWrite(side, 0);
   return true;
 }
-static bool haptic_set(int side, uint8_t level) {
+static bool haptic_set(int side, uint8_t level, uint32_t /*dur_ms*/) {
   ledcWrite(side, level);
   return true;
 }
@@ -133,18 +133,19 @@ static bool haptic_set(int side, uint8_t level) {
 // It cannot lateralise, so the protocol's per-side intensities drive it at max(L, R);
 // both haptic fault bits reflect this single device.
 static constexpr uint8_t ADDR_VIBRO = 0x38;
-// Device-side auto-off for every ON write: if this task stalls, the motor still stops.
-// Longer than the longest pattern segment (LSS 400 ms); every segment rewrites it.
-static constexpr uint32_t VIBRO_SAFETY_MS = 1000;
+// Every ON write sets the module's own timer to exactly the pattern segment it plays (40-400 ms), so the motor
+// stops on time even if the OFF write that follows is lost or ignored. A fixed 1000 ms window here made 40 ms
+// pulses feel long and inconsistent on the bench (24 Oct 2026: 60 ms durations felt like soft taps, the
+// 1000 ms window with an OFF write did not). The OFF write is still sent as well.
 static uint8_t g_side_level[2];
 
 // Command layout from Arduino_Modulino ModulinoVibro::on()/off():
 // ON  = uint32 freq (1000), uint32 duration_ms, int32 power (0..50); OFF = 8 zero bytes.
-static bool vibro_write(uint8_t level) {
+static bool vibro_write(uint8_t level, uint32_t dur_ms) {
   uint8_t buf[12] = {0};
   size_t len = 8;
   if (level) {
-    uint32_t freq = 1000, ms = VIBRO_SAFETY_MS;
+    uint32_t freq = 1000, ms = dur_ms ? dur_ms : 1;
     int32_t power = dt_vibro_power(level);
     memcpy(&buf[0], &freq, 4);
     memcpy(&buf[4], &ms, 4);
@@ -158,15 +159,15 @@ static bool vibro_write(uint8_t level) {
   xSemaphoreGive(g_i2c);
   return ok;
 }
-static bool haptic_set(int side, uint8_t level) {
+static bool haptic_set(int side, uint8_t level, uint32_t dur_ms) {
   g_side_level[side] = level;
-  bool ok = vibro_write(max(g_side_level[0], g_side_level[1]));
+  bool ok = vibro_write(max(g_side_level[0], g_side_level[1]), dur_ms);
   // A failed side must not keep the shared motor on through the other side's writes.
   if (!ok) g_side_level[side] = 0;
   return ok;
 }
 static bool haptic_init_side(int side) {
-  return haptic_set(side, 0);
+  return haptic_set(side, 0, 0);
 }
 #endif
 
@@ -179,10 +180,10 @@ static void haptic_try_init(int side) {
   set_fault(side == 0 ? DT_FAULT_HAPTIC_L : DT_FAULT_HAPTIC_R, !ok);
 }
 
-// Drives one side; a failing side gets its fault bit and the other side keeps working.
-static void haptic_apply(int side, uint8_t level) {
+// Drives one side for `dur_ms` (ON segments); a failing side gets its fault bit and the other side keeps working.
+static void haptic_apply(int side, uint8_t level, uint32_t dur_ms) {
   if (!g_haptic_ok[side]) return;
-  if (!haptic_set(side, level)) {
+  if (!haptic_set(side, level, dur_ms)) {
     g_haptic_ok[side] = false;
     set_fault(side == 0 ? DT_FAULT_HAPTIC_L : DT_FAULT_HAPTIC_R, true);
     Serial.printf("[haptic] %c write FAILED\n", side ? 'R' : 'L');
@@ -209,14 +210,15 @@ static void haptic_task(void *) {
       const dt_haptic_def_t *d = dt_haptic_def(req.pattern);
       for (uint8_t i = 0; d && i < d->count && !restart; i++) {
         bool on = (i % 2) == 0;
-        haptic_apply(0, on ? req.l : 0);
-        haptic_apply(1, on ? req.r : 0);
+        uint32_t seg = d->seg_ms[i];
+        haptic_apply(0, on ? req.l : 0, seg);
+        haptic_apply(1, on ? req.r : 0, seg);
         // Segment timing; a new (interrupting) request restarts immediately.
-        if (xQueueReceive(g_haptic_q, &req, pdMS_TO_TICKS(d->seg_ms[i])) == pdTRUE) restart = true;
+        if (xQueueReceive(g_haptic_q, &req, pdMS_TO_TICKS(seg)) == pdTRUE) restart = true;
       }
     } while (restart);
-    haptic_apply(0, 0);
-    haptic_apply(1, 0);
+    haptic_apply(0, 0, 0);
+    haptic_apply(1, 0, 0);
     g_haptic_busy = false;
   }
 }

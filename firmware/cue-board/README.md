@@ -192,6 +192,14 @@ Bench observations on the purchased module (24 Oct 2026):
   1.5 s Vibro ON/OFF while ranging logged one isolated I²C error and no motor-correlated failures. The Vibro
   firmware then reported `[haptic] L ok`, `R ok`, `[tof] init ok` and no I²C errors in 30 s while the watchdog LSS
   ran. Physical vibration strength and long-run reliability are not measured.
+- **Vibro pulses felt too long (24 Oct 2026, user-reported):** the firmware wrote every ON with a fixed 1000 ms
+  module-side duration and relied on a following 8-byte OFF write to stop the motor; 40-150 ms cues felt long and
+  inconsistent, with leave time at 0 and the distance display on time, so smoothing was not the cause. A bench
+  sketch that played 8 pulses in each of four modes was felt by the user: the 1000 ms window plus OFF write (the
+  old firmware) was the only mode that felt long and inconsistent; a 60 ms module-side duration alone, a power-0
+  stop, and a 60 ms duration plus OFF all felt like soft taps. The firmware now sets the module's duration to
+  exactly the pattern segment it plays and still sends the OFF write (the last mode). Subjective single-user
+  feel on one unit; the motor's real on-time and the end-to-end cue stop with the phone were not measured.
 - Results are now read before the interrupt is cleared, matching the ST driver's documented
   `ClearInterrupt()` contract.
 - Protocol v2, status-0-only validity, deadlines and warning thresholds are unchanged. No end-to-end phone
