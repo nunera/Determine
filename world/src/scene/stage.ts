@@ -5,45 +5,45 @@
 import * as THREE from "three";
 import { DEFAULT_REFLECTANCE, REFLECTANCE_BY_KIND, type Collider } from "../sensor/tof";
 
-/** Render layers: 0 = world (head camera sees it), 1 = overlays (no AO/edges, never in the camera feed),
+/** Render layers: 0 = world (head camera sees it), 1 = overlays (no AO, never in the camera feed),
  *  2 = the wearer's own body (hidden from the head camera and first-person view). */
 export const LAYER_WORLD = 0;
 export const LAYER_OVERLAY = 1;
 export const LAYER_WEARER = 2;
 
-export const INK = new THREE.Color("#131316");
-export const PAPER = new THREE.Color("#f6f4ef");
+export const INK = new THREE.Color("#20252d");
+export const PAPER = new THREE.Color("#f3f5f7");
 export const LEFT_BLUE = new THREE.Color("#1d4ed8");
 export const RIGHT_RED = new THREE.Color("#cf1f2a");
 export const HAZARD = new THREE.Color("#ffd000");
 
-function matte(hex: string, roughness = 0.92): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ color: hex, roughness, metalness: 0, envMapIntensity: 0.18 });
+function matte(hex: string, roughness = 0.76): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color: hex, roughness, metalness: 0, envMapIntensity: 0.3 });
 }
 
-/** Warm maquette materials: value differences only, colour reserved for meaning. */
+/** Cool architectural finishes; saturated colour remains reserved for signal and warning meaning. */
 export const MAT = {
-  ground: matte("#efece6"),
-  paving: matte("#e7e2d8"),
-  limestone: matte("#e4dccd"),
-  limestoneDark: matte("#d6cdbb"),
-  wall: matte("#f1eee8"),
-  timber: matte("#d9d1c2"),
-  steel: matte("#c9c6c0", 0.7),
-  clay: matte("#ddd5c8", 0.88),
-  clayDark: matte("#c7beb0", 0.88),
-  foliage: new THREE.MeshStandardMaterial({ color: "#e2e0d5", roughness: 0.95, flatShading: true, envMapIntensity: 0.3 }),
-  ink: new THREE.MeshStandardMaterial({ color: "#2a2a2e", roughness: 0.6 }),
-  white: matte("#fbfaf6", 0.6),
-  glass: new THREE.MeshStandardMaterial({
-    color: "#dfe6ea", roughness: 0.08, metalness: 0, transparent: true, opacity: 0.28, depthWrite: false,
-    envMapIntensity: 0.9,
+  ground: matte("#edf0f3", 0.94),
+  paving: matte("#c4cfda", 0.86),
+  limestone: matte("#c2ced9", 0.72),
+  limestoneDark: matte("#b6c2cc", 0.8),
+  wall: matte("#e4e9ef", 0.7),
+  timber: matte("#aeb9c1", 0.82),
+  steel: new THREE.MeshStandardMaterial({ color: "#73818e", roughness: 0.34, metalness: 0.72, envMapIntensity: 0.8 }),
+  clay: matte("#aebdca", 0.58),
+  clayDark: matte("#718291", 0.64),
+  foliage: new THREE.MeshStandardMaterial({ color: "#9daea4", roughness: 0.9, envMapIntensity: 0.25 }),
+  ink: new THREE.MeshStandardMaterial({ color: "#303943", roughness: 0.48, metalness: 0.12, envMapIntensity: 0.45 }),
+  white: matte("#fafcfd", 0.48),
+  glass: new THREE.MeshPhysicalMaterial({
+    color: "#c7dde8", roughness: 0.12, metalness: 0, transparent: true, opacity: 0.26, depthWrite: false,
+    clearcoat: 1, clearcoatRoughness: 0.1, envMapIntensity: 0.85,
   }),
 } as const;
 
-/** Floor with a faint drafting grid (1 m minor, 5 m major) that fades with distance. */
+/** Quiet architectural seams: world-space metres remain true, without a drafting-grid backdrop. */
 export function groundMaterial(): THREE.MeshStandardMaterial {
-  const m = matte("#f3f1ec", 0.96);
+  const m = matte("#d5dde5", 0.94);
   m.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vGridPos;")
@@ -58,11 +58,10 @@ float gridLine(vec2 p, float spacing) {
 }`)
       .replace("#include <color_fragment>", `#include <color_fragment>
 {
-  float minor = gridLine(vGridPos.xz, 1.0);
   float major = gridLine(vGridPos.xz, 5.0);
-  float fade = 1.0 - smoothstep(25.0, 70.0, length(vGridPos.xz - cameraPosition.xz));
-  float ink = max(minor * 0.07, major * 0.16) * fade;
-  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.30, 0.30, 0.32), ink);
+  float fade = 1.0 - smoothstep(12.0, 42.0, length(vGridPos.xz - cameraPosition.xz));
+  float ink = major * 0.045 * fade;
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.32, 0.39, 0.46), ink);
 }`);
   };
   return m;
@@ -123,7 +122,7 @@ export class Stage {
   }
 }
 
-/** Canvas texture with ink lettering on paper (signage, floor station marks). */
+/** Crisp, restrained architectural signage, rasterised once at high resolution. */
 export function letteringTexture(lines: string[], w: number, h: number, opts: {
   size?: number; weight?: number; bg?: string; fg?: string; border?: boolean; mono?: boolean;
 } = {}): THREE.CanvasTexture {
@@ -132,14 +131,14 @@ export function letteringTexture(lines: string[], w: number, h: number, opts: {
   c.width = w * scale; c.height = h * scale;
   const g = c.getContext("2d")!;
   const size = opts.size ?? h * 0.42;
-  const family = opts.mono ? "'Atkinson Hyperlegible Mono', monospace" : "'Atkinson Hyperlegible Next', sans-serif";
-  const font = `${opts.weight ?? 700} ${size}px ${family}`;
+  const family = opts.mono ? "'SFMono-Regular', 'Atkinson Hyperlegible Mono', monospace" : "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+  const font = `${opts.weight ?? 600} ${size}px ${family}`;
   const draw = (): void => {
     g.setTransform(scale, 0, 0, scale, 0, 0);
-    g.fillStyle = opts.bg ?? "#fbfaf6";
+    g.fillStyle = opts.bg ?? "#f7f9fb";
     g.fillRect(0, 0, w, h);
-    if (opts.border) { g.strokeStyle = opts.fg ?? "#131316"; g.lineWidth = 3; g.strokeRect(1.5, 1.5, w - 3, h - 3); }
-    g.fillStyle = opts.fg ?? "#131316";
+    if (opts.border) { g.strokeStyle = opts.fg ?? "#20252d"; g.lineWidth = 1; g.strokeRect(0.5, 0.5, w - 1, h - 1); }
+    g.fillStyle = opts.fg ?? "#20252d";
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.font = font;

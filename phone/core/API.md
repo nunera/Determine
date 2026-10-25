@@ -273,3 +273,26 @@ DIAG <ms> state=.. cam_beat_ms=.. cam_offset_us=.. cam_rtt_us=.. cam_synced=.. c
 Unknown values print `-`. Tokens never contain spaces (spaces → `_`). New keys may be appended at line end only
 (`link_weak`, `closing_mm_s`, `approach`, `exploring` were appended this way; `closing_mm_s` has 2 decimals).
 `range_mm` is a number only for `VALID`; `range_left`/`range_right` are always `unavailable` (one forward sensor).
+
+### Opt-in live CLI profile control
+
+`--control-stdin` enables bounded line-oriented local control; the default CLI does not read stdin.
+`--haptic-max 1..255` selects the initial board cap (default 255). A controller writes:
+
+```text
+PROFILE <positive-request-id> <HAPTIC_ONLY|STEREO|SSD> <integer-ceiling:-60..-10> <integer-haptic-max:1..255>
+```
+
+The CLI validates before calling `Engine.setProfile` under the same lock as tick/packet handling.
+It does not restart the engine. Lines exceeding 160 characters are rejected and drained before the
+next command; EOF/closed control input does not disable the engine or watchdog. Results on stdout:
+
+```text
+PROFILE-RESULT <ms> request=<id> status=applied mode=<HAPTIC_ONLY|STEREO|SSD> ceiling_db=<db> haptic_max=<1-255>
+PROFILE-RESULT <ms> request=<id-or--1> status=rejected error=<token>
+```
+
+Request 0 confirms the actual initial profile application when control mode starts; controller requests
+must be positive. `applied` confirms engine configuration only. Subsequent `PROFILE-TX` reports wire
+transmission; a board ACK reports acceptance, not physical actuation. Invalid requests retain the prior
+profile. Haptic zero is invalid: the existing watchdog failure channel cannot be disabled.

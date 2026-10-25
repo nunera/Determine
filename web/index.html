@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en" data-theme="paper">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#f7f7f2" />
+    <meta
+      name="description"
+      content="Determine — Sense what you can’t. Explore the glasses, feel the cue language, and connect to the live hardware-in-the-loop studio."
+    />
+    <title>Determine — Sense what you can’t</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      try {
+        const t = localStorage.getItem("determine-theme");
+        if (["paper", "midnight", "cobalt"].includes(t))
+          document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

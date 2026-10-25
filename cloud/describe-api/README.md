@@ -9,14 +9,17 @@ status, timings — never image bytes or answer text.
 |---|---|
 | `app/handler.py` | Lambda handler (Function URL / HTTP API v2 events) |
 | `app/safety.py` | §3 filter: sentence split (abbreviations, decimals), deny lists |
-| `app/backends.py` | `InferenceBackend` (inf2/trn2 server, urllib) and `BedrockBackend` (Nova Lite Converse, lazy boto3) |
+| `app/backends.py`, `app/openrouter.py` | Existing inf2/trn2, Nova Lite and OpenRouter scene adapters; the handler owns safety |
 | `template.yaml` | SAM: arm64 function, Function URL, optional VPC, SSM + conditional Bedrock IAM, 7-day logs |
 | `local_server.py` | HTTP wrapper: legacy JSON routes plus streaming descriptions and speech |
 | `app/streaming.py` | OpenRouter SSE ingestion, preference validation, sentence gating and NDJSON |
 | `app/speech.py` | Authenticated OpenRouter/direct-provider voice catalogs and streamed PCM proxy |
 
-Backend selection: `DESCRIBE_BACKEND=inf2|trn2|bedrock|openrouter`; `DESCRIBE_FALLBACK=bedrock` is used only if the primary is
-unavailable or times out, and the response's `backend`/`silicon` say which one answered.
+Backend selection: `DESCRIBE_BACKEND=inf2|trn2|bedrock|openrouter`; `DESCRIBE_FALLBACK=bedrock` is used only if the
+primary is unavailable or times out, and the response's `backend`/`silicon` say which one answered.
+OpenRouter reuses the current Determine scene provider (`OPENROUTER_API_KEY` or `OPENROUTER_API_KEY_PARAM`,
+`OPENROUTER_MODEL`, default `openai/gpt-6-luna`). It is not a direct OpenAI endpoint or a browser SDK.
+See `cloud/API.md` for provider privacy, optional reasoning/ZDR settings and live-launcher configuration.
 
 ## Deploy
 
@@ -40,6 +43,17 @@ DESCRIBE_API_KEY=apikey INFERENCE_URL=http://127.0.0.1:8080 INFERENCE_KEY=devkey
 ```
 
 Point the app at `http://<laptop-ip>:8787` with key `apikey`; plain HTTP is allowed only for local-network addresses.
+
+For the browser professional workspace, prefer the already-running Describe service: set private
+`DESCRIBE_URL=https://mansfield.tail06a975.ts.net/describe` and `DESCRIBE_KEY` in `web/.env`, with tailnet access,
+then run `npm run live` from `web/`. Both SIM and HITL bridges use the same service. No key goes in browser
+storage, a `VITE_` variable, a URL or command arguments.
+
+Alternatively, set `OPENROUTER_API_KEY` server-side and optionally `OPENROUTER_MODEL`: the launcher starts
+`local_server.py --host 127.0.0.1 --port 8771` with a private per-launch bearer, `DESCRIBE_BACKEND=openrouter` and
+`DESCRIBE_FALLBACK=none`. It does not spawn the Describe server without a provider key. With neither complete
+external service settings nor a local provider key, Describe stays explicitly off and the live runtime works.
+Browser uploads are rendered World frames only, even in HITL; this does not upload physical camera frames.
 
 ## Streaming deployment on Mansfield
 

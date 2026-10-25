@@ -23,8 +23,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-# Generation settings shared by every backend. Two short sentences fit comfortably in 96 tokens; greedy decoding
-# keeps the small VLM from inventing detail.
+# Generation settings for the inference server and Bedrock. OpenRouter retains its existing short-answer
+# settings in openrouter.py, including room for hidden reasoning before the common safety postfilter.
 MAX_NEW_TOKENS = 96
 TEMPERATURE = 0.0
 
@@ -60,7 +60,7 @@ class BackendError(Exception):
 class Generation:
     text: str
     model: str
-    backend: str  # inf2 | trn2 | bedrock | cpu
+    backend: str  # inf2 | trn2 | bedrock | openrouter | cpu
     silicon: str  # Inferentia2 | Trainium2 | unspecified | CPU
 
 

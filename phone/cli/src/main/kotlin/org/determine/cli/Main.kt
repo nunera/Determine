@@ -22,6 +22,7 @@ import org.determine.core.wire.RangeStatus
 import org.determine.core.wire.Wire
 import org.determine.core.wire.WireException
 import java.io.PrintStream
+import java.io.InputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -48,6 +49,8 @@ data class CliOptions(
     val durationS: Double? = null,
     val ceilingDb: Int = -20,
     val mode: HearingMode = HearingMode.STEREO,
+    val hapticMax: Int = 255,
+    val controlStdin: Boolean = false,
     val spearcons: Boolean = true,
     /** EXPERIMENTAL Tuning switches for simulator A/B runs; everything else stays at the Tuning defaults. */
     val approach: Boolean = false,
@@ -64,6 +67,8 @@ const val USAGE = """determine-phone [options]
   --duration S        exit after S seconds (default: run until killed)
   --ceiling DB        local audio ceiling in dBFS (default -20; never above the -10 hard cap)
   --mode M            STEREO | SSD | HAPTIC_ONLY (default STEREO)
+  --haptic-max N      board haptic cap, 1..255 (default 255; watchdog cannot be disabled)
+  --control-stdin     accept PROFILE <request-id> <mode> <ceiling -60..-10> <haptic-max> lines
   --no-spearcons      disable spoken words after cues
   --approach          EXPERIMENTAL: start with Tuning.approachEnabled (time-to-contact band escalation)
   --explore           EXPERIMENTAL: start with Tuning.exploreEnabled (distance-proportional haptic pulses)
@@ -87,6 +92,8 @@ fun parseArgs(args: Array<String>): CliOptions {
             "--duration" -> o = o.copy(durationS = value().toDouble())
             "--ceiling" -> o = o.copy(ceilingDb = value().toInt())
             "--mode" -> o = o.copy(mode = HearingMode.valueOf(value().uppercase()))
+            "--haptic-max" -> o = o.copy(hapticMax = value().toInt())
+            "--control-stdin" -> o = o.copy(controlStdin = true)
             "--no-spearcons" -> o = o.copy(spearcons = false)
             "--approach" -> o = o.copy(approach = true)
             "--explore" -> o = o.copy(explore = true)
@@ -95,6 +102,8 @@ fun parseArgs(args: Array<String>): CliOptions {
         i++
     }
     require(o.ceilingDb <= 0) { "ceiling is dBFS and must be <= 0" }
+    require(o.hapticMax in 1..255) { "haptic maximum is 1..255; the watchdog cannot be disabled" }
+    require(!o.controlStdin || o.ceilingDb in -60..-10) { "controlled ceiling must be -60..-10 dBFS" }
     return o
 }
 
@@ -189,7 +198,57 @@ class LogCueSink(private val log: EventLog) : org.determine.core.LocalCueSink {
     }
 }
 
-fun run(o: CliOptions, out: PrintStream = System.out): Int {
+private val CONTROL_FIELDS = Regex("\\s+")
+
+/**
+ * Opt-in local control protocol. Results acknowledge Engine.setProfile, not board actuation. The engine sends
+ * PROFILE on its next tick (or after learning/reconnecting the cue board). Invalid input never reaches the engine.
+ */
+internal class ProfileControl(private val engine: Engine, private val log: EventLog) {
+    fun apply(request: Long, mode: HearingMode, ceilingDb: Int, hapticMax: Int) {
+        require(ceilingDb in -60..-10) { "ceiling_must_be_-60..-10_dBFS" }
+        require(hapticMax in 1..255) { "haptic_maximum_must_be_1..255_watchdog_cannot_be_disabled" }
+        val profile = HearingProfile.uncalibrated(ceilingDb, mode).copy(hapticMax = hapticMax)
+        engine.setProfile(profile)
+        log.emit(nowUs(), "PROFILE-RESULT",
+            "request=$request status=applied mode=$mode ceiling_db=$ceilingDb haptic_max=$hapticMax")
+    }
+
+    fun line(raw: String) {
+        var request = -1L
+        try {
+            require(raw.length <= 160) { "control_line_too_long" }
+            val fields = raw.trim().split(CONTROL_FIELDS)
+            require(fields.size == 5 && fields[0] == "PROFILE") { "expected_PROFILE_request_mode_ceiling_hapticMax" }
+            request = fields[1].toLong()
+            require(request > 0) { "request_must_be_positive" }
+            apply(request, HearingMode.valueOf(fields[2]), fields[3].toInt(), fields[4].toInt())
+        } catch (e: IllegalArgumentException) {
+            log.emit(nowUs(), "PROFILE-RESULT", "request=$request status=rejected error=${tok(e.message ?: "invalid_profile")}")
+        }
+    }
+}
+
+/** Bounded reader: discard oversized lines instead of allocating an unbounded stdin string. */
+private fun readControls(input: InputStream, consume: (String) -> Unit) {
+    val reader = input.buffered()
+    val line = StringBuilder(161)
+    var oversized = false
+    while (true) {
+        val byte = reader.read()
+        if (byte == -1) return
+        if (byte == 10) {
+            consume(line.toString())
+            line.setLength(0)
+            oversized = false
+        } else if (!oversized) {
+            line.append(byte.toChar())
+            if (line.length > 160) oversized = true
+        }
+    }
+}
+
+fun run(o: CliOptions, out: PrintStream = System.out, controlInput: InputStream = System.`in`): Int {
     val start = nowUs()
     val log = EventLog(out, start)
     val socket = DatagramSocket(null).apply { reuseAddress = true; bind(InetSocketAddress(o.bind, o.port)); soTimeout = 5 }
@@ -212,7 +271,7 @@ fun run(o: CliOptions, out: PrintStream = System.out): Int {
         override fun onDiagnostics(d: Diagnostics) = log.emit(nowUs(), "DIAG", diagLine(d))
     }
     val engine = Engine(
-        EngineConfig(initialProfile = HearingProfile.uncalibrated(o.ceilingDb, o.mode), spearcons = o.spearcons,
+        EngineConfig(initialProfile = HearingProfile.uncalibrated(o.ceilingDb, o.mode).copy(hapticMax = o.hapticMax), spearcons = o.spearcons,
             tuning = o.tuning()),
         outbox, alerts, listener, LogCueSink(log),
     )
@@ -220,6 +279,19 @@ fun run(o: CliOptions, out: PrintStream = System.out): Int {
 
     val running = java.util.concurrent.atomic.AtomicBoolean(true)
     Runtime.getRuntime().addShutdownHook(Thread { running.set(false) })
+    val controls = ProfileControl(engine, log)
+    if (o.controlStdin) {
+        lock.withLock { controls.apply(0, o.mode, o.ceilingDb, o.hapticMax) }
+        Thread({
+            try {
+                readControls(controlInput) { line ->
+                    lock.withLock { if (running.get()) controls.line(line) }
+                }
+            } catch (_: java.io.IOException) {
+                // A closed controller pipe does not disable the engine or its watchdog.
+            }
+        }, "profile-control").apply { isDaemon = true; start() }
+    }
     val ticker = Thread({
         while (running.get()) {
             lock.withLock { engine.tick(nowUs()) }

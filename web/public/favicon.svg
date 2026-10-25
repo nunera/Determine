@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <path id="determine-mark" d="M8 10h24a22 22 0 0 1 0 44H8V42h24a10 10 0 0 0 0-20H8Z" fill="var(--determine-mark-fg, #0066cc)"/>
+  </defs>
+  <use href="#determine-mark"/>
+</svg>

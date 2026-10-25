@@ -15,9 +15,6 @@ import { el, setText } from "./dom";
 import { createGauge } from "./gauge";
 import { Score } from "./score";
 
-/** Dispatched on `window`; the link turns it into `{ t: "engine", action: "restart" }` (see link/link.ts). */
-const ENGINE_RESTART_EVENT = "determine:engine-restart";
-
 type Hello = Extract<FromBridge, { t: "hello" }>;
 type BridgeStatus = Extract<FromBridge, { t: "bridge" }>;
 type Alert = NonNullable<Extract<FromBridge, { t: "alert" }>["alert"]>;
@@ -251,7 +248,7 @@ export const createHud: CreateHud = (root: HTMLElement, bus: Bus) => {
   const scoreStrip = el("footer", { class: "score", "aria-label": "Score of played cues" },
     el("div", { class: "score-head" },
       el("h2", {}, "Score"),
-      el("span", { class: "muted" }, "what the phone played on the headset and the cue board vibrated, last 12 s"),
+      el("span", { class: "muted" }, "phone audio and board haptic reports, last 12 s; real-board ACK is acceptance, not measured vibration"),
       el("ul", { class: "score-legend", "aria-label": "Score legend" },
         el("li", {}, el("i", { class: "g g-oval" }), "obstacle"),
         el("li", {}, el("i", { class: "g g-diamond" }), "person"),
@@ -273,7 +270,7 @@ export const createHud: CreateHud = (root: HTMLElement, bus: Bus) => {
       el("div", { class: "rehearsal big", "aria-hidden": "true" }, "A"),
       el("h1", { id: "start-title" }, "Determine World"),
       el("p", { class: "start-lede" },
-        "A wearer walks a course while one simulated forward time-of-flight reading (Modulino Distance, ~18°, up to 1.2 m) feeds the real phone engine. You hear exactly what the phone plays on the bone-conduction headset; the cue board’s vibration is drawn, not sounded."),
+        "A wearer walks a course while one simulated forward time-of-flight reading (VL53L4ED, ~18°, up to 1.2 m) feeds the real phone engine. Browser audio monitors the phone’s audio output; the cue board’s vibration is drawn, not sounded. This does not imply integrated wearable audio hardware."),
       el("p", { class: "fine" }, "Headphones recommended. Determine supplements the cane or guide dog and never replaces them. Silence is not “path clear”. One zone cannot tell left from right, and it cannot see glass reliably, thin wires, drop-offs, fast vehicles or anything beyond about 1.2 m."),
       el("p", { class: "fine mono" }, "Keys: Space play/pause · R restart · 1–4 camera · D what’s ahead · M mute · ←/→ course"),
       startBtn,
@@ -413,7 +410,9 @@ export const createHud: CreateHud = (root: HTMLElement, bus: Bus) => {
       const au = lastAudio ? `headset ${tokenText(lastAudio.cue)} ${tokenText(lastAudio.status)}` : "";
       const tx = lastTx ? `board ${lastTx.haptic} sent` : "";
       const pl = lastPlayed
-        ? `vibrated ${tokenText(lastPlayed.status)}${lastPlayed.src === "watchdog" ? " (watchdog)" : ""}, ${(lastPlayed.lateUs / 1000).toFixed(1)} ms late`
+        ? lastPlayed.source === "real"
+          ? `board accepted ${tokenText(lastPlayed.status)} (ACK; physical onset unmeasured)`
+          : `vibrated ${tokenText(lastPlayed.status)}${lastPlayed.src === "watchdog" ? " (watchdog)" : ""}, ${(lastPlayed.lateUs / 1000).toFixed(1)} ms late`
         : "";
       setText(statusRows.lastCue, [au, [tx, pl].filter(Boolean).join(" → ")].filter(Boolean).join(" · "));
     }
@@ -575,7 +574,7 @@ export const createHud: CreateHud = (root: HTMLElement, bus: Bus) => {
   exploreToggle.addEventListener("click", () => requestTuning({ explore: exploreToggle.getAttribute("aria-pressed") !== "true" }));
   engineBtn.addEventListener("click", () => {
     engineRestarting = true;
-    window.dispatchEvent(new CustomEvent(ENGINE_RESTART_EVENT));
+    bus.emit("restartEngine", {});
     announce("Restarting the phone engine.");
     renderStatus();
   });

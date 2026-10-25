@@ -54,6 +54,23 @@ The range model fits two VL53L4CD datasheet anchors (1200 mm at 88% white reflec
 
 The sensor's `truthM` searches within the same narrow cone up to 4 m to distinguish physical ground truth from reported sensor range. It cannot serve as a full-camera object label, a collision corridor or evidence of path safety.
 
+## Hardware in the loop (HITL)
+
+Start the bridge with `--hitl LISTEN_HOST:PORT` (e.g. `0.0.0.0:47100`; see `tools/sim/world_bridge.py --help`) and flash the boards with the `xiao_esp32c3_hitl` / `esp32cam_hitl` envs, or make the laptop the boards' Wi-Fi gateway. The real cue board and ESP32-CAM then replace the simulated boards; the real engine runs against their packets.
+
+When the bridge's hello reports `hitl.enabled`, a **HITL** panel appears on the right:
+
+- **Range** `real | world | fuse` and **Camera** `real | composite` (composite is disabled when the bridge lacks Pillow). Selectors send `{t:'hitl'}`; readouts always show the bridge's actual modes.
+- **Real / World / Out**: the real cue board's reading, the World raycast (with its age) and what the engine received, plus the `source` the bridge used.
+- **Cue / Cam**: learned address, ms since last packet, RSSI, fault bits (camera fps too). **Composite**: frames out, frames composited, last error.
+- Preview: the JPEG exactly as sent to the engine (bridge binary `0x11`, ≤ 4 fps).
+- **Virtual target**: a head-locked box straight ahead of the brow sensor, 30–1300 mm (near face), width × height in mm, surface `white` (88 %), `grey` (17 %) or `glass` (reported UNKNOWN, as in the ToF model). It is in the World ToF raycast that feeds `world`/`fuse` range modes and is drawn on its own render layer, visible in the head camera.
+- **Course objects in overlay**: also draw the course's sensed set pieces into the composite overlay.
+
+In `composite` camera mode the World renders the head camera with only the HITL layer over a transparent background and sends it as a 320×240 PNG (binary `0x02`, ≤ 8 fps); the bridge alpha-blends it into the real camera's JPEG. Without HITL the World behaves exactly as before: the target is off and no overlay is rendered.
+
+**Screen in the loop** (optical camera stimulation): open `http://127.0.0.1:8765/?view=camera` in a second window on the monitor the real ESP32-CAM faces, fullscreen it, and keep the main page open in the same browser profile. That page shows only the head camera at display resolution, four corner fiducial squares for framing and a frame counter for spotting dropped or frozen frames. It follows the main page's course, time and virtual target over a `BroadcastChannel`. Use camera mode `real` so the bridge forwards the frames unchanged. A ToF sensor cannot be spoofed by a screen; to stimulate it physically, use real objects or a moving target.
+
 ## Research and experiments
 
 Start at [research synthesis](../docs/research/README.md). Detailed competitor, simulation, Annapurna/Austin and Meta reports contain sources and flowcharts; the [work log](../docs/research/WORKLOG.md) tracks implementation and verification.

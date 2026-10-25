@@ -48,6 +48,31 @@ def accept_key(key: str) -> str:
     """Sec-WebSocket-Accept for a client's Sec-WebSocket-Key (RFC 6455 §4.2.2)."""
     return base64.b64encode(hashlib.sha1((key + GUID).encode("ascii")).digest()).decode("ascii")
 
+def same_origin(origin: str | None, host: str | None) -> bool:
+    """Nonbrowser clients may omit Origin; browsers must use the request Host, never a wildcard allow-list."""
+    if origin is None:
+        return True
+    if not host or any(ch.isspace() or ord(ch) < 32 or ch == "\\" for ch in origin + host):
+        return False
+    try:
+        source = urlsplit(origin)
+        if (source.scheme not in ("http", "https") or not source.hostname or source.username is not None
+                or source.password is not None or source.path or source.query or source.fragment
+                or origin != f"{source.scheme}://{source.netloc}" or source.port == 0
+                or source.netloc.endswith(":")):
+            return False
+        target = urlsplit(f"{source.scheme}://{host}")
+        if (not target.hostname or target.username is not None or target.password is not None
+                or target.path or target.query or target.fragment or target.port == 0
+                or host != target.netloc or host.endswith(":")):
+            return False
+        default_port = 443 if source.scheme == "https" else 80
+        return (source.hostname.lower(), source.port or default_port) == (
+            target.hostname.lower(), target.port or default_port)
+    except ValueError:
+        return False
+
+
 
 def _xor(data: bytes, mask: bytes) -> bytes:
     n = len(data)
@@ -297,6 +322,10 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
     # -- WebSocket
     def _websocket(self):
         h = self.headers
+        if (len(h.get_all("Origin", [])) > 1 or len(h.get_all("Host", [])) != 1
+                or not same_origin(h.get("Origin"), h.get("Host"))):
+            self._send(403, "text/plain; charset=utf-8", b"WebSocket Origin must match request Host\n")
+            return
         if "websocket" not in h.get("Upgrade", "").lower() or "upgrade" not in h.get("Connection", "").lower():
             self._send(400, "text/plain; charset=utf-8", b"expected a WebSocket upgrade\n")
             return
@@ -393,6 +422,11 @@ class WebSocketServer:
 
     def broadcast_text(self, text: str):
         frame = encode_frame(OP_TEXT, text.encode("utf-8"))
+        for c in self.clients():
+            c.send_frame(frame)
+
+    def broadcast_binary(self, data: bytes):
+        frame = encode_frame(OP_BINARY, data)
         for c in self.clients():
             c.send_frame(frame)
 

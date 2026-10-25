@@ -101,6 +101,36 @@ class SuccessTest(HandlerTestCase):
         self.assertError(event(), 502, "inference_failed", False, REQUEST_ID)
 
 
+class OpenRouterSafetyTest(HandlerTestCase):
+    extra_env = {"DESCRIBE_BACKEND": "openrouter", "OPENROUTER_API_KEY": "private-provider-key"}
+
+    def test_shared_prompt_metadata_and_safety_filter(self):
+        generation = backends.Generation("The path is clear. A bench is right.",
+                                         "openai/gpt-6-luna", "openrouter", "unspecified")
+        with mock.patch("openrouter.OpenRouterClient.describe", return_value=generation) as describe:
+            response, body, records, _ = invoke(event())
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(body["sentences"], ["A bench is right."])
+        self.assertEqual((body["backend"], body["silicon"], body["model"]),
+                         ("openrouter", "unspecified", "openai/gpt-6-luna"))
+        describe.assert_called_once_with(support.jpeg(), safety.PROMPT,
+                                         "openai/gpt-6-luna", handler.INFERENCE_BUDGET_S)
+        self.assertEqual(records[0]["filter"]["dropped_reassurance"], 1)
+        self.assertNotIn("private-provider-key", json.dumps(records))
+        self.assertNotIn("A bench is right.", json.dumps(records))
+
+    def test_all_unsafe_output_still_fails_without_fake_fallback(self):
+        generation = backends.Generation("The path is clear and safe.", "m", "openrouter", "unspecified")
+        with mock.patch("openrouter.OpenRouterClient.describe", return_value=generation):
+            self.assertError(event(), 502, "inference_failed", False, REQUEST_ID)
+
+    def test_missing_provider_key_fails_closed(self):
+        with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}), \
+                mock.patch("openrouter.OpenRouterClient.describe") as describe:
+            self.assertError(event(), 503, "unavailable", False, REQUEST_ID)
+        describe.assert_not_called()
+
+
 class AuthTest(HandlerTestCase):
     def test_missing_header(self):
         response, _, _ = self.assertError(event(token=None), 401, "unauthorized")

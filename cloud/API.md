@@ -6,6 +6,7 @@ flight, and any MID or NEAR hazard interrupts the answer.
 ```
 phone ──HTTPS──▶ describe-api (AWS Lambda, arm64 / Graviton2) ──HTTP──▶ inference server (EC2 inf2.xlarge, Inferentia2)
                                                     └──(optional fallback)──▶ Amazon Bedrock Nova Lite (silicon not guaranteed)
+                                                    └──(configured primary)─▶ OpenRouter → configured vision model
 ```
 
 ## 1. Phone → describe-api
@@ -149,6 +150,48 @@ Sources: [OpenRouter streaming](https://openrouter.ai/docs/api/reference/streami
 [OpenAI speech](https://platform.openai.com/docs/api-reference/audio/createSpeech),
 [ElevenLabs streaming speech](https://elevenlabs.io/docs/api-reference/text-to-speech/stream).
 
+### OpenRouter / OpenAI-model configuration
+
+The scene service and browser bridge use the existing OpenRouter vision backend, not a separate direct-OpenAI
+browser API or provider implementation. Its default vision model is `openai/gpt-6-luna`. Configure
+`DESCRIBE_BACKEND=openrouter`, `OPENROUTER_API_KEY` (or `OPENROUTER_API_KEY_PARAM` for a server-side
+SSM SecureString) and optionally `OPENROUTER_MODEL`.
+The account must have credits and access to the selected vision model; model availability is a provider concern.
+`OPENROUTER_REASONING` defaults to `low`; `OPENROUTER_ZDR=1` restricts routing to zero-data-retention endpoints.
+`OPENROUTER_BASE_URL` is the existing server-only endpoint override (default `https://openrouter.ai/api/v1`).
+
+The buffered JSON endpoint POSTs the §3 prompt (plus the optional question as data) and a JPEG data URL to
+`/chat/completions` with the existing 400-token budget (including room for reasoning), temperature 0.2, and
+`provider.data_collection=deny`. It then applies the **same**
+§3 postfilter. Metadata reports `backend: "openrouter"`, the provider's served model, and
+`silicon: "unspecified"`; it does not imply local inference or known hardware. Provider responses are capped at
+256 KiB; HTTP/provider/malformed-response errors use the normal generic contract errors without exposing error
+bodies or keys. There is no invented answer, retry loop, or new fallback backend.
+
+Determine itself stores no frame or answer and logs neither. OpenRouter and the routed provider receive the
+image and prompt; their retention/policies are separate from Determine's no-storage guarantee. The privacy
+routing flags are requests to the provider, not proof of upstream deletion.
+Official contracts: [OpenRouter API](https://openrouter.ai/docs/api_reference/overview) and
+[provider privacy routing](https://openrouter.ai/docs/guides/routing/provider-selection).
+
+### Browser live launcher
+
+`npm run live` in `web/` reads private `web/.env` or exported server variables:
+
+- `DESCRIBE_URL` **and** `DESCRIBE_KEY`: use the existing Describe service, taking precedence over local provider
+  configuration. The deployed tailnet service base is `https://mansfield.tail06a975.ts.net/describe`; access
+  requires the tailnet and that service's Describe bearer, not an OpenRouter key in the browser.
+- Otherwise, `OPENROUTER_API_KEY` starts the same local handler on `127.0.0.1:8771`, selecting `openrouter` and no
+  fallback. `OPENROUTER_MODEL`, `OPENROUTER_REASONING`, `OPENROUTER_ZDR` and `OPENROUTER_BASE_URL` apply server-side.
+- Without complete external configuration or a local provider key, Describe is explicitly **OFF**; simulation
+  and hardware operation remain available.
+
+Both SIM and HITL bridges receive the same Describe service. The launcher generates a random per-launch bearer
+for the local service; bearer/provider secrets travel in child environments, not argv, logs or browser storage.
+Never use `VITE_` variables for keys. The browser sends only a **rendered World camera JPEG**, including in HITL,
+through its bridge's same-origin `POST /api/describe`. This is not a physical-camera upload. Virtual scenes
+contain no real people/faces, so the bridge truthfully uses `redacted:true`; this does not claim real-frame face
+blurring or silently opt anyone into an unredacted physical upload.
 
 ## 2. describe-api → inference server
 

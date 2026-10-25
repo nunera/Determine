@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Determine World bridge: the browser world drives the simulated boards, the REAL phone engine decides.
+"""Determine World bridge: browser-simulated or real HITL boards, with the REAL phone engine deciding.
 
   python3 tools/sim/world_bridge.py --serve world/dist             # built world on http://127.0.0.1:8765/
   python3 tools/sim/world_bridge.py                                # with `npm run dev` in world/ (Vite proxies /ws, /api)
   python3 tools/sim/world_bridge.py --serve world/dist --approach  # spawned engine with EXPERIMENTAL approach escalation
   python3 tools/sim/world_bridge.py --phone 192.168.1.20:47000     # external phone (desktop app or Android)
   python3 tools/sim/world_bridge.py --describe-url https://…/ --describe-key KEY   # enable "What's ahead?"
+  python3 tools/sim/world_bridge.py --port 8766 --hitl 0.0.0.0:47100 --engine-port 47110  # real boards, isolated ports
 
 Truth chain (wire v2): the world measures ONE forward ToF reading (Modulino Distance, ~18° cone, ≤ 1.2 m) and
 renders the wearer's camera → WebSocket /ws → this bridge's simulated cue and camera boards (boards.py, protocol v2
@@ -14,14 +15,18 @@ the phone plays on the Bluetooth bone-conduction headset) and haptic-only CUE pa
 applies/clamps/expires/drops the haptic → `audio`, `cueTx` and `played` events back to the browser. The bridge never
 decides a hazard; it only translates.
 
-WebSocket messages are the `ToBridge`/`FromBridge` types of world/src/contract.ts. Camera JPEGs arrive as binary
-frames: byte 0 = 0x01, then the JPEG. `POST /api/describe` (body image/jpeg) forwards to cloud/describe-api.
+With --hitl, no simulated boards are created: hitl.py relays real UDP packets through stable role twins, optionally
+injecting world range readings and camera overlays while retaining real board clocks and sequence numbers.
+WebSocket messages are the `ToBridge`/`FromBridge` types of world/src/contract.ts: binary 0x01 + JPEG is the
+simulated camera, 0x02 + RGBA PNG the HITL overlay, and 0x11 + JPEG the HITL preview sent to the browser.
+`POST /api/describe` (body image/jpeg) forwards to cloud/describe-api.
 """
 from __future__ import annotations
 
 import argparse
 import base64
 import json
+import ipaddress
 import math
 import os
 import secrets
@@ -42,6 +47,7 @@ import jpeg as jpg  # noqa: E402
 from boards import DEFAULT_CAM_CLOCK, DEFAULT_CUE_CLOCK, CamBoardSim, CueBoardSim, SimRig, _locked  # noqa: E402
 from dtwire import ACK_NAMES, CUE_NAMES, FAULT_NAMES, HAPTIC_NAMES, SIDE_NAMES, dw  # noqa: E402
 from e2e import parse_phone_line, parse_sim_line  # noqa: E402
+from hitl import CAMERA_MODES, RANGE_MODES, HitlRelay, composite_available  # noqa: E402
 from netem import CLEAN, NetProfile  # noqa: E402
 from scenarios import WIFI_JITTER_NET, Scenario  # noqa: E402
 from simclock import BoardClock, host_us  # noqa: E402
@@ -112,6 +118,17 @@ def parse_tuning(v) -> dict | None:
     if isinstance(v, dict) and isinstance(v.get("approach"), bool) and isinstance(v.get("explore"), bool):
         return {"approach": v["approach"], "explore": v["explore"]}
     return None
+
+def parse_profile(v) -> dict | None:
+    """Validate browser profile fields without coercing booleans, strings or fractional numbers."""
+    if not isinstance(v, dict) or v.get("mode") not in ("HAPTIC_ONLY", "STEREO", "SSD"):
+        return None
+    ceiling, haptic = v.get("ceilingDb"), v.get("hapticMax")
+    if (type(ceiling) is not int or not -60 <= ceiling <= -10
+            or type(haptic) is not int or not 0 <= haptic <= 255):
+        return None
+    return {"mode": v["mode"], "ceilingDb": ceiling, "hapticMax": haptic}
+
 
 
 class LiveScenario(Scenario):
@@ -291,6 +308,15 @@ def engine_event(raw: str) -> dict:
         return log_event(raw)
     kv, ms = ln.kv, ln.ms
     try:
+        if ln.kind == "PROFILE-RESULT":
+            if kv.get("status") == "applied":
+                profile = parse_profile({"mode": kv["mode"], "ceilingDb": int(kv["ceiling_db"]),
+                                         "hapticMax": int(kv["haptic_max"])})
+                if profile is not None and profile["hapticMax"] > 0:
+                    return {"t": "profile", "status": "applied", "profile": profile}
+            elif kv.get("status") == "rejected":
+                return {"t": "profile", "status": "rejected", "profile": None,
+                        "error": kv.get("error", "Engine rejected profile").replace("_", " ")}
         if ln.kind == "STATE" and ln.words and ln.words[0] in SYSTEM_STATES:
             return {"t": "state", "ms": ms, "state": ln.words[0], "reason": kv.get("reason", "-")}
         if ln.kind == "ALERT":
@@ -444,9 +470,11 @@ def describe_route(client: DescribeClient | None):
 
 # ---------------------------------------------------------------------- engine process
 
-def engine_cmd(engine: str, phone_port: int, ceiling: int, mode: str, tuning: dict) -> list[str]:
-    """phone/cli argv: profile flags plus the EXPERIMENTAL Tuning switches (`--approach`, `--explore`)."""
-    cmd = [engine, "--port", str(phone_port), "--bind", "127.0.0.1", "--ceiling", str(ceiling), "--mode", mode]
+def engine_cmd(engine: str, phone_port: int, profile: dict, tuning: dict) -> list[str]:
+    """Start the real CLI with its last acknowledged settings and opt-in in-place profile control."""
+    cmd = [engine, "--port", str(phone_port), "--bind", "127.0.0.1", "--control-stdin",
+           "--ceiling", str(profile["ceilingDb"]), "--mode", profile["mode"],
+           "--haptic-max", str(profile["hapticMax"])]
     if tuning["approach"]:
         cmd.append("--approach")
     if tuning["explore"]:
@@ -465,6 +493,11 @@ class EngineProcess:
         self.proc: subprocess.Popen | None = None
         self.ready = threading.Event()
         self._lock = threading.Lock()
+        self._control_lock = threading.Lock()
+        self._request = 0
+        self._pending: tuple[int, threading.Event] | None = None
+        self._control_error: str | None = None
+        self._closed = False
 
     @property
     def running(self) -> bool:
@@ -473,22 +506,56 @@ class EngineProcess:
 
     def start(self):
         with self._lock:
-            self._spawn()
+            if not self._closed and not self.running:
+                self._spawn()
 
     def stop(self):
         with self._lock:
+            self._closed = True
             self._kill()
 
     def restart(self):
         with self._lock:
+            if self._closed:
+                return
             self._kill()
             self._spawn()
+
+    def set_profile(self, profile: dict) -> str | None:
+        """Wait a bounded time for a real CLI result; None means the stdout result was delivered."""
+        with self._control_lock:
+            with self._lock:
+                p = self.proc
+                if p is None or p.poll() is not None or p.stdin is None:
+                    return "Engine is stopped; restart it before applying a profile"
+                self._request += 1
+                request = self._request
+                done = threading.Event()
+                self._pending = (request, done)
+                self._control_error = None
+                try:
+                    p.stdin.write(f"PROFILE {request} {profile['mode']} {profile['ceilingDb']} {profile['hapticMax']}\n")
+                    p.stdin.flush()
+                except (OSError, ValueError) as e:
+                    self._pending = None
+                    return f"Engine control pipe failed: {e}"
+            if not done.wait(3.0):
+                with self._lock:
+                    self._pending = None
+                return "Engine did not acknowledge the profile within 3 seconds"
+            return self._control_error
+
+    def _cancel_control(self, error: str):
+        if self._pending is not None:
+            self._control_error = error
+            self._pending[1].set()
+            self._pending = None
 
     def _spawn(self):
         self.ready.clear()
         try:
             p = subprocess.Popen(list(self.cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                 stdin=subprocess.DEVNULL, text=True, errors="replace", bufsize=1, cwd=REPO,
+                                 stdin=subprocess.PIPE, text=True, errors="replace", bufsize=1, cwd=REPO,
                                  start_new_session=True)
         except OSError as e:
             self.proc = None
@@ -500,15 +567,38 @@ class EngineProcess:
     def _read(self, p: subprocess.Popen):
         with p.stdout:
             for raw in p.stdout:
-                if p is self.proc:
+                with self._lock:
+                    if p is not self.proc:
+                        continue
                     self.ready.set()
-                self.on_line(raw.rstrip("\n"))
+                    line = raw.rstrip("\n")
+                    self.on_line(line)
+                    parsed = parse_phone_line(line)
+                    if (parsed is not None and parsed.kind == "PROFILE-RESULT"
+                            and engine_event(line)["t"] == "profile"):
+                        if self._pending is not None and parsed.kv.get("request") == str(self._pending[0]):
+                            self._pending[1].set()
+                            self._pending = None
         code = p.wait()
-        self.on_exit(f"engine exited pid={p.pid} code={code}")
+        with self._lock:
+            if p is self.proc:
+                self._cancel_control("Engine exited before acknowledging the profile")
+                self.on_exit(f"engine exited pid={p.pid} code={code}")
 
     def _kill(self):
         p = self.proc
-        if p is None or p.poll() is not None:
+        self.proc = None
+        self.ready.clear()
+        self._cancel_control("Engine stopped or restarted before acknowledging the profile")
+        if p is None:
+            return
+        self.on_exit(f"engine stopped pid={p.pid}")
+        if p.stdin is not None:
+            try:
+                p.stdin.close()
+            except OSError:
+                pass
+        if p.poll() is not None:
             return
         try:
             os.killpg(p.pid, signal.SIGTERM)
@@ -534,24 +624,39 @@ class Bridge:
         self._tuning_lock = threading.Lock()
         # The spawned engine's tuning is what we started it with; an external phone's tuning is unknown here.
         self.tuning: dict | None = None if self.external else {"approach": args.approach, "explore": args.explore}
-        self._engine_argv = (args.engine, args.phone_port, args.ceiling, args.mode)
+        self.profile: dict | None = None
+        self._desired_profile = {"mode": args.mode, "ceilingDb": args.ceiling, "hapticMax": args.haptic_max}
+        self._engine_argv = (args.engine, args.phone_port)
         self.describe = DescribeClient(args.describe_url, args.describe_key) if args.describe_url else None
         self.engine = None if self.external else EngineProcess(
-            engine_cmd(*self._engine_argv, self.tuning), self.on_engine_line, self.on_engine_exit)
-        self.rig = LiveRig(self.feed, phone=phone, bind=board_bind, cue_port=args.cue_port, cam_port=args.cam_port,
-                           log=self.on_board_line)
+            engine_cmd(*self._engine_argv, self._desired_profile, self.tuning), self.on_engine_line, self.on_engine_exit)
+        self.hitl = None
+        self.rig = None
+        if args.hitl is not None:
+            self.hitl = HitlRelay(args.hitl, phone, self.feed, range_mode=args.hitl_range,
+                                  camera_mode=args.hitl_camera, cue_ip=args.hitl_cue, cam_ip=args.hitl_cam,
+                                  emit=self.emit, preview=self.on_preview, note=self.note)
+        else:
+            self.rig = LiveRig(self.feed, phone=phone, bind=board_bind, cue_port=args.cue_port, cam_port=args.cam_port,
+                               log=self.on_board_line)
         try:
             self.ws = WebSocketServer(args.bind, args.port, static_dir=args.serve,
                                       post_routes={"/api/describe": describe_route(self.describe)},
                                       on_connect=self.on_connect, on_text=self.on_text, on_binary=self.on_binary)
         except OSError:
-            self.rig.cue.close()
-            self.rig.cam.close()
+            if self.hitl is not None:
+                self.hitl.stop()
+            else:
+                self.rig.cue.close()
+                self.rig.cam.close()
             raise
 
     # -- outgoing
     def emit(self, ev: dict):
         self.ws.broadcast_text(json.dumps(ev, separators=(",", ":")))
+
+    def on_preview(self, data: bytes):
+        self.ws.broadcast_binary(data)
 
     def log(self, line: str):
         for ln in self.throttle.admit(line):
@@ -569,16 +674,51 @@ class Bridge:
 
     def hello(self) -> dict:
         return {"t": "hello", "engine": "external" if self.external else "spawned", "phone": self.phone,
-                "describe": self.describe is not None, "tuning": self._tuning()}
+                "describe": self.describe is not None, "tuning": self._tuning(), "profile": self._profile(),
+                "hitl": self.hitl.hello() if self.hitl is not None else {
+                    "enabled": False, "listen": None, "range": "fuse", "camera": "real",
+                    "compositeAvailable": composite_available()}}
 
     def status(self) -> dict:
         if self.external:
             engine = "external"
         else:
             engine = "running" if self.engine.running else "exited"
-        return {"t": "bridge", "engine": engine,
-                "boards": {b: "down" if self.rig.scenario.unplugged[b] else "up" for b in BOARDS},
-                "net": self.rig.net_name, "tuning": self._tuning()}
+        if self.hitl is not None:
+            telemetry = self.hitl.status()
+            boards = {b: "up" if telemetry[b]["ageMs"] is not None and telemetry[b]["ageMs"] <= 500 else "down"
+                      for b in BOARDS}
+            net = "real"
+        else:
+            boards = {b: "down" if self.rig.scenario.unplugged[b] else "up" for b in BOARDS}
+            net = self.rig.net_name
+        return {"t": "bridge", "engine": engine, "boards": boards,
+                "net": net, "tuning": self._tuning(), "profile": self._profile()}
+
+    def _profile(self) -> dict | None:
+        profile = self.profile
+        return None if profile is None else dict(profile)
+
+    def reject_profile(self, error: str):
+        self.emit({"t": "profile", "status": "rejected", "profile": self._profile(), "error": error})
+
+    def set_profile(self, value):
+        profile = parse_profile(value)
+        if profile is None:
+            self.reject_profile("Invalid profile: choose HAPTIC_ONLY/STEREO/SSD, ceiling -60..-10 dBFS, "
+                                "and integer haptic maximum 1..255")
+        elif profile["hapticMax"] == 0:
+            self.reject_profile("Haptic maximum must be 1..255; the watchdog failure channel cannot be disabled")
+        elif self.external:
+            self.reject_profile("The engine is an external phone; configure the profile on that phone")
+        elif self._stop.is_set():
+            self.reject_profile("Bridge is stopping; reconnect before applying a profile")
+        elif self.profile is None and self.engine.running:
+            self.reject_profile("Engine has not acknowledged its initial profile yet; wait for engine readiness")
+        else:
+            error = self.engine.set_profile(profile)
+            if error is not None:
+                self.reject_profile(error)
 
     # -- sources
     def on_board_line(self, line: str):
@@ -590,12 +730,21 @@ class Bridge:
 
     def on_engine_line(self, line: str):
         ev = engine_event(line)
+        if ev["t"] == "profile":
+            if ev["status"] == "applied":
+                with self._tuning_lock:
+                    self.profile = ev["profile"]
+                    self._desired_profile = dict(self.profile)
+                    self.engine.cmd = engine_cmd(*self._engine_argv, self._desired_profile, self.tuning)
+            else:
+                ev["profile"] = self._profile()
         if ev["t"] == "log":
             self.log(line)
         else:
             self.emit(ev)
 
     def on_engine_exit(self, msg: str):
+        self.profile = None
         self.note(msg)
         self.emit(self.status())
 
@@ -603,6 +752,8 @@ class Bridge:
     def on_connect(self, conn: WSConn):
         conn.send_text(json.dumps(self.hello(), separators=(",", ":")))
         conn.send_text(json.dumps(self.status(), separators=(",", ":")))
+        if self.hitl is not None:
+            conn.send_text(json.dumps(self.hitl.status(), separators=(",", ":")))
 
     def on_text(self, conn: WSConn | None, text: str):
         try:
@@ -613,6 +764,9 @@ class Bridge:
             self.note("rejected a non-JSON WebSocket message")
             return
         t = msg.get("t")
+        if t == "profile":
+            self.set_profile(msg.get("profile"))
+            return
         if t == "range":
             reading = parse_range(msg)
             if reading is None:
@@ -620,6 +774,21 @@ class Bridge:
                           "or 2 UNKNOWN)")
             else:
                 self.feed.put_range(*reading)
+        elif t == "hitl":
+            if self.hitl is None:
+                self.note("HITL mode change ignored: HITL is disabled")
+            elif (not any(k in msg for k in ("range", "camera")) or
+                  ("range" in msg and msg["range"] not in RANGE_MODES) or
+                  ("camera" in msg and msg["camera"] not in CAMERA_MODES)):
+                self.note("rejected malformed HITL mode change")
+            else:
+                try:
+                    self.hitl.set_modes(**{k: msg[k] for k in ("range", "camera") if k in msg})
+                except ValueError as e:
+                    self.note(str(e))
+                self.emit(self.hitl.status())
+        elif self.hitl is not None and t in ("board", "net"):
+            self.note("simulated board disconnect and network impairment are disabled in HITL")
         elif t == "board" and msg.get("board") in BOARDS and isinstance(msg.get("down"), bool):
             self.rig.set_down(msg["board"], msg["down"])
             self.note(f"{msg['board']} board {'unplugged' if msg['down'] else 'plugged in'}")
@@ -649,7 +818,7 @@ class Bridge:
             else:
                 changed = True
                 self.tuning = tuning
-                self.engine.cmd = engine_cmd(*self._engine_argv, tuning)
+                self.engine.cmd = engine_cmd(*self._engine_argv, self._desired_profile, tuning)
         desc = f"approach={'on' if tuning['approach'] else 'off'} explore={'on' if tuning['explore'] else 'off'}"
         if not changed:
             self.note(f"tuning unchanged ({desc}); engine not restarted")
@@ -661,6 +830,16 @@ class Bridge:
         threading.Thread(target=self.restart_engine, args=(why,), name="engine-restart", daemon=True).start()
 
     def on_binary(self, conn: WSConn | None, data: bytes):
+        if self.hitl is not None:
+            if data and data[0] == 0x02:
+                try:
+                    self.hitl.put_overlay(data[1:])
+                except ValueError as e:
+                    self.note(str(e))
+            elif not data or data[0] != 0x01:
+                self.note("rejected a HITL binary message without the 0x02 overlay tag")
+            # Browser simulation JPEGs never become real board traffic.
+            return
         if not data or data[0] != 0x01:
             self.note("rejected a binary message without the 0x01 camera tag")
             return
@@ -674,6 +853,9 @@ class Bridge:
 
     def restart_engine(self, why: str = "engine restart requested"):
         self.note(why)
+        if self._stop.is_set():
+            return
+        self.profile = None
         self.engine.restart()
         self.emit(self.status())
 
@@ -685,18 +867,29 @@ class Bridge:
             # Let the JVM bind the phone port before the boards start talking (as e2e.py does).
             if self.engine.running:
                 self.engine.ready.wait(5.0)
-        self.rig.start()
+        if self.hitl is not None:
+            self.hitl.start()
+        else:
+            self.rig.start()
         threading.Thread(target=self._status_loop, name="bridge-status", daemon=True).start()
 
     def _status_loop(self):
-        while not self._stop.wait(1.0):
-            for ln in self.throttle.flush():
-                self.emit(log_event(ln))
-            self.emit(self.status())
+        ticks = 0
+        while not self._stop.wait(0.2 if self.hitl is not None else 1.0):
+            if self.hitl is not None:
+                self.emit(self.hitl.status())
+            ticks += 1
+            if self.hitl is None or ticks % 5 == 0:
+                for ln in self.throttle.flush():
+                    self.emit(log_event(ln))
+                self.emit(self.status())
 
     def stop(self):
         self._stop.set()
-        self.rig.stop()
+        if self.hitl is not None:
+            self.hitl.stop()
+        else:
+            self.rig.stop()
         if self.engine is not None:
             self.engine.stop()
         self.ws.stop()
@@ -715,8 +908,15 @@ def _host_port(s: str) -> tuple[str, int]:
     return host, p
 
 
+def _ipv4(s: str) -> str:
+    try:
+        return str(ipaddress.IPv4Address(s))
+    except ipaddress.AddressValueError as e:
+        raise argparse.ArgumentTypeError("expected an IPv4 board address") from e
+
+
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Determine World bridge: browser world → simulated boards → phone engine.",
+    p = argparse.ArgumentParser(description="Determine World bridge: browser world or real HITL boards → phone engine.",
                                 formatter_class=argparse.RawDescriptionHelpFormatter,
                                 epilog=__doc__.split("\n\n", 1)[1])
     p.add_argument("--port", type=int, default=8765, help="HTTP/WebSocket port (default 8765)")
@@ -727,7 +927,15 @@ def build_parser() -> argparse.ArgumentParser:
                      help="phone cli to spawn (default phone/cli/build/install/determine-phone/bin/determine-phone)")
     eng.add_argument("--phone", metavar="HOST:PORT", type=_host_port,
                      help="external phone (desktop app or Android phone): spawn nothing, boards send there")
-    p.add_argument("--phone-port", type=int, default=dw.PORT_PHONE, help="UDP port of the spawned engine (default 47000)")
+    p.add_argument("--engine-port", "--phone-port", dest="phone_port", type=int, default=dw.PORT_PHONE,
+                   help="UDP port of the spawned engine (default 47000; --phone-port is an alias)")
+    p.add_argument("--hitl", metavar="HOST:PORT", type=_host_port,
+                   help="relay real boards arriving at HOST:PORT instead of starting simulated boards")
+    p.add_argument("--hitl-cue", metavar="IP", type=_ipv4, help="pin the real cue board to this IPv4 address")
+    p.add_argument("--hitl-cam", metavar="IP", type=_ipv4, help="pin the real camera board to this IPv4 address")
+    p.add_argument("--hitl-range", choices=RANGE_MODES, default="fuse", help="real/world/fused RANGE (default fuse)")
+    p.add_argument("--hitl-camera", choices=CAMERA_MODES, default="real",
+                   help="real JPEG or Pillow overlay composite (default real)")
     p.add_argument("--board-bind", help="address the simulated boards bind (default 127.0.0.1; 0.0.0.0 with --phone)")
     p.add_argument("--cue-port", type=int, default=dw.PORT_CUE, help="cue board UDP port (default 47001; 0 = any)")
     p.add_argument("--cam-port", type=int, default=dw.PORT_CAM, help="camera board UDP port (default 47002; 0 = any)")
@@ -735,6 +943,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--describe-key", default=os.environ.get("DETERMINE_DESCRIBE_KEY"),
                    help="describe-api key (default: $DETERMINE_DESCRIBE_KEY)")
     p.add_argument("--ceiling", type=int, default=-20, help="spawned engine's profile ceiling, dBFS (default -20)")
+    p.add_argument("--haptic-max", type=int, default=255, help="board haptic cap, 1..255 (default 255)")
     p.add_argument("--mode", choices=("STEREO", "SSD", "HAPTIC_ONLY"), default="STEREO",
                    help="spawned engine's hearing mode (default STEREO)")
     p.add_argument("--approach", action="store_true",
@@ -750,10 +959,22 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.describe_url and not args.describe_key:
         parser.error("--describe-url needs --describe-key or DETERMINE_DESCRIBE_KEY")
-    if args.ceiling > 0:
-        parser.error("--ceiling is dBFS and must be <= 0")
+    if not -60 <= args.ceiling <= -10:
+        parser.error("--ceiling must be -60..-10 dBFS")
+    if not 1 <= args.haptic_max <= 255:
+        parser.error("--haptic-max must be 1..255; the watchdog cannot be disabled")
     if args.phone is not None and (args.approach or args.explore):
         parser.error("--approach/--explore tune the spawned engine; tune an external phone on the phone")
+    if not 0 < args.phone_port < 65536:
+        parser.error("--engine-port must be between 1 and 65535")
+    if args.hitl is not None and args.phone is not None:
+        parser.error("--hitl uses the spawned loopback engine; use --engine-port rather than --phone")
+    if args.hitl is None and (args.hitl_cue or args.hitl_cam or args.hitl_range != "fuse" or args.hitl_camera != "real"):
+        parser.error("--hitl-cue/--hitl-cam/--hitl-range/--hitl-camera require --hitl HOST:PORT")
+    if args.hitl is not None and args.hitl_camera == "composite" and not composite_available():
+        parser.error("--hitl-camera composite requires Pillow (python3 -m pip install Pillow)")
+    if args.hitl is not None and args.hitl[1] == args.phone_port:
+        parser.error("--hitl and --engine-port must use distinct UDP ports")
     if args.serve and not os.path.isfile(os.path.join(args.serve, "index.html")):
         parser.error(f"{args.serve}/index.html not found — run `npm run build` in world/ first")
     if args.phone is None and not os.access(args.engine, os.X_OK):
@@ -774,7 +995,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         engine = (f"spawned engine on udp {bridge.phone} (approach {'on' if args.approach else 'off'}, "
                   f"explore {'on' if args.explore else 'off'})")
-    print(f"world_bridge: {where} · {engine} · boards cue:{bridge.rig.cue.port} cam:{bridge.rig.cam.port} · "
+    boards = (f"HITL {bridge.hitl.hello()['listen']}" if bridge.hitl is not None else
+              f"boards cue:{bridge.rig.cue.port} cam:{bridge.rig.cam.port}")
+    print(f"world_bridge: {where} · {engine} · {boards} · "
           f"describe {'on' if bridge.describe else 'off'} · Ctrl-C to stop", file=sys.stderr, flush=True)
     try:
         done.wait()

@@ -1,5 +1,5 @@
 /**
- * The wearer: maquette figure + the v2 compact headband (forward ToF and ESP32-CAM at the brow, XIAO + Vibro on
+ * The wearer: graphite figure + the v2 compact headband (forward ToF and ESP32-CAM at the brow, XIAO + Vibro on
  * the rear strap), a Bluetooth bone-conduction headset at the temples (the phone's audio route), and a white cane
  * whose tip sweeps the floor. The cane arc on the floor and the ToF cone at the brow tell the core story: the cane
  * covers the ground, nothing covers the head — until the sensor does, within 1.2 m.
@@ -31,12 +31,12 @@ export class Wearer {
   private tipPos = new THREE.Vector3();
 
   constructor(scene: THREE.Scene) {
-    this.figure = createFigure(MAT.clay);
+    this.figure = createFigure(MAT.clayDark);
     this.root.add(this.figure.root);
     const head = this.figure.head;
 
-    const deviceInk = new THREE.MeshStandardMaterial({ color: "#26262b", roughness: 0.55, envMapIntensity: 0.5 });
-    const lens = new THREE.MeshStandardMaterial({ color: "#0d0d10", roughness: 0.15, metalness: 0.2 });
+    const deviceInk = new THREE.MeshStandardMaterial({ color: "#252e38", roughness: 0.38, metalness: 0.16, envMapIntensity: 0.55 });
+    const lens = new THREE.MeshStandardMaterial({ color: "#101b24", roughness: 0.1, metalness: 0.3, envMapIntensity: 0.8 });
     this.deviceMats.push(deviceInk);
     // band
     const band = new THREE.Mesh(new THREE.TorusGeometry(0.104, 0.011, 10, 56), deviceInk);
@@ -79,7 +79,7 @@ export class Wearer {
     this.padR = pad(1, RIGHT_RED);
 
     // cane: white shaft with an ink grip and tip
-    const caneGeo = new THREE.CylinderGeometry(0.0085, 0.0085, 1, 10);
+    const caneGeo = new THREE.CylinderGeometry(0.0085, 0.0085, 1, 16);
     caneGeo.translate(0, 0.5, 0);
     this.cane = new THREE.Mesh(caneGeo, MAT.white);
     this.cane.castShadow = true;
@@ -88,7 +88,7 @@ export class Wearer {
     const arcGeo = new THREE.RingGeometry(CANE_REACH - 0.012, CANE_REACH + 0.012, 48, 1,
       Math.PI / 2 - Math.atan(SWEEP / CANE_REACH), 2 * Math.atan(SWEEP / CANE_REACH));
     this.caneArc = new THREE.Mesh(arcGeo, new THREE.MeshBasicMaterial({
-      color: "#131316", transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide,
+      color: "#303943", transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide,
     }));
     this.caneArc.rotation.x = -Math.PI / 2;
     this.caneArc.position.set(0, 0.014, 0);
@@ -128,7 +128,7 @@ export class Wearer {
     // pulses
     this.pulses = this.pulses.filter((p) => {
       const k = (now - p.t0) / p.dur;
-      if (k >= 1) { p.mesh.removeFromParent(); return false; }
+      if (k >= 1) { p.mesh.removeFromParent(); p.mat.dispose(); return false; }
       const e = 1 - (1 - k) * (1 - k);
       p.mesh.scale.setScalar(1 + e * p.scale);
       p.mat.opacity = (1 - k) * 0.95;
@@ -164,7 +164,7 @@ export class Wearer {
 
   /** Dim the device when the engine is not READY (nothing fake: the hardware is still there, just not trusted). */
   setDeviceTrusted(trusted: boolean): void {
-    for (const m of this.deviceMats) m.color.set(trusted ? "#26262b" : "#8d8d94");
+    for (const m of this.deviceMats) m.color.set(trusted ? "#252e38" : "#8d8d94");
   }
 
   browWorld(target = new THREE.Vector3()): THREE.Vector3 { return this.brow.getWorldPosition(target); }

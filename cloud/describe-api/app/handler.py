@@ -9,7 +9,7 @@ timings — never image bytes and never model text.
 
 Environment:
   DESCRIBE_API_KEY | DESCRIBE_API_KEY_PARAM   bearer key, or SSM SecureString name holding it (read once)
-  DESCRIBE_BACKEND                            inf2 | trn2 | bedrock (default inf2)
+  DESCRIBE_BACKEND                            inf2 | trn2 | bedrock | openrouter (default inf2)
   DESCRIBE_FALLBACK                           bedrock | none (default none); used only when the primary is
                                               unavailable or times out
   INFERENCE_URL                               inference server base URL, e.g. http://10.0.1.23:8080
