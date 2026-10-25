@@ -81,14 +81,11 @@ class VisionTest(OpenRouterTestCase):
         self.assertTrue(records[0]["question"])
         self.assertNotIn("front", raw_log)  # the question is never logged
 
-    def test_a_question_tells_the_model_not_to_judge_safety_but_to_say_what_it_sees(self):
-        invoke(event(request_body(question="is this path safe?")))
-        text = self.server.requests[0]["body"]["messages"][0]["content"][0]["text"]
-        self.assertIn("do not answer yes or no and do not use those words", text)
-        self.assertIn("a photo cannot show that it is safe", text)
-
-    def test_the_route_criteria_send_safety_questions_to_the_camera(self):
-        self.assertIn("safe, clear, empty or okay to walk or cross", openrouter.ROUTE_CRITERIA["askAboutScene"])
+    def test_the_route_criteria_send_safety_questions_to_the_plain_description(self):
+        # A photo cannot show that a path is safe, and the safety filter drops any answer that says so, so "is this
+        # path safe?" gets the same description as "what's ahead?" rather than a yes or no.
+        self.assertIn("safe, clear, empty or okay to walk or cross", openrouter.ROUTE_CRITERIA["whatsAhead"])
+        self.assertNotIn("safe", openrouter.ROUTE_CRITERIA["askAboutScene"])
 
     def test_no_question_means_the_plain_prompt(self):
         invoke(event())

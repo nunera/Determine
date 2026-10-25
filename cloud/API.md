@@ -63,6 +63,9 @@ Response 200:
 - `action` is `command` (the first five routes), `ask` (`askAboutScene`: the phone then calls `/v1/describe` with one
   frame and `question`, which is what the wearer said as cleaned plain text), or `none`. `confidence` is Jev's
   probability for the chosen route.
+- "Is this path safe / clear / okay to cross?" routes to `whatsAhead`, not `askAboutScene`: a photo cannot show that
+  something is safe, and the §3 filter drops any sentence that says so, so a yes-or-no question would come back empty
+  or missing the hazard. The wearer gets the same description as for "what's ahead", which never says safe or clear.
 - The route is acted on only when `confidence` ≥ `VOICE_MIN_CONFIDENCE` (default 0.6); otherwise `action` is `none`.
   Anything else unusable (a route that is not one of the seven, a missing or non-numeric probability, a malformed
   answer) is also `none`: the phone does nothing.
