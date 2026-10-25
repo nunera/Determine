@@ -51,7 +51,18 @@ with a SwiftUI host. iOS 17+, unsigned IPA only. Do not use it while walking: no
   and never forgotten, from voice or from the Main button:** while paused Determine says "Warnings are paused"
   every 30 s and resumes the warnings by itself after 120 s (`VoiceControlSettings`). Siri only sees the intents
   if the IPA carries the App Intents index that Xcode would normally generate; see
-  [Siri build](#siri-build). No always-on wake word yet.
+  [Siri build](#siri-build). Siri does not work from LiveContainer, whose guest apps iOS cannot see; it needs a
+  normal sideloaded install.
+- **Wake word** (Settings → Voice, experimental, default off; `WakeWordListener.swift`): while a session runs it
+  listens for "Hey Determine" followed by what's ahead, read text, pause warnings, resume warnings or stop, using
+  Apple's on-device `SpeechAnalyzer` (iOS 26). It uses the iPhone's built-in microphone and keeps Bluetooth output
+  on A2DP, because opening the headset's microphone would drop its audio to call quality; turning it on switches
+  the shared audio session to play-and-record, and turning it off restores play-only. The wake phrase on its own
+  buzzes and says "Listening", and a command in the next 6 s still counts. Commands run on a stable partial
+  result (0.7 s) or the final one, then the recognizer restarts fresh. Nothing is recorded or sent. The first use
+  downloads Apple's speech model, so it needs a connection once, and asks for microphone access (inside
+  LiveContainer that permission belongs to LiveContainer, not to the app: not checked). The phrase parsing is
+  unit-tested (`VoiceChecks`); the microphone, recognizer and audio session are compile-verified only.
 - **Link quality**: when the engine reports `linkWeak` (cue board RSSI below the threshold for the hold time) Main shows
   an orange "Weak connection" banner and Judge highlights the RSSI. The engine speaks "weak connection" once. It is
   informational and never changes the system state.
@@ -138,6 +149,7 @@ reports, not per-row logs; the table retains the earlier per-feature evidence be
 | Describe | Settings → Describe: enable, turn on unblurred upload, set server URL and key; Main → What's ahead? with the iPhone camera running; the answer is spoken as returned; with the opt-in off nothing is sent; a MID/NEAR warning cuts it | not yet tested on device (wire client smoke-tested on Linux against the real handler with a stub model; no deployed server or real model) |
 | Siri voice commands | Install the Siri build; say each phrase with a session running; Settings → Siri may need the app enabled | not yet tested on device. Open risks: whether a sideloaded, re-signed app keeps the index, and whether the sideloading tool rewrites the bundle id (then pass it in `SIRI_EXTRA_BUNDLE_IDS`) |
 | Pause guard | Pause warnings; "Warnings are paused" repeats every 30 s; warnings resume by themselves at 120 s | not yet tested on device |
+| Wake word | Settings → Voice on; grant the microphone; first use downloads the speech model; with a session running say "Hey Determine, what's ahead", "read text", "pause warnings", "resume warnings", "stop"; wait for "Listening" then speak the command separately; check headset cues keep playing in high quality and speech is still audible | not yet tested on device. Open risks: LiveContainer's microphone and speech permissions, false triggers in traffic, battery and heat, the audio-session switch to play-and-record, and whether the headset stays on A2DP |
 
 ## Unsigned IPA
 

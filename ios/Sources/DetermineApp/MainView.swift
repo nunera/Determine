@@ -120,6 +120,12 @@ struct MainView: View {
                     .font(.callout)
             }
 
+            if model.running, model.wakeWordEnabled {
+                Text(model.wakeState == .listening ? "Listening for \"Hey Determine\"." : "Voice: \(model.wakeState.label).")
+                    .font(.callout)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+
             if model.running && model.describeEnabled {
                 BigAction(title: model.describeState == .requesting ? "Cancel description" : "What's ahead?", primary: false) { model.requestDescription() }
                 switch model.describeState {

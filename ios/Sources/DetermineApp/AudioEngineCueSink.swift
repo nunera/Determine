@@ -29,8 +29,12 @@ final class PhoneAudioSession: @unchecked Sendable {
 
     private let lock = NSLock()
     private var ready = false
+    private var recording = false
 
     /// Category `.playback` ignores the silent switch: a hazard or failure announcement must be heard. Idempotent.
+    /// With the wake word on the session is `.playAndRecord`, which also ignores the silent switch; output stays
+    /// on a Bluetooth headset through A2DP only (no hands-free profile, which would drop its audio to call
+    /// quality) and the input is the iPhone's built-in microphone, never the headset's.
     @discardableResult
     func activate() -> Bool {
         lock.lock()
@@ -38,14 +42,40 @@ final class PhoneAudioSession: @unchecked Sendable {
         if ready { return true }
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .voicePrompt, options: [.interruptSpokenAudioAndMixWithOthers])
-            try session.setActive(true)
+            if recording {
+                let options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP, .defaultToSpeaker, .interruptSpokenAudioAndMixWithOthers]
+                do {
+                    try session.setCategory(.playAndRecord, mode: .voicePrompt, options: options)
+                } catch {
+                    try session.setCategory(.playAndRecord, mode: .default, options: options)
+                }
+                try session.setActive(true)
+                if let builtIn = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
+                    try session.setPreferredInput(builtIn)
+                }
+            } else {
+                try session.setCategory(.playback, mode: .voicePrompt, options: [.interruptSpokenAudioAndMixWithOthers])
+                try session.setActive(true)
+            }
             ready = true
         } catch {
             // Speech still plays through the default session; vibration is unaffected.
             NSLog("Determine: audio session setup failed: \(error)")
         }
         return ready
+    }
+
+    /// Switches between playback only and play-and-record (wake word). Reconfigures the session on the next
+    /// `activate`, which this calls, so the new category is in place when it returns.
+    @discardableResult
+    func setRecording(_ on: Bool) -> Bool {
+        lock.lock()
+        if recording != on {
+            recording = on
+            ready = false
+        }
+        lock.unlock()
+        return activate()
     }
 
     /// After an interruption the session must be activated again.

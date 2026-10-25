@@ -44,6 +44,10 @@ final class AppModel: ObservableObject {
     /// Explicit consent to upload camera frames with faces unblurred. This build has no face redaction, so Describe
     /// never runs without it. Default off.
     @Published private(set) var describeUnredactedOptIn: Bool
+    /// "Hey Determine" listening (iOS 26, experimental, default off). While a session runs it listens on the
+    /// iPhone's built-in microphone; see `WakeWordListener`.
+    @Published private(set) var wakeWordEnabled: Bool
+    @Published private(set) var wakeState: WakeWordState = .off
     /// Engine tuning (bands, timing, link, EXPERIMENTAL approach and exploration). Persisted, applied live.
     @Published private(set) var tuning: Tuning
     /// Why the last tuning change was not applied.
@@ -97,6 +101,7 @@ final class AppModel: ObservableObject {
         static let describeUrl = "determine.describeUrl"
         static let describeUnredactedOptIn = "determine.describeUnredactedOptIn"
         static let describeKeyAccount = "describeApiKey"
+        static let wakeWordEnabled = "determine.wakeWordEnabled"
         static let tuningPrefix = "determine.tuning."
     }
 
@@ -127,6 +132,7 @@ final class AppModel: ObservableObject {
         self.describeUrl = defaults.string(forKey: Key.describeUrl) ?? ""
         self.describeKeySet = Keychain.get(Key.describeKeyAccount) != nil
         self.describeUnredactedOptIn = defaults.object(forKey: Key.describeUnredactedOptIn) as? Bool ?? false
+        self.wakeWordEnabled = defaults.object(forKey: Key.wakeWordEnabled) as? Bool ?? false
         self.tuning = Self.loadTuning(defaults)
         // The pre-0.3 single "output mode" setting is replaced by the sound output + layout above.
         defaults.removeObject(forKey: "determine.outputMode")
@@ -205,6 +211,7 @@ final class AppModel: ObservableObject {
         }
         self.host = host
         host.start()
+        startWakeWord()
     }
 
     /// Stops the session (PINGs end, so the board watchdog fires). `notice` explains an involuntary stop.
@@ -215,6 +222,7 @@ final class AppModel: ObservableObject {
         generation += 1
         pauseGuard?.cancel()
         pauseGuard = nil
+        stopWakeWord()
         self.host = nil
         reason = ""
         currentAlert = nil
@@ -275,33 +283,34 @@ final class AppModel: ObservableObject {
 
     // MARK: Voice commands
 
-    /// Runs one voice command (Siri today) and returns a short sentence for the assistant to say. Voice only ever
-    /// triggers the actions already on Main; it never reaches the hazard decision. Nothing happens unless a session
-    /// is running: a voice command must not start the system or change what the wearer is warned about by itself.
-    func perform(_ command: VoiceCommand) -> String {
-        guard running else { return "Determine is not running. Open the app and tap Start Determine." }
+    /// Runs one voice command (Siri or the wake word) and says what happened. Voice only ever triggers the actions
+    /// already on Main; it never reaches the hazard decision. Nothing happens unless a session is running: a voice
+    /// command must not start the system or change what the wearer is warned about by itself.
+    @discardableResult
+    func perform(_ command: VoiceCommand) -> VoiceReply {
+        guard running else { return VoiceReply(text: "Determine is not running. Open the app and tap Start Determine.", ok: false) }
         trace.log("Voice command: \(command.rawValue)")
         switch command {
         case .whatsAhead:
-            guard describeEnabled else { return "Description is off in Settings." }
+            guard describeEnabled else { return VoiceReply(text: "Description is off in Settings.", ok: false) }
             requestDescription()
-            if case let .done(message) = describeState { return message }
-            return "Asking."
+            if case let .done(message) = describeState { return VoiceReply(text: message, ok: false) }
+            return VoiceReply(text: "Asking.", ok: true)
         case .readText:
             readText()
-            if case let .done(message) = reader { return message }
-            return "Reading."
+            if case let .done(message) = reader { return VoiceReply(text: message, ok: false) }
+            return VoiceReply(text: "Reading.", ok: true)
         case .pauseWarnings:
-            guard !paused else { return "Warnings are already paused." }
+            guard !paused else { return VoiceReply(text: "Warnings are already paused.", ok: false) }
             setPaused(true)
-            return "Warnings paused."
+            return VoiceReply(text: "Warnings paused.", ok: true)
         case .resumeWarnings:
-            guard paused else { return "Warnings are not paused." }
+            guard paused else { return VoiceReply(text: "Warnings are not paused.", ok: false) }
             setPaused(false)
-            return "Resuming warnings."
+            return VoiceReply(text: "Resuming warnings.", ok: true)
         case .stopSpeaking:
             stopSpeaking()
-            return "Stopped."
+            return VoiceReply(text: "Stopped.", ok: true)
         }
     }
 
@@ -313,6 +322,55 @@ final class AppModel: ObservableObject {
             reader = .idle
         }
         cancelDescription()
+    }
+
+    // MARK: Wake word
+
+    private var wake: WakeWordListener?
+
+    func setWakeWordEnabled(_ enabled: Bool) {
+        wakeWordEnabled = enabled
+        defaults.set(enabled, forKey: Key.wakeWordEnabled)
+        if enabled { startWakeWord() } else { stopWakeWord() }
+    }
+
+    /// Listening exists only while a session runs and the wearer turned it on. It starts and ends with the session.
+    private func startWakeWord() {
+        guard running, wakeWordEnabled, wake == nil else { return }
+        let gen = generation
+        wakeState = .starting
+        let listener = WakeWordListener { [weak self] event in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.handleWake(event, generation: gen) } }
+        }
+        wake = listener
+        listener.start()
+    }
+
+    private func stopWakeWord() {
+        wake?.stop()
+        wake = nil
+        wakeState = .off
+    }
+
+    private func handleWake(_ event: WakeWordEvent, generation gen: Int) {
+        guard gen == generation, running, wakeWordEnabled else { return }
+        switch event {
+        case let .state(state):
+            wakeState = state
+            trace.log("Wake word: \(state.label)")
+        case let .log(message):
+            trace.log("Wake word: \(message)")
+        case .wake:
+            trace.log("Wake phrase heard")
+            alerts.vibrate(pattern: [0, 80])
+            alerts.speak("Listening")
+        case let .command(command):
+            let reply = perform(command)
+            // Pause and resume announce themselves; the others acknowledge, and a refusal always says why.
+            if !reply.ok || command == .whatsAhead || command == .readText || command == .stopSpeaking {
+                alerts.speak(reply.text)
+            }
+        }
     }
 
     // MARK: Settings

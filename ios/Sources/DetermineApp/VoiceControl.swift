@@ -1,14 +1,12 @@
 #if canImport(SwiftUI)
 import AppIntents
+import DetermineEngine
 import Foundation
 
-/// What a spoken command can do. Each maps to an action already on Main; none reaches the hazard decision.
-enum VoiceCommand: String, CaseIterable, Sendable {
-    case whatsAhead
-    case readText
-    case pauseWarnings
-    case resumeWarnings
-    case stopSpeaking
+/// What a voice command answered. `ok` is false when nothing was done (not running, refused, already in that state).
+struct VoiceReply: Sendable {
+    let text: String
+    let ok: Bool
 }
 
 enum VoiceControlSettings {
@@ -26,7 +24,7 @@ enum VoiceBridge {
 
     static func perform(_ command: VoiceCommand) -> String {
         guard let model else { return "Determine is not running. Open the app and tap Start Determine." }
-        return model.perform(command)
+        return model.perform(command).text
     }
 }
 

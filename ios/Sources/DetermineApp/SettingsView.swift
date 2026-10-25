@@ -62,6 +62,16 @@ struct SettingsView: View {
             .accessibilityValue("\(Int(strengthDraft.rounded())) of 255")
             Text("Strength: \(Int(strengthDraft.rounded())) of 255").font(.headline)
 
+            SectionTitle(title: "Voice: \"Hey Determine\" (experimental)")
+            Toggle("Listen for \"Hey Determine\"", isOn: Binding(
+                get: { model.wakeWordEnabled }, set: { model.setWakeWordEnabled($0) }
+            ))
+            Text("While Determine runs, it listens on the iPhone's own microphone, never the headset's, for \"Hey Determine\" and then: what's ahead, read text, pause warnings, resume warnings, stop. Everything is recognised on this iPhone and nothing is recorded or sent. Needs iOS 26 and microphone access; the first use downloads Apple's speech model. It costs battery and can mishear in traffic or wind, and a pause always reminds you and resumes by itself. It never starts Determine and never changes what you are warned about.")
+                .font(.body)
+            if model.wakeWordEnabled, model.running {
+                DetailLine(title: "Voice listening", value: model.wakeState.label)
+            }
+
             SectionTitle(title: "Describe (what's ahead)")
             Toggle("Scene description on request", isOn: Binding(
                 get: { model.describeEnabled }, set: { model.setDescribeEnabled($0) }

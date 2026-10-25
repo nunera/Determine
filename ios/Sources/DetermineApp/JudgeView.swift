@@ -129,6 +129,7 @@ struct JudgeView: View {
 
                 SectionTitle(title: "Describe")
                 DetailLine(title: "Scene description", value: describeSummary)
+                DetailLine(title: "Voice wake word", value: model.wakeWordEnabled ? model.wakeState.label : "off")
 
                 SectionTitle(title: "Debug panel")
                 debugPanel(d)
