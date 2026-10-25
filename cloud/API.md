@@ -21,6 +21,7 @@ Request:
 | `width`, `height` | int | 16–2048 |
 | `redacted` | bool | `true`: the phone blurred faces before upload. `false` is accepted only together with `unredacted_opt_in: true`, otherwise 400 |
 | `unredacted_opt_in` | bool, optional | `true` only when the wearer has explicitly opted in to uploading frames with faces unblurred (default off in the app). Ignored when `redacted` is `true` |
+| `question` | string, optional | A specific question about the photo (1–300 characters of plain text; double quotes become single). It is added to the §3 prompt as data, and the answer still passes the §3 filter. Never logged |
 | `locale` | string | `en` only in v1 |
 
 Response 200:
@@ -32,13 +33,36 @@ Response 200:
  "timings_ms":{"inference":812,"api":43,"total":855}}
 ```
 
-- `backend` ∈ `inf2` | `trn2` | `bedrock` | `cpu` (dev only). `silicon` ∈ `Inferentia2` | `Trainium2` | `unspecified` | `CPU`.
+- `backend` ∈ `inf2` | `trn2` | `bedrock` | `openrouter` | `cpu` (dev only). `silicon` ∈ `Inferentia2` | `Trainium2` | `unspecified` | `CPU`. With `openrouter` the `model` is the model OpenRouter actually served.
 - `text` is at most 2 sentences, ≤ 240 characters, after the API's safety filter (§3). The phone speaks it as
   returned; neither the API nor the phone adds a prefix.
 - Errors: JSON `{"request_id":…|null,"error":"<code>","retryable":bool}` with status 400 `bad_request`,
   401 `unauthorized`, 413 `too_large`, 502 `inference_failed`, 503 `unavailable`, 504 `timeout`.
 - The API stores no images and logs no image bytes or text; it logs request_id, sizes, backend and timings.
 - Phone timeout: 8 s end to end. API → inference timeout: 6 s.
+
+### 1b. Voice routing: `POST /v1/voice`
+
+Same bearer key and error format. What the wearer said after the wake phrase goes to a router model (default
+`typesafe/jev-router`, set with `OPENROUTER_ROUTER_MODEL`) with three tools. Only the transcript text is sent: no
+audio and no image. The phone tries its own fixed phrases first and calls this only when none matched.
+
+Request: `{"request_id":str,"transcript":str (1–300 chars),"locale":"en"}`
+
+Response 200:
+
+```json
+{"request_id":"…","action":"command","command":"pauseWarnings","model":"openai/gpt-6-luna","backend":"openrouter",
+ "timings_ms":{"inference":412,"api":3,"total":415}}
+```
+
+- `action` is `command` (with `command` ∈ `whatsAhead` | `readText` | `pauseWarnings` | `resumeWarnings` |
+  `stopSpeaking`), `ask` (with a cleaned `question`: the phone then calls `/v1/describe` with one frame and that
+  question), or `none`. Anything the model returns that is not exactly one of those, including an unknown command,
+  an empty or over-long question or malformed arguments, is `none`: the phone does nothing.
+- The transcript is untrusted: it is passed as one JSON-quoted string and the model is told it is data. It is
+  never logged; only its length is.
+- Budget 4 s; failures use the same codes (`unavailable` for a missing key, rate limit or no credits, `timeout`).
 
 ## 2. describe-api → inference server
 

@@ -192,3 +192,71 @@ class ReadTimeoutError(Exception):
 
 class EndpointConnectionError(Exception):
     """Same class name as botocore.exceptions.EndpointConnectionError."""
+
+
+class FakeOpenRouterServer:
+    """A local HTTP server speaking OpenRouter's OpenAI-compatible ``POST {base}/chat/completions``, scripted."""
+
+    def __init__(self):
+        self.status = 200
+        self.payload: dict | None = None  # full response override
+        self.content: str | None = "A door is open on your left. Two steps go up ahead."
+        self.model = "openai/gpt-6-luna"
+        self.tool_call: tuple[str, dict] | None = None
+        self.raw_arguments: str | None = None  # tool arguments sent verbatim instead of json.dumps(args)
+        self.delay_s = 0.0
+        self.requests: list[dict] = []
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                owner.requests.append({"path": self.path, "headers": dict(self.headers.items()), "body": body})
+                if owner.delay_s:
+                    time.sleep(owner.delay_s)
+                if owner.payload is not None:
+                    payload = owner.payload
+                elif owner.status != 200:
+                    payload = {"error": {"code": owner.status, "message": "scripted failure"}}
+                else:
+                    message: dict = {"role": "assistant", "content": owner.content}
+                    if owner.tool_call is not None:
+                        name, args = owner.tool_call
+                        arguments = owner.raw_arguments if owner.raw_arguments is not None else json.dumps(args)
+                        message = {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": name, "arguments": arguments}}],
+                        }
+                    payload = {"id": "gen-1", "model": owner.model, "choices": [{"index": 0, "message": message}]}
+                data = json.dumps(payload).encode("utf-8")
+                try:
+                    self.send_response(owner.status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                except OSError:
+                    pass  # client gave up (timeout tests)
+
+            def log_message(self, *args):
+                pass
+
+        class Server(ThreadingHTTPServer):
+            daemon_threads = True
+
+            def handle_error(self, request, client_address):
+                pass
+
+        self._server = Server(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self._server.server_address[1]}"
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._server.shutdown()
+        self._server.server_close()

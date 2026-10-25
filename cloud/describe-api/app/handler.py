@@ -15,6 +15,11 @@ Environment:
   INFERENCE_URL                               inference server base URL, e.g. http://10.0.1.23:8080
   INFERENCE_KEY | INFERENCE_KEY_PARAM         X-Determine-Key, or SSM SecureString name holding it
   BEDROCK_MODEL_ID                            us.amazon.nova-lite-v1:0 (default) | amazon.nova-lite-v1:0
+  DESCRIBE_BACKEND=openrouter                 any vision model OpenRouter serves (see openrouter.py)
+  OPENROUTER_API_KEY | OPENROUTER_API_KEY_PARAM   OpenRouter key, or SSM SecureString name holding it
+  OPENROUTER_MODEL                            vision model (default openai/gpt-6-luna)
+  OPENROUTER_ROUTER_MODEL                     voice router model for /v1/voice (default typesafe/jev-router)
+  OPENROUTER_ZDR=1                            only zero-data-retention endpoints
 """
 
 from __future__ import annotations
@@ -30,9 +35,15 @@ import time
 from typing import Any, Optional
 
 import backends
+import openrouter
 import safety
 
 ROUTE = "/v1/describe"
+VOICE_ROUTE = "/v1/voice"
+MAX_TRANSCRIPT_CHARS = 300
+# Voice routing is a short text call; it gets less time than a vision answer so the phone can fall back to its
+# local phrases quickly.
+VOICE_BUDGET_S = 4.0
 
 REQUEST_ID_RE = re.compile(r"[A-Za-z0-9_-]{8,64}", re.ASCII)
 MAX_IMAGE_BYTES = 512 * 1024
@@ -50,7 +61,7 @@ PRIMARY_BUDGET_WITH_FALLBACK_S = 4.0
 # A fallback attempt with less time than this cannot answer; return the primary's error instead.
 MIN_FALLBACK_S = 1.0
 
-PRIMARY_BACKENDS = frozenset({"inf2", "trn2", "bedrock"})
+PRIMARY_BACKENDS = frozenset({"inf2", "trn2", "bedrock", "openrouter"})
 FALLBACK_BACKENDS = frozenset({"bedrock"})
 
 ERROR_STATUS = {
@@ -111,10 +122,14 @@ def _method_and_path(event: dict) -> tuple[str, str]:
     return method, path
 
 
-def _route_matches(path: str) -> bool:
+def _route(path: str) -> Optional[str]:
     # API Gateway named stages prefix the path ("/prod/v1/describe"); Function URLs do not.
     path = path.rstrip("/")
-    return path == ROUTE or path.endswith(ROUTE)
+    if path == ROUTE or path.endswith(ROUTE):
+        return "describe"
+    if path == VOICE_ROUTE or path.endswith(VOICE_ROUTE):
+        return "voice"
+    return None
 
 
 def _emit(record: dict) -> None:
@@ -174,14 +189,15 @@ def _dimension(payload: dict, name: str) -> int:
 
 
 class DescribeRequest:
-    __slots__ = ("request_id", "image_b64", "image", "width", "height")
+    __slots__ = ("request_id", "image_b64", "image", "width", "height", "question")
 
-    def __init__(self, request_id: str, image_b64: str, image: bytes, width: int, height: int):
+    def __init__(self, request_id: str, image_b64: str, image: bytes, width: int, height: int, question: Optional[str] = None):
         self.request_id = request_id
         self.image_b64 = image_b64
         self.image = image
         self.width = width
         self.height = height
+        self.question = question
 
 
 def _parse_request(raw: bytes, log: dict) -> DescribeRequest:
@@ -211,6 +227,12 @@ def _parse_request(raw: bytes, log: dict) -> DescribeRequest:
     width = _dimension(payload, "width")
     height = _dimension(payload, "height")
     log["width"], log["height"] = width, height
+    question = payload.get("question")
+    if question is not None:
+        question = openrouter.clean_question(question)
+        if question is None:
+            raise ApiError("bad_request", False, "question must be 1-300 characters of text")
+        log["question"] = True
 
     image_b64 = payload.get("image_jpeg_b64")
     if not isinstance(image_b64, str) or not image_b64:
@@ -226,7 +248,7 @@ def _parse_request(raw: bytes, log: dict) -> DescribeRequest:
         raise ApiError("too_large", False, "image too large")
     if image[:2] != b"\xff\xd8":
         raise ApiError("bad_request", False, "image is not a JPEG")
-    return DescribeRequest(request_id, image_b64, image, width, height)
+    return DescribeRequest(request_id, image_b64, image, width, height, question)
 
 
 # ---------------------------------------------------------------------------------------------- backends
@@ -241,14 +263,27 @@ def _backend_name(env: str, allowed: frozenset, default: str) -> str:
     return value
 
 
+def _openrouter_client() -> openrouter.OpenRouterClient:
+    try:
+        key = backends.load_secret("OPENROUTER_API_KEY", "OPENROUTER_API_KEY_PARAM")
+    except backends.SecretError as exc:
+        retryable = bool(os.environ.get("OPENROUTER_API_KEY_PARAM"))
+        raise backends.BackendError("unavailable", retryable, f"openrouter key: {exc}") from None
+    return openrouter.OpenRouterClient(key)
+
+
 def _run_backend(name: str, req: DescribeRequest, timeout_s: float) -> backends.Generation:
+    prompt = safety.prompt_for(req.question)
+    if name == "openrouter":
+        model = os.environ.get("OPENROUTER_MODEL", "").strip() or openrouter.DEFAULT_VISION_MODEL
+        return _openrouter_client().describe(req.image, prompt, model, timeout_s)
     if name == "bedrock":
         model_id = os.environ.get("BEDROCK_MODEL_ID", "").strip() or backends.DEFAULT_BEDROCK_MODEL_ID
         try:
             backend = backends.BedrockBackend(model_id)
         except ValueError:
             raise backends.BackendError("unavailable", False, "BEDROCK_MODEL_ID is not a Nova Lite id") from None
-        return backend.generate(req.request_id, req.image, safety.PROMPT, timeout_s)
+        return backend.generate(req.request_id, req.image, prompt, timeout_s)
     url = os.environ.get("INFERENCE_URL", "").strip()
     if not url:
         raise backends.BackendError("unavailable", False, "INFERENCE_URL is not set")
@@ -257,7 +292,7 @@ def _run_backend(name: str, req: DescribeRequest, timeout_s: float) -> backends.
     except backends.SecretError as exc:
         retryable = bool(os.environ.get("INFERENCE_KEY_PARAM"))
         raise backends.BackendError("unavailable", retryable, f"inference key: {exc}") from None
-    return backends.InferenceBackend(url, key).generate(req.request_id, req.image_b64, safety.PROMPT, timeout_s)
+    return backends.InferenceBackend(url, key).generate(req.request_id, req.image_b64, prompt, timeout_s)
 
 
 def _generate(req: DescribeRequest, log: dict) -> backends.Generation:
@@ -331,15 +366,63 @@ def handler(event: dict, context: Any = None) -> dict:
     return response
 
 
+def _handle_voice(raw: bytes, log: dict) -> dict:
+    """`POST /v1/voice`: what the wearer said after the wake phrase -> a fixed command, a question about the scene
+    (the phone then calls /v1/describe with it) or nothing. Only the transcript text is sent to the router model."""
+    log["event"] = "voice"
+    if len(raw) > 8 * 1024:
+        raise ApiError("too_large", False, "body too large")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise ApiError("bad_request", False, "body is not JSON") from None
+    if not isinstance(payload, dict):
+        raise ApiError("bad_request", False, "body is not a JSON object")
+    request_id = payload.get("request_id")
+    if not isinstance(request_id, str) or not REQUEST_ID_RE.fullmatch(request_id):
+        raise ApiError("bad_request", False, "bad request_id")
+    log["request_id"] = request_id
+    if payload.get("locale") not in LOCALES:
+        raise ApiError("bad_request", False, "unsupported locale")
+    transcript = payload.get("transcript")
+    if not isinstance(transcript, str):
+        raise ApiError("bad_request", False, "transcript must be text")
+    transcript = " ".join(transcript.split())
+    if not transcript or len(transcript) > MAX_TRANSCRIPT_CHARS:
+        raise ApiError("bad_request", False, "transcript must be 1-300 characters")
+    log["transcript_chars"] = len(transcript)
+    model = os.environ.get("OPENROUTER_ROUTER_MODEL", "").strip() or openrouter.DEFAULT_ROUTER_MODEL
+    started = time.monotonic()
+    try:
+        decision = _openrouter_client().route_voice(transcript, model, VOICE_BUDGET_S)
+    finally:
+        log["inference_s"] = time.monotonic() - started
+    log["backend"], log["model"], log["action"] = "openrouter", decision.model, decision.action
+    answer: dict[str, Any] = {
+        "request_id": request_id,
+        "action": decision.action,
+        "model": decision.model,
+        "backend": "openrouter",
+    }
+    if decision.command:
+        answer["command"] = decision.command
+    if decision.question:
+        answer["question"] = decision.question
+    return answer
+
+
 def _handle(event: dict, log: dict) -> dict:
     method, path = _method_and_path(event)
-    if not _route_matches(path):
+    route = _route(path)
+    if route is None:
         raise ApiError("not_found", False, "unknown route")
     if method != "POST":
         raise ApiError("method_not_allowed", False, f"method {method}")
     _check_auth(_headers(event))
     raw = _body_bytes(event)
     log["body_bytes"] = len(raw)
+    if route == "voice":
+        return _handle_voice(raw, log)
     req = _parse_request(raw, log)
 
     generation = _generate(req, log)
