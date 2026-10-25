@@ -407,7 +407,7 @@ class DescribeTest(unittest.TestCase):
         self.assertEqual((b["width"], b["height"], b["redacted"], b["locale"]), (32, 24, True, "en"))
         self.assertRegex(b["request_id"], r"^[A-Za-z0-9_-]{8,64}$")
         self.assertEqual(b["image_jpeg_b64"][:4], "/9j/")  # base64 of FF D8 FF
-        self.assertEqual(res["text"], "May be wrong. A doorway is open on your right.")
+        self.assertEqual(res["text"], "A doorway is open on your right.")
         self.assertEqual((res["ok"], res["backend"], res["silicon"], res["model"]),
                          (True, "inf2", "Inferentia2", "HuggingFaceTB/SmolVLM-256M-Instruct"))
         self.assertEqual({k: res["timings"][k] for k in ("inference", "api", "total")},

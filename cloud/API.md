@@ -33,8 +33,8 @@ Response 200:
 ```
 
 - `backend` ∈ `inf2` | `trn2` | `bedrock` | `cpu` (dev only). `silicon` ∈ `Inferentia2` | `Trainium2` | `unspecified` | `CPU`.
-- `text` is at most 2 sentences, ≤ 240 characters, after the API's safety filter (§3). The phone adds the spoken
-  prefix "May be wrong." — the API never does.
+- `text` is at most 2 sentences, ≤ 240 characters, after the API's safety filter (§3). The phone speaks it as
+  returned; neither the API nor the phone adds a prefix.
 - Errors: JSON `{"request_id":…|null,"error":"<code>","retryable":bool}` with status 400 `bad_request`,
   401 `unauthorized`, 413 `too_large`, 502 `inference_failed`, 503 `unavailable`, 504 `timeout`.
 - The API stores no images and logs no image bytes or text; it logs request_id, sizes, backend and timings.

@@ -122,7 +122,7 @@ The Wi-Fi lock only matters if the phone is a client of an external access point
   `cloud/describe-api` Function URL, or `http://<laptop-ip>:8787` from `local_server.py` in debug builds) and the
   API key (stored with EncryptedSharedPreferences). The main screen then shows "What's ahead?": long-press, or the
   TalkBack action "Describe what's ahead". The phone blurs faces with BlazeFace (`describe/FaceRedactor`); if that
-  fails nothing is uploaded. The answer is spoken as "May be wrong. …"; a MID/NEAR warning cancels it. The Judge
+  fails nothing is uploaded. The answer is spoken as returned; a MID/NEAR warning cancels it. The Judge
   screen shows the backend, silicon and measured timings of the last request.
 - **Camera fallback** (Arch §11.4 demo branch, labelled "software fallback — not the proposed glasses" on the Judge
   screen): Settings → Camera = phone camera on a headband (CameraX, asks for CAMERA permission). Changing it

@@ -195,7 +195,7 @@ fun interface Redactor { fun redact(frame: AssembledFrame): ByteArray? }   // nu
 interface DescribeSpeech { fun speakDescription(text: String); fun stopDescription(); fun say(text: String) }
 enum class DescribeState { IDLE, REDACTING, WAITING, SPEAKING }
 enum class DescribeOutcome { STARTED, DISABLED, SYSTEM_UNAVAILABLE, NO_FRESH_FRAME, BUSY, REDACTION_FAILED }
-data class DescribeConfig(val timeoutUs: Long = 8_000_000, val maxFrameAgeUs: Long = 500_000, val prefix: String = "May be wrong.")
+data class DescribeConfig(val timeoutUs: Long = 8_000_000, val maxFrameAgeUs: Long = 500_000)
 class DescribeController(engine, transport, redactor, speech, config = DescribeConfig()) {
   var enabled: Boolean          // user opt-in, default false; setting false cancels anything in progress
   val state: DescribeState
@@ -217,7 +217,7 @@ class DescribeController(engine, transport, redactor, speech, config = DescribeC
   `onResult` (hosts may also call `onResult` directly). Only the current request's id is accepted — late, cancelled
   or duplicate results are ignored.
   - `Ok` → text re-filtered locally (`sanitize`: drops every sentence with `clear`, `clearly`, `safe`, `safely`,
-    `nothing ahead`, `no obstacle(s)`, `empty path`, `all clear`, `free of obstacles`) → `speakDescription("May be wrong. " + text)`,
+    `nothing ahead`, `no obstacle(s)`, `empty path`, `all clear`, `free of obstacles`) → `speakDescription(text)`,
     state SPEAKING; nothing left → `say("Description unavailable.")`. If a MID/NEAR alert is active the answer is dropped silently.
   - `Failed` or no result within `timeoutUs` (8 s; `transport.cancel` is called) → `say("Description unavailable.")`.
 - Interrupts (silent; the hazard owns the audio): MID or NEAR alert → `stopDescription()` (always) + cancel; system

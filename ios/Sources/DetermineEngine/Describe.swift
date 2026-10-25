@@ -13,7 +13,7 @@ public enum DescribeSettings {
 }
 
 public enum DescribeResult: Equatable, Sendable {
-    /// The API's safety-filtered text (at most 2 sentences). The caller adds the spoken "may be wrong" prefix.
+    /// The API's safety-filtered text (at most 2 sentences), spoken as returned.
     case text(String)
     /// The API's `error` code (or a local one: `bad_url`, `too_large`, `network`, `timeout`, `bad_response`).
     case failed(code: String, retryable: Bool)

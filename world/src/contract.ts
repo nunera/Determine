@@ -92,7 +92,7 @@ export type FromBridge =
 /** POST /api/describe (proxied by the bridge to cloud/describe-api). Body: image/jpeg. */
 export interface DescribeResult {
   ok: boolean;
-  text?: string;          // prefixed "May be wrong." by the bridge (standing in for the phone, cloud/API.md); do not re-add
+  text?: string;          // the API's safety-filtered text, spoken as returned (no prefix is added)
   error?: string;
   backend?: string;       // e.g. "inferentia2" | "cpu" | "bedrock"
   silicon?: string;       // e.g. "Inferentia2" | "Graviton2" | "unspecified"

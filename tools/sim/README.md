@@ -85,8 +85,8 @@ Messages are the `ToBridge`/`FromBridge` types in `world/src/contract.ts`.
 - The browser can unplug either board (silent both ways, as in the dropout scenarios), switch the network
   between `clean` and `wifi_jitter` (`scenarios.WIFI_JITTER_NET`), and restart the engine. If the engine exits
   the bridge says so and keeps running; the cue board's watchdog then runs the haptic LSS on its own.
-- `POST /api/describe` (body `image/jpeg`) forwards to `cloud/describe-api` per `cloud/API.md`, adds the spoken
-  "May be wrong." prefix (the phone's job), and reports the bridge round trip. Without `--describe-url` it
+- `POST /api/describe` (body `image/jpeg`) forwards to `cloud/describe-api` per `cloud/API.md`, returns the text as
+  the API gave it (no prefix), and reports the bridge round trip. Without `--describe-url` it
   answers 503 `Describe service not configured`; failures are `ok:false`, never invented text.
 
 ### Tuning A/B (EXPERIMENTAL engine features)

@@ -62,7 +62,7 @@ class DescribeTest {
     private fun alert(band: Band) = Alert(band, 1100)
 
     @Test
-    fun `answer is redacted upload, prefixed and spoken`() {
+    fun `answer is redacted upload and spoken as returned`() {
         val s = Setup()
         val id = s.start()
         val req = s.transport.sent.single()
@@ -74,7 +74,7 @@ class DescribeTest {
         s.transport.answer(s.ok(id, "A doorway is open on your right. A person is farther ahead near the wall."))
         assertTrue(s.speech.descriptions.isEmpty(), "callback thread only enqueues")
         s.c.tick(s.rig.now)
-        assertEquals(listOf("May be wrong. A doorway is open on your right. A person is farther ahead near the wall."), s.speech.descriptions)
+        assertEquals(listOf("A doorway is open on your right. A person is farther ahead near the wall."), s.speech.descriptions)
         assertEquals(DescribeState.SPEAKING, s.c.state)
 
         // A new question while speaking: allowed, replaces the old answer, gets a new id.
@@ -221,7 +221,7 @@ class DescribeTest {
         val s = Setup()
         val id = s.start()
         s.c.onResult(s.ok(id, "The path ahead is clear. A door is on your left."), s.rig.now)
-        assertEquals(listOf("May be wrong. A door is on your left."), s.speech.descriptions)
+        assertEquals(listOf("A door is on your left."), s.speech.descriptions)
 
         val id2 = s.start()
         s.c.onResult(s.ok(id2, "Nothing ahead. It is SAFE to walk!"), s.rig.now)

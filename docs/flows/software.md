@@ -223,7 +223,7 @@ flowchart TD
   UP --> INF["POST /v1/generate<br/>SmolVLM-256M on inf2.xlarge (Inferentia2)<br/>fallback: Bedrock Nova Lite"]
   INF --> FIL["Safety filter in the API:<br/>≤ 2 sentences, no 'clear/safe', no guesses about people"]
   FIL --> CHK["Phone re-checks: drop reassurance sentences"]
-  CHK --> SPEAK["Speak: 'May be wrong.' + answer"]
+  CHK --> SPEAK["Speak the answer as returned"]
   UP -. "8 s timeout / error" .-> FAIL["say: Description unavailable"]
   HZ{"MID or NEAR alert<br/>or UNAVAILABLE?"} -- yes --> INT["Cancel request, stop speech;<br/>hazard cue plays immediately"]
   UP -.-> HZ

@@ -1,7 +1,7 @@
 # cloud — Describe loop on Annapurna silicon (Arch §7.3, §11.6)
 
-Optional, on-request scene description. The phone blurs faces, then sends one frame; the answer is spoken with the
-prefix "May be wrong." Never in the hazard loop: warnings keep playing and any MID/NEAR hazard interrupts it.
+Optional, on-request scene description. The phone blurs faces, then sends one frame; the answer is spoken as
+returned. Never in the hazard loop: warnings keep playing and any MID/NEAR hazard interrupts it.
 
 ```mermaid
 flowchart LR
@@ -25,7 +25,7 @@ flowchart LR
 
 Inferentia2 numbers do not exist yet: they need Inf quota and a compile on the instance. `inference/bench.py` produces
 the table for judges (p50/p95, tokens/s, $ per request at $0.76/h). Quality note: on the synthetic test scene the
-256M model invented "a person"; that is why the spoken answer is prefixed "May be wrong." and why the 500M/2.2B
+256M model invented "a person"; that is why the 500M/2.2B
 variants (same `idefics3` class, untested on Neuron) are worth trying once the 256M path works.
 
 ## Event-day order

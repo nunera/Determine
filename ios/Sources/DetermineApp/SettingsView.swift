@@ -66,7 +66,7 @@ struct SettingsView: View {
             Toggle("Scene description on request", isOn: Binding(
                 get: { model.describeEnabled }, set: { model.setDescribeEnabled($0) }
             ))
-            Text("Only when you ask, never automatically. Describe sends one camera frame to your describe server and speaks its answer, prefixed \"May be wrong.\" Warning decisions never depend on it.")
+            Text("Only when you ask, never automatically. Describe sends one camera frame to your describe server and speaks its answer. Warning decisions never depend on it.")
                 .font(.body)
             Toggle("Upload frames with faces unblurred", isOn: Binding(
                 get: { model.describeUnredactedOptIn }, set: { model.setDescribeUnredactedOptIn($0) }

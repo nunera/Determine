@@ -27,8 +27,8 @@ with a SwiftUI host. iOS 17+, unsigned IPA only. Do not use it while walking: no
   denial, interruption and runtime errors are shown on Main and Judge; the engine independently reports
   `frame_stale` without fresh frames. It is labelled a software fallback. Changing the camera restarts the session.
 - **Describe** (Settings → Describe; on request only, never automatic): sends the newest camera frame (at most 500 ms
-  old, same freshness rule as Read text) to the describe-api in `cloud/` and speaks the answer prefixed "May be
-  wrong." This build has **no face blur**, so it uploads the frame as captured, including bystanders' faces, and works
+  old, same freshness rule as Read text) to the describe-api in `cloud/` and speaks the answer as returned. This build
+  has **no face blur**, so it uploads the frame as captured, including bystanders' faces, and works
   only while *Upload frames with faces unblurred* is on (default off; with it off nothing is sent). The request
   states `redacted: false` and `unredacted_opt_in: true`, which the API accepts only together. Server URL and bearer
   key are set in Settings (the key is kept in the Keychain; plain `http://` is allowed for local-network addresses
@@ -39,7 +39,7 @@ with a SwiftUI host. iOS 17+, unsigned IPA only. Do not use it while walking: no
   the app on a device: see Real device tests.
 - **Read text** (Main button, also a VoiceOver custom action on the status panel): on-device OCR (Vision
   `VNRecognizeTextRequest`) of the newest camera frame (iPhone camera or camera board), only if the frame is at most
-  500 ms old. The result is spoken as "Text, may be wrong: …", an empty result as "No text found", a stale or missing
+  500 ms old. The result is spoken as read, an empty result as "No text found", a stale or missing
   frame as "No fresh camera image". It is display and speech only and never feeds hazard logic. It is not started
   while a MID or NEAR warning is active or the system is off, and a MID/NEAR alert or system off cuts a reading in
   progress (a hazard word or "System off" that replaced it is never cut). A second tap stops it.
@@ -123,10 +123,10 @@ reports, not per-row logs; the table retains the earlier per-feature evidence be
 | Weak-link banner | Move the phone away from the glasses: banner on Main, RSSI on Judge, spoken once | not yet tested on device |
 | Speaker sound (debug) | Warning sounds → iPhone speaker; cues audible; Bluetooth connected gives system off | not yet tested on device |
 | Bluetooth headset sound | Warning sounds → Bluetooth headset; plays only on the headset; disconnect gives system off | not yet tested on device |
-| Read text | Point the camera at text; spoken "Text, may be wrong: …"; "No text found" otherwise; cut by a MID/NEAR alert | not yet tested on device |
+| Read text | Point the camera at text; the text is spoken as read; "No text found" otherwise; cut by a MID/NEAR alert | not yet tested on device |
 | Exploration mode | Main toggle; pulses strengthen as an object nears; silent with nothing in range | Works (user, v0.3.0); summary report, not independently observed |
 | Approach-speed escalation | Settings → Approach; walk toward a wall; band escalates by one step | not yet tested on device |
-| Describe | Settings → Describe: enable, turn on unblurred upload, set server URL and key; Main → What's ahead? with the iPhone camera running; a spoken "May be wrong. …" answer; with the opt-in off nothing is sent; a MID/NEAR warning cuts it | not yet tested on device (wire client smoke-tested on Linux against the real handler with a stub model; no deployed server or real model) |
+| Describe | Settings → Describe: enable, turn on unblurred upload, set server URL and key; Main → What's ahead? with the iPhone camera running; the answer is spoken as returned; with the opt-in off nothing is sent; a MID/NEAR warning cuts it | not yet tested on device (wire client smoke-tested on Linux against the real handler with a stub model; no deployed server or real model) |
 
 ## Unsigned IPA
 

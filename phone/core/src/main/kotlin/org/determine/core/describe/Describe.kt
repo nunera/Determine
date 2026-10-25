@@ -63,8 +63,6 @@ data class DescribeConfig(
     val timeoutUs: Long = 8_000_000,
     /** Only a frame captured at most this long ago is described (Arch §4.2 freshness bound). */
     val maxFrameAgeUs: Long = 500_000,
-    /** Spoken before every answer (Arch §7.3, invariant 3); the API never adds it. */
-    val prefix: String = "May be wrong.",
 )
 
 /**
@@ -149,10 +147,9 @@ class DescribeController(
                     urgentAlert -> state = DescribeState.IDLE
                     text == null -> { state = DescribeState.IDLE; speech.say(UNAVAILABLE_TEXT) }
                     else -> {
-                        val spoken = "${config.prefix} $text"
                         state = DescribeState.SPEAKING
-                        speakingUntilUs = nowPhoneUs + SPEECH_BASE_US + spoken.length * SPEECH_US_PER_CHAR
-                        speech.speakDescription(spoken)
+                        speakingUntilUs = nowPhoneUs + SPEECH_BASE_US + text.length * SPEECH_US_PER_CHAR
+                        speech.speakDescription(text)
                     }
                 }
             }

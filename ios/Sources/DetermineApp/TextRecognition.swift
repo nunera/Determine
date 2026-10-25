@@ -3,7 +3,7 @@ import Foundation
 import Vision
 
 /// Read text (display-only helper, never an input to hazard logic): on-device OCR of one camera JPEG with Vision.
-/// The result is spoken as "Text, may be wrong: …" by the caller.
+/// The result is spoken as read by the caller.
 enum TextRecognition {
     /// Recognised lines top to bottom joined by spaces; nil when nothing was found. Blocking: run off the engine
     /// queue and the main thread. Throws only for an undecodable image or a Vision failure.

@@ -142,8 +142,8 @@ fun SettingsScreen(onBack: () -> Unit) {
         SectionHeading("Describe (what's ahead)")
         Text(
             "Only when you long-press \"What's ahead?\": the phone blurs faces in one camera frame, sends it to the " +
-                "Determine cloud (a small vision model on AWS Inferentia2), and reads back two sentences that start " +
-                "with \"May be wrong\". Face blurring is imperfect and can miss small or distant faces. Images are not " +
+                "Determine cloud (a small vision model on AWS Inferentia2), and reads back two sentences. Face " +
+                "blurring is imperfect and can miss small or distant faces. Images are not " +
                 "stored. Warnings never wait for it, and any close obstacle interrupts it.",
             style = MaterialTheme.typography.bodyMedium,
         )

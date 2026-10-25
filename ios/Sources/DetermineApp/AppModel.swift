@@ -379,7 +379,7 @@ final class AppModel: ObservableObject {
 
     // MARK: Read text
 
-    /// Read text: OCR of the newest camera frame, spoken with a "may be wrong" prefix. Display-only: never read by
+    /// Read text: OCR of the newest camera frame, spoken as read. Display-only: never read by
     /// hazard logic. Not started while a MID/NEAR warning is active or the system is off; a second tap while it is
     /// reading stops it.
     func readText() {
@@ -411,7 +411,7 @@ final class AppModel: ObservableObject {
         }
         let spoken: String
         switch result {
-        case let .text(text): spoken = "Text, may be wrong: \(text)"
+        case let .text(text): spoken = text
         case .noText: spoken = "No text found"
         case .noFreshFrame: spoken = "No fresh camera image"
         case .failed: spoken = "Text reading failed"
@@ -507,7 +507,7 @@ final class AppModel: ObservableObject {
         let spoken: String
         switch result {
         case let .text(text):
-            spoken = "May be wrong. \(text)"
+            spoken = text
             trace.log("Describe: answered")
         case let .failed(code, _):
             trace.log("Describe failed: \(code)")

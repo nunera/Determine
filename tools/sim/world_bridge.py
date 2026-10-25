@@ -61,7 +61,6 @@ BANDS = {"FAR", "MID", "NEAR"}
 ACK_STATUS_NAMES = set(ACK_NAMES.values())
 DESCRIBE_TIMEOUT_S = 8.0           # cloud/API.md: phone timeout 8 s end to end
 DESCRIBE_MAX_JPEG = 512 * 1024     # cloud/API.md: decoded size ≤ 512 KiB
-DESCRIBE_PREFIX = "May be wrong."  # cloud/API.md: the phone adds the spoken prefix; the bridge is the phone here
 
 
 # ---------------------------------------------------------------------- live inputs from the browser
@@ -425,7 +424,7 @@ class DescribeClient:
         for k, v in (tm.items() if isinstance(tm, dict) else ()):
             if isinstance(v, (int, float)) and not isinstance(v, bool):
                 timings[k] = v
-        result = {"ok": True, "text": f"{DESCRIBE_PREFIX} {text.strip()}", "timings": timings}
+        result = {"ok": True, "text": text.strip(), "timings": timings}
         for k in ("backend", "silicon", "model"):
             if isinstance(data.get(k), str):
                 result[k] = data[k]
