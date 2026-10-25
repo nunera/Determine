@@ -1,0 +1,27 @@
+{
+  "pages": 13,
+  "upstream": "65cfa0c",
+  "wireVersion": 2,
+  "calculations": {
+    "coneWidthM": 0.38012265677888707,
+    "greyLimitMm": 450.4194444485399,
+    "barkLimitMm": 496.23049646001266,
+    "cropWidthPx": 135.0,
+    "cropX": 92.5,
+    "retainedWidthPct": 42.1875,
+    "resampleScale": 5.333333333333333,
+    "decodedRgbMBps": 82.944,
+    "receiptIntervalMs": 235
+  },
+  "traceSource": {
+    "file": "head_sign.jsonl",
+    "sha256": "0e87a2c0d4911d20b62d8f6254ad370244df18c94763b5656a162c173874fed5",
+    "rows": 872,
+    "provenance": "Production simulator \u2192 WebSocket bridge \u2192 real Kotlin CLI; prior recorded smoke, not hardware."
+  },
+  "pdfSha256": "0ce43add7c21173f5c4f311fe5ef2cd58521804886c96b6f47373bd2c2d418f1",
+  "textRegionAudit": {
+    "regions": 281,
+    "maximumBodyBottom": 734.8
+  }
+}

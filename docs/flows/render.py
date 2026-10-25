@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Render every ```mermaid block in hardware.md and software.md to rendered/<file>-<n>.svg.
+"""Render every ```mermaid block in hardware.md, software.md and docs/research/*.md to <dir>/rendered/<file>-<n>.svg.
 
 Labels are plain SVG <text> (htmlLabels off), so the SVGs display in any viewer, not only browsers.
 Run: nix shell nixpkgs#mermaid-cli -c python3 docs/flows/render.py
+Pass Markdown paths to render only those files (e.g. docs/research/*.md).
 """
 import json
 import pathlib
@@ -13,6 +14,7 @@ import sys
 import tempfile
 
 HERE = pathlib.Path(__file__).parent
+RESEARCH = HERE.parent / "research"
 CONFIG = {"htmlLabels": False, "flowchart": {"htmlLabels": False}, "class": {"htmlLabels": False},
           "state": {"htmlLabels": False}}
 
@@ -25,12 +27,15 @@ def main() -> int:
         pp = {"args": ["--no-sandbox"], **({"executablePath": chrome} if chrome else {})}
         (tdp / "pp.json").write_text(json.dumps(pp))
         n_ok = 0
-        for md in ("hardware.md", "software.md"):
-            blocks = re.findall(r"```mermaid\n(.*?)```", (HERE / md).read_text(), re.S)
+        sources = ([pathlib.Path(arg) for arg in sys.argv[1:]] if len(sys.argv) > 1 else
+                   [HERE / "hardware.md", HERE / "software.md", *sorted(RESEARCH.glob("*.md"))])
+        for md in sources:
+            blocks = re.findall(r"```mermaid\n(.*?)```", md.read_text(), re.S)
             for i, b in enumerate(blocks, 1):
-                src = tdp / f"{md}-{i}.mmd"
+                src = tdp / f"{md.stem}-{i}.mmd"
                 src.write_text(b)
-                out = HERE / "rendered" / f"{md[:-3]}-{i}.svg"
+                out = md.parent / "rendered" / f"{md.stem}-{i}.svg"
+                out.parent.mkdir(exist_ok=True)
                 r = subprocess.run(["mmdc", "-q", "-p", str(tdp / "pp.json"), "-c", str(tdp / "cfg.json"),
                                     "-i", str(src), "-o", str(out)], capture_output=True, text=True)
                 if r.returncode:

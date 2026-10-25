@@ -1,0 +1,4 @@
+reportlab>=4.2,<6
+Pillow>=10
+# Optional page inspection / preview generation:
+PyMuPDF>=1.24,<3

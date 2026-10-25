@@ -169,3 +169,22 @@ More: [boot and join sequence](docs/flows/rendered/hardware-4.svg) ·
 (cd phone && nix shell nixpkgs#jdk17 -c ./gradlew :cli:installDist)
 nix shell nixpkgs#jdk17 -c python3 tools/sim/e2e.py
 ```
+
+## Determine World and research
+
+[Determine World](world/README.md) adds a procedural 3-D campus walk that drives the real wire-v2 phone engine:
+one forward ToF reading, phone/headset sound, and board vibration. It includes seven courses, four camera views,
+an engine mirror, a sound/vibration score, fault injection and experimental TTC/exploration controls.
+
+```sh
+(cd world && npm ci && npm run build)
+nix shell nixpkgs#jdk17 -c python3 tools/sim/world_bridge.py --serve world/dist
+# Open http://127.0.0.1:8765/ (build phone/cli above first)
+```
+
+[Research and experiment decisions](docs/research/README.md) link the competitor landscape, simulation fidelity,
+Annapurna Labs/Austin and Meta findings. [Work tracking](docs/research/WORKLOG.md) separates implemented behaviour
+from proposals; reports include explanatory Mermaid flowcharts and rendered SVGs.
+
+Confirm demo and data rules with HackTX organizers. Simulator measurements are not hardware or
+blind-user safety validation, and no Meta SDK or AWS deployment is implied by a rendered demo.

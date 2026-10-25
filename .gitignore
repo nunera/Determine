@@ -9,4 +9,6 @@ local.properties
 __pycache__/
 *.pyc
 .venv/
+node_modules/
+world/dist/
 .impeccable/

@@ -34,7 +34,10 @@ cli/build/install/determine-phone/bin/determine-phone --duration 30 --ceiling -2
 
 Board addresses are learned from each board's first BEAT (board field), RANGE/ACK (cue board) or FRAME
 (camera board); `--cam HOST:PORT` / `--cue HOST:PORT` pin them. `--ceiling` is the local (phone audio) ceiling;
-the board's haptic cap is the profile's `haptic_max` (1..255, never off).
+the board's haptic cap is the profile's `haptic_max` (1..255, never off). `--approach` / `--explore` start the engine
+with the EXPERIMENTAL `Tuning.approachEnabled` (time-to-contact band escalation) / `Tuning.exploreEnabled`
+(distance-proportional haptic pulse train) switched on, every other `Tuning` field at its default; they exist for
+simulator A/B runs (`tools/sim/world_bridge.py --approach/--explore`) and are not validated with users.
 
 Output is one event per line, `KIND <ms since start> key=value …`, defined in
 [`core/API.md` → "Stable cli output"](core/API.md): `STATE`, `ALERT`, `AUDIO`, `CUE-TX`, `PROFILE-TX`, `SPEAK`,

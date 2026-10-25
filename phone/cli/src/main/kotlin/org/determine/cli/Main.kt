@@ -10,6 +10,7 @@ import org.determine.core.EngineListener
 import org.determine.core.Outbox
 import org.determine.core.PhoneAlerts
 import org.determine.core.SystemState
+import org.determine.core.Tuning
 import org.determine.core.hearing.HearingMode
 import org.determine.core.hearing.HearingProfile
 import org.determine.core.wire.AckStatus
@@ -48,7 +49,12 @@ data class CliOptions(
     val ceilingDb: Int = -20,
     val mode: HearingMode = HearingMode.STEREO,
     val spearcons: Boolean = true,
-)
+    /** EXPERIMENTAL Tuning switches for simulator A/B runs; everything else stays at the Tuning defaults. */
+    val approach: Boolean = false,
+    val explore: Boolean = false,
+) {
+    fun tuning(): Tuning = Tuning(approachEnabled = approach, exploreEnabled = explore)
+}
 
 const val USAGE = """determine-phone [options]
   --port N            UDP port to bind (default 47000)
@@ -59,6 +65,8 @@ const val USAGE = """determine-phone [options]
   --ceiling DB        local audio ceiling in dBFS (default -20; never above the -10 hard cap)
   --mode M            STEREO | SSD | HAPTIC_ONLY (default STEREO)
   --no-spearcons      disable spoken words after cues
+  --approach          EXPERIMENTAL: start with Tuning.approachEnabled (time-to-contact band escalation)
+  --explore           EXPERIMENTAL: start with Tuning.exploreEnabled (distance-proportional haptic pulses)
   --help"""
 
 fun parseArgs(args: Array<String>): CliOptions {
@@ -80,6 +88,8 @@ fun parseArgs(args: Array<String>): CliOptions {
             "--ceiling" -> o = o.copy(ceilingDb = value().toInt())
             "--mode" -> o = o.copy(mode = HearingMode.valueOf(value().uppercase()))
             "--no-spearcons" -> o = o.copy(spearcons = false)
+            "--approach" -> o = o.copy(approach = true)
+            "--explore" -> o = o.copy(explore = true)
             else -> throw IllegalArgumentException("unknown option $a")
         }
         i++
@@ -202,7 +212,8 @@ fun run(o: CliOptions, out: PrintStream = System.out): Int {
         override fun onDiagnostics(d: Diagnostics) = log.emit(nowUs(), "DIAG", diagLine(d))
     }
     val engine = Engine(
-        EngineConfig(initialProfile = HearingProfile.uncalibrated(o.ceilingDb, o.mode), spearcons = o.spearcons),
+        EngineConfig(initialProfile = HearingProfile.uncalibrated(o.ceilingDb, o.mode), spearcons = o.spearcons,
+            tuning = o.tuning()),
         outbox, alerts, listener, LogCueSink(log),
     )
     out.println("determine-phone listening on ${o.bind}:${o.port} (headless: AUDIO lines stand in for headset playback)"); out.flush()

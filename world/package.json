@@ -1,0 +1,23 @@
+{
+  "name": "determine-world",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Determine World: a 3-D virtual course whose ToF grid drives the real phone engine through the board simulator",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fontsource/atkinson-hyperlegible-mono": "^5.3.0",
+    "@fontsource/atkinson-hyperlegible-next": "^5.3.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4"
+  }
+}

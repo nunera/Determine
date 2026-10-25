@@ -50,3 +50,70 @@ Logs land in `/tmp/determine-e2e/<scenario>/{phone,sim}.log`; `--evaluate-only` 
 
 Bench latency is command→ACK on this host. Command→haptic onset needs an accelerometer or scope on the temple
 actuator; command→sound is the phone's own audio path to the headset and is outside this simulator.
+
+## Determine World bridge
+
+`world_bridge.py` connects the browser 3-D simulation in `world/` to the **real** phone engine. The browser only
+renders and raycasts; every hazard decision is made by the engine, exactly as on the headband.
+
+Truth chain (wire v2): the world measures **one forward reading** (the Modulino Distance's ~18° cone, ≤ 1.2 m:
+`{t:'range', simMs, mm, status}` with status 0 VALID / 1 NO_TARGET / 2 UNKNOWN) and renders the ESP32-CAM view →
+WebSocket `/ws` → the bridge's simulated cue and camera boards (`boards.py`: own clocks with offset and drift, BEAT,
+PING/PONG, PROFILE, the haptic LSS watchdog, CUE deadline/`haptic_max` clamp/ACK) → protocol v2 over UDP → the engine
+(`phone/cli`, or an external phone) decides → its **audio half** (`audio`: what the phone would play on the Bluetooth
+bone-conduction headset; the cli logs it as an `AUDIO` line) and the **haptic-only** `CUE` packets (`cueTx`) → the
+simulated cue board applies, clamps, expires or drops each haptic (`played`, incl. `hapticMax`; the bench board has
+one Vibro and plays max(hl, hr), so it cannot lateralise) → the browser plays the phone's sound and shows both.
+The board makes no sound. One zone cannot tell left from right: obstacle cues are always `side=BOTH`.
+Messages are the `ToBridge`/`FromBridge` types in `world/src/contract.ts`.
+
+- Each browser reading becomes one RANGE (board time = when the bridge received it), sent once; `mm` is forced to 0
+  unless VALID, and a status other than 0/1/2 is rejected. No reading for 500 ms (or none yet): the cue board sends
+  no RANGE and raises `SENSOR_READ_ERR` in its BEAT — a stalled world is a sensor failure, never a repeat of old
+  data. NO_TARGET is "nothing seen", never "clear". Camera renders (binary frames `0x01` + JPEG) are sent once each;
+  older than 1 s raises `CAPTURE_FAIL`; until the first render the camera board sends the synthetic test card.
+- Every cli line kind is translated (phone/core/API.md "Stable cli output"): `STATE` → `state`, `ALERT` → `alert`
+  (`{band, distMm}` or null), `AUDIO` → `audio`, `CUE-TX` → `cueTx`, `SPEAK`, `VIBRATE`, `SYSTEM-OFF` →
+  `systemOff`, `DIAG` → `diag` (every key, incl. `range_mm`, `range_status`, `closing_mm_s`, `approach`,
+  `exploring`). `PROFILE-TX`, the banner, board `SYNC`/`PROFILE`/`WATCHDOG`/`SENSOR`/`SIM`/`STATS` lines and
+  anything malformed go out as `log` lines, at most 10 per kind per second (the rest are counted and summarised).
+- The browser can unplug either board (silent both ways, as in the dropout scenarios), switch the network
+  between `clean` and `wifi_jitter` (`scenarios.WIFI_JITTER_NET`), and restart the engine. If the engine exits
+  the bridge says so and keeps running; the cue board's watchdog then runs the haptic LSS on its own.
+- `POST /api/describe` (body `image/jpeg`) forwards to `cloud/describe-api` per `cloud/API.md`, adds the spoken
+  "May be wrong." prefix (the phone's job), and reports the bridge round trip. Without `--describe-url` it
+  answers 503 `Describe service not configured`; failures are `ok:false`, never invented text.
+
+### Tuning A/B (EXPERIMENTAL engine features)
+
+`--approach` / `--explore` start the spawned engine with `Tuning.approachEnabled` (time-to-contact band escalation)
+/ `Tuning.exploreEnabled` (distance-proportional PULSE40 train instead of band cues) via the cli flags of the same
+name. At run time `{t:'tuning', tuning:{approach, explore}}` restarts the spawned engine with the matching flags
+(clock sync, PROFILE and READY start over). `hello` and the 1 s `bridge` status carry the current `tuning`. With
+`--phone HOST:PORT` the bridge cannot know or change the phone's tuning: `tuning` is `null`, the flags are refused
+at startup, and a `tuning` message is answered with a `log` line saying to tune the external phone on the phone.
+Neither feature is validated with users; compare them in the simulator only.
+
+```sh
+# built world + spawned phone/cli engine (needs `./gradlew :cli:installDist` in phone/ and java on PATH)
+(cd world && npm run build)
+python3 tools/sim/world_bridge.py --serve world/dist                 # open http://127.0.0.1:8765/
+python3 tools/sim/world_bridge.py --serve world/dist --approach      # A/B: start with approach escalation
+python3 tools/sim/world_bridge.py --serve world/dist --explore       # A/B: start with the exploration pulse train
+
+# development: Vite on :5173 proxies /ws and /api to the bridge on :8765
+python3 tools/sim/world_bridge.py
+(cd world && npm run dev)                                             # open http://127.0.0.1:5173/
+
+# external phone (desktop app or Android phone on the same Wi-Fi): spawn nothing, boards send to it
+python3 tools/sim/world_bridge.py --serve world/dist --phone 192.168.1.20:47000
+
+# "What's ahead?" through the describe-api (local_server.py or the deployed Lambda URL)
+DETERMINE_DESCRIBE_KEY=dev-key python3 tools/sim/world_bridge.py --serve world/dist \
+    --describe-url http://127.0.0.1:8787
+```
+
+Options: `--ceiling DB` / `--mode STEREO|SSD|HAPTIC_ONLY` / `--approach` / `--explore` for the spawned engine,
+`--engine PATH`, `--phone-port`, `--cue-port`, `--cam-port`, `--board-bind`, `--port`, `--bind`. `wsserver.py` is the
+small stdlib HTTP/1.1 + WebSocket server it runs on; `tests/test_world_bridge.py` covers framing, cli and board line
+translation, the live cue board (RANGE, mm 0 unless VALID, SENSOR_READ_ERR), tuning restarts and the describe proxy.
