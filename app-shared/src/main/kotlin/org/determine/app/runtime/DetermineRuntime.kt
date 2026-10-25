@@ -1,4 +1,4 @@
-package org.determine.android.runtime
+package org.determine.app.runtime
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,6 +48,7 @@ data class LinkInfo(
 data class FallbackInfo(
     val frameSource: FrameSourceKind,
     val phoneCameraError: String?,
+    val phoneAudioError: String?,
     val redactorAvailable: Boolean,
 )
 
@@ -84,7 +85,7 @@ data class DescribeInfo(
 data class DescribeOutcomeEvent(val outcome: DescribeOutcome, val atUs: Long)
 
 /**
- * Process-wide bridge between [org.determine.android.service.DetermineService] (which owns the engine)
+ * Process-wide bridge between the platform session (Android service or desktop app, which owns the engine)
  * and the Compose UI. Values are written from the engine thread; StateFlow writes are thread-safe and
  * non-blocking, so publishing never delays the hazard loop.
  *

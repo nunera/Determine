@@ -56,6 +56,18 @@ Bench evidence only, not warning performance. See the [cue-board diagnosis](firm
 
 All 8 brief pages: [`docs/images/brief-1.png` … `brief-8.png`](docs/images/) · PDF: [`Determine-Brief.pdf`](Determine-Brief.pdf)
 
+## Try it without hardware
+
+```sh
+git clone https://github.com/nunera/Determine && cd Determine
+nix run .#desktop -- --sim approach_centre --start     # the app on your desktop + both boards simulated
+nix run .#android-demo -- --sim approach_centre        # the real APK in an Android emulator (needs KVM; --headless for no window)
+```
+
+The desktop app runs the Android app's own screens and engine (shared code in [`app-shared/`](app-shared)); it
+uses the single forward distance reading, has no face blur and never uploads for Describe. Desktop audio does
+not verify a physical Bluetooth headset. Details: [`desktop/README.md`](desktop/README.md).
+
 ## App screenshots
 
 Current v2 app on an Android API 28 emulator, with no Bluetooth headset or connected boards. These captures prove
@@ -77,13 +89,16 @@ not physical sensor or headset performance. The CLI's two-board simulator separa
 | [`firmware/cue-board/`](firmware/cue-board/README.md) | XIAO ESP32-C3: single-zone ToF (Modulino Distance), Modulino Vibro haptics, haptic-only watchdog | `pio run -e xiao_esp32c3`, `pio test -e native` |
 | [`firmware/cam-board/`](firmware/cam-board/README.md) | ESP32-CAM: JPEG capture, chunked FRAME stream, PSRAM fallback | `pio run -e esp32cam`, `pio test -e native` |
 | [`phone/`](phone/README.md) | Kotlin hazard engine (`core`) + headless phone (`cli`) | `./gradlew build` |
-| [`android/`](android/README.md) | Android app: service, phone-side cue audio to the Bluetooth bone headset (explicit route failure), TTS/vibration, judge + calibration UI, Describe client with on-phone face blur, phone-camera fallback | `./gradlew assembleDebug testDebugUnitTest` |
+| [`app-shared/`](app-shared) | Screens, runtime, engine host, UDP and Describe client shared by Android and desktop; wire v2, no object detector | built by both |
+| [`android/`](android/README.md) | Android device layer: foreground service, Bluetooth-only cue audio with explicit route failure, alerts, on-phone face blur and phone-camera fallback | `./gradlew assembleDebug testDebugUnitTest` |
+| [`desktop/`](desktop/README.md) | Desktop test app: same UI and engine, Java Sound cues, espeak-ng speech; does not verify a physical Bluetooth route | `./gradlew build`, `nix run .#desktop` |
 | [`ios/`](ios/README.md) | iPhone app: Swift engine port, UDP link, haptic-only live session, iPhone-camera fallback; Linux headless `DeterminePhone` cli for e2e | `swift run DetermineEngineChecks` from `ios/` in `nix-shell -p swift swiftpm`; IPA via the xtool container in `ios/README.md` |
 | [`cloud/`](cloud/README.md) | Describe loop on Annapurna silicon: Graviton2 Lambda API + SmolVLM server on Inferentia2 | `python3 -m unittest discover -s cloud/describe-api/tests` (and `cloud/inference/tests`) |
 | [`tools/sim/`](tools/sim/README.md) | Two-board simulator, bench tool for real boards, end-to-end harness | `python3 -m unittest discover -s tools/sim/tests` |
 | [`docs/flows/`](docs/flows/README.md) | Hardware flow maps and software flowcharts (Mermaid) | `nix shell nixpkgs#mermaid-cli -c python3 docs/flows/render.py` |
 
-Toolchains come from nix: `nix shell nixpkgs#jdk17 nixpkgs#platformio -c <cmd>`. Firmware Wi-Fi credentials:
+Toolchains come from nix: `nix develop` (JDK 17, Python, PlatformIO, espeak-ng), or per command
+`nix shell nixpkgs#jdk17 nixpkgs#platformio -c <cmd>`. Firmware Wi-Fi credentials:
 copy `firmware/common/include/secrets.example.h` to `secrets.h` (gitignored).
 
 ```mermaid

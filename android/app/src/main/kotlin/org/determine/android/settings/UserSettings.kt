@@ -1,5 +1,6 @@
 package org.determine.android.settings
 
+import org.determine.app.platform.SettingsStore
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
@@ -8,19 +9,16 @@ import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import org.determine.android.describe.DescribeEndpoint
+import org.determine.app.describe.DescribeEndpoint
 import org.determine.core.hearing.MIN_HAPTIC_MAX
 import org.determine.core.FrameSourceKind
 
 /**
- * Persisted user choices.
- *  - Spearcons default ON (Arch §8.2: on by default during training, opt-in once the wearer is fluent).
- *  - Describe (Arch §7.3) is an explicit opt-in, default OFF; it is only ever used on a user long-press and is
- *    never read by the hazard loop. The API key is kept in EncryptedSharedPreferences.
- *  - The phone-camera frame source (Arch §11.4 demo branch) defaults to the camera board; changing it restarts
- *    the engine session. The board haptic cap persists (1..255, never off).
+ * Android [SettingsStore]: persisted user choices, with the Describe API key in EncryptedSharedPreferences.
+ * Spearcons default on; Describe is an explicit opt-in, default off, used only on a user long-press.
+ * Changing the camera source restarts the session; the board haptic cap applies live and is never zero.
  */
-class UserSettings(context: Context) {
+class UserSettings(context: Context) : SettingsStore {
     private val app = context.applicationContext
     private val prefs = app.getSharedPreferences("determine", Context.MODE_PRIVATE)
     private val secrets: SharedPreferences = try {
@@ -38,59 +36,59 @@ class UserSettings(context: Context) {
     }
 
     private val _spearcons = MutableStateFlow(prefs.getBoolean(KEY_SPEARCONS, true))
-    val spearcons: StateFlow<Boolean> = _spearcons.asStateFlow()
+    override val spearcons: StateFlow<Boolean> = _spearcons.asStateFlow()
 
     private val _describeEnabled = MutableStateFlow(prefs.getBoolean(KEY_DESCRIBE, false))
-    val describeEnabled: StateFlow<Boolean> = _describeEnabled.asStateFlow()
+    override val describeEnabled: StateFlow<Boolean> = _describeEnabled.asStateFlow()
 
     private val _describeUrl = MutableStateFlow(prefs.getString(KEY_DESCRIBE_URL, "") ?: "")
-    val describeUrl: StateFlow<String> = _describeUrl.asStateFlow()
+    override val describeUrl: StateFlow<String> = _describeUrl.asStateFlow()
 
     private val _describeKeySet = MutableStateFlow(!secrets.getString(KEY_DESCRIBE_KEY, null).isNullOrEmpty())
-    val describeKeySet: StateFlow<Boolean> = _describeKeySet.asStateFlow()
+    override val describeKeySet: StateFlow<Boolean> = _describeKeySet.asStateFlow()
 
     private val _frameSource = MutableStateFlow(enumPref(KEY_FRAME_SOURCE, FrameSourceKind.CAM_BOARD))
-    val frameSource: StateFlow<FrameSourceKind> = _frameSource.asStateFlow()
+    override val frameSource: StateFlow<FrameSourceKind> = _frameSource.asStateFlow()
 
-    /** Board haptic cap sent in PROFILE (1..255). Never 0: the temples are the failure channel that survives phone loss. */
+    /** Board haptic cap sent in PROFILE (1..255). Never 0: the failure channel must survive phone loss. */
     private val _hapticMax = MutableStateFlow(prefs.getInt(KEY_HAPTIC_MAX, 255).coerceIn(MIN_HAPTIC_MAX, 255))
-    val hapticMax: StateFlow<Int> = _hapticMax.asStateFlow()
+    override val hapticMax: StateFlow<Int> = _hapticMax.asStateFlow()
 
-    fun setSpearcons(enabled: Boolean) {
+    override fun setSpearcons(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SPEARCONS, enabled).apply()
         _spearcons.value = enabled
     }
 
-    fun setDescribeEnabled(enabled: Boolean) {
+    override fun setDescribeEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_DESCRIBE, enabled).apply()
         _describeEnabled.value = enabled
     }
 
-    fun setDescribeUrl(url: String) {
+    override fun setDescribeUrl(url: String) {
         val v = url.trim()
         prefs.edit().putString(KEY_DESCRIBE_URL, v).apply()
         _describeUrl.value = v
     }
 
-    fun setDescribeKey(key: String) {
+    override fun setDescribeKey(key: String) {
         val v = key.trim()
         secrets.edit().putString(KEY_DESCRIBE_KEY, v).apply()
         _describeKeySet.value = v.isNotEmpty()
     }
 
     /** Current endpoint, or null if URL or key is missing. Read on the Describe HTTP thread. */
-    fun describeEndpoint(): DescribeEndpoint? {
+    override fun describeEndpoint(): DescribeEndpoint? {
         val url = _describeUrl.value
         val key = secrets.getString(KEY_DESCRIBE_KEY, null).orEmpty()
         return if (url.isEmpty() || key.isEmpty()) null else DescribeEndpoint(url, key)
     }
 
-    fun setFrameSource(source: FrameSourceKind) {
+    override fun setFrameSource(source: FrameSourceKind) {
         prefs.edit().putString(KEY_FRAME_SOURCE, source.name).apply()
         _frameSource.value = source
     }
 
-    fun setHapticMax(value: Int) {
+    override fun setHapticMax(value: Int) {
         val v = value.coerceIn(MIN_HAPTIC_MAX, 255)
         prefs.edit().putInt(KEY_HAPTIC_MAX, v).apply()
         _hapticMax.value = v

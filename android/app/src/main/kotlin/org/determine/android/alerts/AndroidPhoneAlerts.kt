@@ -1,5 +1,7 @@
 package org.determine.android.alerts
 
+import org.determine.app.audio.PhoneSounds
+import org.determine.app.runtime.PlatformAlerts
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
@@ -12,14 +14,10 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
 import android.util.Log
-import org.determine.core.PhoneAlerts
-import org.determine.core.describe.DescribeSpeech
 import java.util.Locale
-import kotlin.math.PI
-import kotlin.math.sin
 
 /**
- * Phone-side outputs (Arch §4.1 CueSink fallbacks, §8.2 spoken layer):
+ * Phone-side speech and failure outputs (Arch §4.1, §8.2 spoken layer):
  *  - [speak]: TextToSpeech at a sped-up rate, so short words act as spearcons ("left", "person"). Newest
  *    utterance flushes older ones: a stale spoken hint must never delay a fresh one.
  *  - [vibrate]: phone vibration (non-directional), Android waveform convention (off, on, off, on … ms).
@@ -29,7 +27,7 @@ import kotlin.math.sin
  *
  * Callbacks arrive on the engine thread inside the engine lock; every call here is non-blocking.
  */
-class AndroidPhoneAlerts(context: Context) : PhoneAlerts, DescribeSpeech {
+class AndroidPhoneAlerts(context: Context) : PlatformAlerts {
     private val vibrator: Vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
     } else {
@@ -86,7 +84,7 @@ class AndroidPhoneAlerts(context: Context) : PhoneAlerts, DescribeSpeech {
 
     override fun systemOff() {
         playOffTone()
-        say(SYSTEM_OFF_TEXT, alarm = true)
+        say(PhoneSounds.SYSTEM_OFF_TEXT, alarm = true)
     }
 
     /**
@@ -124,7 +122,7 @@ class AndroidPhoneAlerts(context: Context) : PhoneAlerts, DescribeSpeech {
         }
         tts.setAudioAttributes(if (alarm) alarmAttributes else speechAttributes)
         // System-off is spoken at normal rate so it is unmistakable; hazard words are spearcons.
-        tts.setSpeechRate(rate ?: if (alarm) 1.0f else SPEARCON_RATE)
+        tts.setSpeechRate(rate ?: if (alarm) 1.0f else PhoneSounds.SPEARCON_RATE)
         val params = Bundle()
         if (alarm) params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, text)
@@ -141,26 +139,10 @@ class AndroidPhoneAlerts(context: Context) : PhoneAlerts, DescribeSpeech {
         }
     }
 
-    /**
-     * Three descending notes (Arch §8 "System: descending three-note"), each 150 ms with 100 ms gaps,
-     * synthesised once into a static AudioTrack on the alarm stream (phone speaker / current route).
-     */
+    /** [PhoneSounds.systemOffTone] in a static AudioTrack on the alarm stream (phone speaker / current route). */
     private fun buildSystemOffTone(): AudioTrack? = try {
-        val rate = 22_050
-        val noteSamples = rate * 150 / 1000
-        val gapSamples = rate * 100 / 1000
-        val freqs = doubleArrayOf(988.0, 784.0, 587.0)
-        val pcm = ShortArray(freqs.size * (noteSamples + gapSamples))
-        var i = 0
-        for (f in freqs) {
-            for (n in 0 until noteSamples) {
-                // 5 ms linear attack/release to avoid clicks.
-                val edge = rate * 5 / 1000
-                val env = minOf(1.0, n.toDouble() / edge, (noteSamples - n).toDouble() / edge)
-                pcm[i++] = (sin(2 * PI * f * n / rate) * env * 0.8 * Short.MAX_VALUE).toInt().toShort()
-            }
-            i += gapSamples
-        }
+        val rate = PhoneSounds.OFF_TONE_RATE
+        val pcm = PhoneSounds.systemOffTone(rate)
         AudioTrack.Builder()
             .setAudioAttributes(alarmAttributes)
             .setAudioFormat(
@@ -179,7 +161,7 @@ class AndroidPhoneAlerts(context: Context) : PhoneAlerts, DescribeSpeech {
         null
     }
 
-    fun close() {
+    override fun close() {
         tts.stop()
         tts.shutdown()
         offTone?.release()
@@ -187,8 +169,6 @@ class AndroidPhoneAlerts(context: Context) : PhoneAlerts, DescribeSpeech {
 
     companion object {
         private const val TAG = "PhoneAlerts"
-        const val SYSTEM_OFF_TEXT = "System off"
-        const val SPEARCON_RATE = 1.8f
         private const val MAX_PENDING = 3
     }
 }

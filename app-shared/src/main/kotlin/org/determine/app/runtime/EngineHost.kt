@@ -1,19 +1,9 @@
-package org.determine.android.runtime
+package org.determine.app.runtime
 
-import android.content.Context
-import android.os.Handler
-import android.os.HandlerThread
-import android.os.Process
-import android.os.SystemClock
-import android.util.Log
-import org.determine.android.alerts.AndroidPhoneAlerts
-import org.determine.android.audio.PhoneCueSink
-import org.determine.android.camera.PhoneCameraSource
-import org.determine.android.describe.DescribeEndpoint
-import org.determine.android.describe.FaceRedactor
-import org.determine.android.describe.HttpDescribeTransport
-import org.determine.android.net.BoardAddressBook
-import org.determine.android.net.UdpLink
+import org.determine.app.describe.DescribeEndpoint
+import org.determine.app.describe.HttpDescribeTransport
+import org.determine.app.net.BoardAddressBook
+import org.determine.app.net.UdpLink
 import org.determine.core.Alert
 import org.determine.core.BoardId
 import org.determine.core.Diagnostics
@@ -30,8 +20,10 @@ import org.determine.core.hearing.HearingMode
 import org.determine.core.hearing.HearingProfile
 import org.determine.core.hearing.MIN_HAPTIC_MAX
 import java.net.SocketException
+import java.util.logging.Level
+import java.util.logging.Logger
 
-/** Session options fixed for one engine run; changing any of them restarts the service's session. */
+/** Session options fixed for one engine run; changing any of them restarts the session. */
 data class HostOptions(
     val spearcons: Boolean,
     val frameSource: FrameSourceKind,
@@ -40,14 +32,17 @@ data class HostOptions(
     val hapticMax: Int,
     /** Read on the Describe HTTP thread for every request (URL + key may change while running). */
     val describeEndpoint: () -> DescribeEndpoint?,
+    /** UDP port the phone binds (PROTOCOL.md: 47000). */
+    val port: Int = BoardAddressBook.PHONE_PORT,
 )
 
 /**
- * Owns the phone's hazard loop (Arch §4, §7): the [Engine], the UDP link, the headset audio sink and a 10 ms tick.
+ * Owns the hazard loop (Arch §4, §7): the [Engine], UDP link, local audio sink and a 10 ms tick.
+ * Platform audio, speech, camera, redaction and threads come from [HostPlatform].
  *
- * Output: every warning sound plays on the phone through the Bluetooth bone-conduction headset
- * ([PhoneCueSink], explicit failure when the route is missing) and the temple haptics go to the cue board in the
- * same cue. The single forward ToF zone is the only distance source; the camera frames only feed Describe.
+ * Warning sounds play through the platform audio sink (Android: Bluetooth bone-conduction headset with explicit
+ * route failure; desktop: Java Sound, not a verified headset). Haptics go to the cue board in the same cue.
+ * The single forward ToF zone is the only distance source; camera frames only feed Describe.
  *
  * Threading: [Engine] is not thread-safe, so every engine call happens under [lock]. Two threads take it:
  *  - the UDP receive thread (packets go straight in, no hand-off latency);
@@ -55,19 +50,18 @@ data class HostOptions(
  * The UI thread never touches the engine directly: Outbox sends happen inside engine calls and Android
  * forbids network I/O on the main thread.
  */
-class EngineHost(context: Context, private val options: HostOptions) {
+class EngineHost(private val platform: HostPlatform, private val options: HostOptions) {
     private val lock = Any()
-    private val thread = HandlerThread("determine-engine", Process.THREAD_PRIORITY_URGENT_AUDIO).apply { start() }
-    private val handler = Handler(thread.looper)
+    private val loop = platform.engineLoop()
     private val addressBook = BoardAddressBook()
-    private val alerts = AndroidPhoneAlerts(context)
+    private val alerts = platform.alerts()
     @Volatile private var unattributed = 0L
     @Volatile private var bindError: String? = null
     @Volatile private var stopped = false
 
     private val udp = UdpLink(
         addressBook = addressBook,
-        clockUs = ::nowUs,
+        clockUs = platform::nowUs,
         onPacket = { board, bytes, len, rxUs -> synchronized(lock) { engine.onPacket(board, bytes, len, rxUs) } },
         onUnattributed = { unattributed++ },
     )
@@ -75,13 +69,13 @@ class EngineHost(context: Context, private val options: HostOptions) {
     private val listener = object : EngineListener {
         override fun onState(state: SystemState, reason: String) {
             DetermineRuntime._state.value = StateInfo(state, reason)
-            describeController?.onState(state, nowUs())
+            describeController?.onState(state, platform.nowUs())
         }
 
         override fun onAlert(alert: Alert?) {
             DetermineRuntime._alert.value = alert
             // Arch §7.3: a MID/NEAR hazard cancels and silences any description.
-            describeController?.onAlert(alert, nowUs())
+            describeController?.onAlert(alert, platform.nowUs())
         }
 
         override fun onDiagnostics(d: Diagnostics) {
@@ -89,8 +83,8 @@ class EngineHost(context: Context, private val options: HostOptions) {
         }
     }
 
-    /** The only audio output: the Bluetooth bone-conduction headset. Reads the live profile under the engine lock. */
-    private val headsetAudio = PhoneCueSink(context) { engine.profile }
+    /** Always local audio; the cue board is haptic-only in wire v2. */
+    private val headsetAudio: PlatformCueSink = platform.cueSink { engine.profile }
 
     private val engine: Engine = Engine(
         // Judge screen refreshes ages at 4 Hz; the rest of the config is the core's Arch defaults.
@@ -107,11 +101,11 @@ class EngineHost(context: Context, private val options: HostOptions) {
     )
 
     /** Tier 0 FrameSource: the phone's own camera on a headband (Arch §11.4 software fallback). */
-    private val phoneCamera: PhoneCameraSource? = if (options.frameSource == FrameSourceKind.PHONE_CAMERA) {
-        PhoneCameraSource(context) { jpeg, w, h, capUs -> synchronized(lock) { engine.onPhoneFrame(jpeg, w, h, capUs) } }
+    private val phoneCamera: PlatformFrameSource? = if (options.frameSource == FrameSourceKind.PHONE_CAMERA) {
+        platform.phoneCamera { jpeg, w, h, capUs -> synchronized(lock) { engine.onPhoneFrame(jpeg, w, h, capUs) } }
     } else null
 
-    private val redactor = FaceRedactor(context)
+    private val redactor = platform.redactor()
     private val describeTransport = HttpDescribeTransport(
         endpoint = options.describeEndpoint,
         onFinished = { result, roundTripMs -> DetermineRuntime._describe.value = DescribeInfo.from(result, roundTripMs) },
@@ -123,27 +117,19 @@ class EngineHost(context: Context, private val options: HostOptions) {
     private var calibration: CalibrationSession? = null
     private var calibrationConfirms = 0
     private var pausedByUser = false
-    private var nextTickUptimeMs = 0L
     private var nextPublishUs = Long.MIN_VALUE
 
-    private val tick = object : Runnable {
-        override fun run() {
-            if (stopped) return
-            val now = nowUs()
-            synchronized(lock) {
-                engine.tick(now)
-                failCalibrationIfRouteLost()
-                describeController?.tick(now)
-            }
-            if (now >= nextPublishUs) {
-                nextPublishUs = now + PUBLISH_INTERVAL_US
-                publishSlow()
-            }
-            // Fixed-rate schedule; if the thread fell behind, skip ahead instead of bursting ticks.
-            nextTickUptimeMs += TICK_MS
-            val nowUptime = SystemClock.uptimeMillis()
-            if (nextTickUptimeMs <= nowUptime) nextTickUptimeMs = nowUptime + TICK_MS
-            handler.postAtTime(this, nextTickUptimeMs)
+    private fun tick() {
+        if (stopped) return
+        val now = platform.nowUs()
+        synchronized(lock) {
+            engine.tick(now)
+            failCalibrationIfRouteLost()
+            describeController?.tick(now)
+        }
+        if (now >= nextPublishUs) {
+            nextPublishUs = now + PUBLISH_INTERVAL_US
+            publishSlow()
         }
     }
 
@@ -153,7 +139,7 @@ class EngineHost(context: Context, private val options: HostOptions) {
      */
     fun describe() = onEngineThread {
         val c = describeController ?: return@onEngineThread
-        val now = nowUs()
+        val now = platform.nowUs()
         DetermineRuntime._describeOutcome.value = DescribeOutcomeEvent(c.request(now), now)
     }
 
@@ -161,33 +147,31 @@ class EngineHost(context: Context, private val options: HostOptions) {
         DetermineRuntime._state.value = StateInfo(engine.state, "starting")
         DetermineRuntime._profile.value = engine.profile
         try {
-            udp.start()
+            udp.start(options.port)
         } catch (e: SocketException) {
             // Without the socket nothing reaches the engine: its liveness rules take it to UNAVAILABLE and
             // the phone announces system off (invariant 2). Also surface the concrete cause.
-            bindError = e.message ?: "cannot bind UDP ${BoardAddressBook.PHONE_PORT}"
-            Log.e(TAG, "UDP bind failed", e)
+            bindError = e.message ?: "cannot bind UDP ${options.port}"
+            log.log(Level.SEVERE, "UDP bind failed", e)
             alerts.speak("Network port unavailable")
         }
         publishSlow()
         phoneCamera?.start()
-        nextTickUptimeMs = SystemClock.uptimeMillis()
-        handler.post(tick)
+        loop.startTicking(TICK_MS, ::tick)
     }
 
     fun stop() {
         stopped = true
-        handler.removeCallbacksAndMessages(null)
         udp.stop()
         phoneCamera?.stop()
         describeTransport.close()
         // Release on the engine thread after any in-flight tick, then let the thread end.
-        handler.post {
+        loop.post {
             redactor.close()
             headsetAudio.close()
             alerts.close()
         }
-        thread.quitSafely()
+        loop.quit()
     }
 
     /** Phone battery critical → UNAVAILABLE (Arch §4.2). */
@@ -224,7 +208,7 @@ class EngineHost(context: Context, private val options: HostOptions) {
         calibrationConfirms = 0
         calibration = CalibrationSession(
             ceilingDb = engine.profile.ceilingDb,
-            sink = { cmd -> engine.sendCalibrationCue(cmd, nowUs()) },
+            sink = { cmd -> engine.sendCalibrationCue(cmd, platform.nowUs()) },
         )
         failCalibrationIfRouteLost()
         publishCalibration()
@@ -269,7 +253,7 @@ class EngineHost(context: Context, private val options: HostOptions) {
             }
         } catch (e: IllegalStateException) {
             // A stale tap for a step the session already left (double tap): ignore, the view is republished.
-            Log.w(TAG, "calibration action $action ignored", e)
+            log.log(Level.WARNING, "calibration action $action ignored", e)
         }
         if (s.step == CalStep.FAILED) engine.setPaused(pausedByUser)
         publishCalibration()
@@ -278,8 +262,11 @@ class EngineHost(context: Context, private val options: HostOptions) {
     /** A lost route aborts even an idle or finished-unapplied session, not just the next played tone. */
     private fun failCalibrationIfRouteLost() {
         val s = calibration ?: return
-        if (s.step == CalStep.FAILED || headsetAudio.stats().routeReady) return
-        s.fail("Headset disconnected or audio route unavailable. Reconnect your headset and restart calibration.")
+        if (s.step == CalStep.FAILED) return
+        val route = headsetAudio.headsetInfo()
+        if (route?.routeReady != false && headsetAudio.error == null) return
+        s.fail(route?.error ?: headsetAudio.error
+            ?: "Headset disconnected or audio route unavailable. Reconnect your headset and restart calibration.")
         engine.setPaused(pausedByUser)
         publishCalibration()
     }
@@ -306,8 +293,7 @@ class EngineHost(context: Context, private val options: HostOptions) {
     private fun publishSlow() {
         val range = synchronized(lock) { engine.latestRange() }
         if (range != null) DetermineRuntime._range.value = range
-        val audio = headsetAudio.stats()
-        DetermineRuntime._headset.value = HeadsetInfo(audio.headsetPresent, audio.headsetName, audio.routeReady, audio.error)
+        DetermineRuntime._headset.value = headsetAudio.headsetInfo()
         DetermineRuntime._link.value = LinkInfo(
             bound = bindError == null,
             bindError = bindError,
@@ -318,21 +304,23 @@ class EngineHost(context: Context, private val options: HostOptions) {
         )
         DetermineRuntime._fallbacks.value = FallbackInfo(
             frameSource = options.frameSource,
-            phoneCameraError = phoneCamera?.stats()?.error,
+            phoneCameraError = when {
+                options.frameSource != FrameSourceKind.PHONE_CAMERA -> null
+                phoneCamera == null -> "no phone camera on this device"
+                else -> phoneCamera.error
+            },
+            phoneAudioError = headsetAudio.error,
             redactorAvailable = redactor.available,
         )
     }
 
     private inline fun onEngineThread(crossinline block: () -> Unit) {
-        handler.post { if (!stopped) synchronized(lock) { block() } }
+        loop.post { if (!stopped) synchronized(lock) { block() } }
     }
 
     companion object {
-        private const val TAG = "EngineHost"
+        private val log = Logger.getLogger("EngineHost")
         const val TICK_MS = 10L
         private const val PUBLISH_INTERVAL_US = 100_000L
-
-        /** Phone monotonic clock in µs (PROTOCOL.md "Clocks"); keeps counting in deep sleep. */
-        fun nowUs(): Long = SystemClock.elapsedRealtimeNanos() / 1000
     }
 }

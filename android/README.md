@@ -4,24 +4,25 @@
 
 The phone is the only integrator (Arch §4): it receives the two boards' UDP streams, runs the hazard loop from
 `phone/core` (`org.determine:core`, pulled in with `includeBuild("../phone")`), plays every warning sound through a
-Bluetooth bone-conduction headset (Shokz OpenRun class), and sends temple-haptic cues to the cue board. Distance
-comes from exactly one source: the cue board's single forward VL53L4CD zone. The camera feeds Describe only. This
-module is only the Android shell around the core: UDP socket, foreground service, headset audio, phone-side
-alerts, and the accessible UI.
+Bluetooth bone-conduction headset, and sends temple-haptic cues to the cue board. Distance comes from the cue
+board's single forward Modulino Distance zone (VL53L4ED). Camera frames feed Describe, not an object detector.
+The screens, session/runtime, engine host, UDP link and Describe transport live in
+[`../app-shared`](../app-shared), compiled into both Android and the desktop test app. This module supplies
+Android permissions, lifecycle, audio routing, alerts, camera capture and face redaction.
 
-**Cross-platform target:** [`../ios/`](../ios/README.md) contains a native SwiftUI interactive prototype of
-these workflows, with explicitly synthetic inputs and xtool packaging. It is not yet a live hardware client.
-Android remains the first implementation; the [iOS and Android parity plan](../docs/ios-plan.md) defines the
-remaining device gates. Platform-specific permissions and lifecycle behavior must not weaken the safety contract.
+**Cross-platform target:** [`../ios/`](../ios/README.md) documents the separate Swift implementation and its
+current device gates. The desktop app is a software test surface, not evidence of a verified wearable route.
+Platform-specific permissions and lifecycle behavior must not weaken the Android safety contract.
 
 | Piece | File | Notes |
 |---|---|---|
-| Foreground service | `service/DetermineService.kt` | type `connectedDevice`; partial wake lock + Wi-Fi lock; battery → `engine.setBatteryCritical` |
-| Engine host | `runtime/EngineHost.kt` | owns `Engine`, 10 ms tick on an urgent-priority thread, engine lock, calibration session, live haptic cap |
-| UDP | `net/UdpLink.kt`, `net/BoardAddressBook.kt` | binds :47000; learns board IPs; PONG attributed by source IP; sends to CUE :47001 / CAM :47002 |
-| Headset audio | `audio/PhoneCueSink.kt`, `audio/CueBank.kt` | the phone sound bank (cue ids 0–11) rendered on a low-latency `AudioTrack` bound to the connected Bluetooth (A2DP / LE Audio) headset; per-side ceiling `min(profile, −10 dBFS)`; **no headset or a route diverted elsewhere → explicit `headset_route_lost` (system off), never the phone speaker** |
+| Foreground service | `service/DetermineService.kt` | type `connectedDevice`; partial wake lock + Wi-Fi lock; battery → engine; owns a shared `DetermineSession` |
+| Device layer | `runtime/AndroidHostPlatform.kt` | `HostPlatform` adapter: urgent-audio HandlerThread, elapsedRealtime clock, real headset route diagnostics |
+| Engine host (shared) | `app-shared/…/runtime/EngineHost.kt` | owns `Engine`, 10 ms tick, engine lock, calibration session, live haptic cap and Describe controller |
+| UDP (shared) | `app-shared/…/net/UdpLink.kt`, `BoardAddressBook.kt` | binds :47000; learns board source endpoints so loopback boards remain distinct; sends to CUE :47001 / CAM :47002 |
+| Headset audio | `audio/PhoneCueSink.kt` + shared `audio/CueBank.kt` | primary phone cues on an `AudioTrack` bound to Bluetooth; no headset or diverted route → `headset_route_lost`, never speaker fallback |
 | Phone alerts | `alerts/AndroidPhoneAlerts.kt` | TTS spearcons (rate 1.8), vibration, system-off tone + "System off" on the alarm stream |
-| UI | `ui/` | Main (state live region, start/stop, pause), Judge diagnostics, Calibration (Arch §9), Settings |
+| UI (shared) | `app-shared/…/ui/` + `ui/MainActivity.kt` | Main (state live region, start/stop, pause), Judge diagnostics, Calibration (Arch §9), Settings; `MainActivity` supplies the Android `AppPlatform` (service, permissions, back gesture) |
 
 Clock: phone time is `SystemClock.elapsedRealtimeNanos() / 1000` µs (monotonic, counts through deep sleep).
 

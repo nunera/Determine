@@ -1,6 +1,8 @@
 package org.determine.android.ui
 
 import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -8,56 +10,56 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
+import androidx.core.content.ContextCompat
+import org.determine.android.DetermineApplication
 import org.determine.android.service.DetermineService
+import org.determine.app.platform.AppPlatform
+import org.determine.app.platform.SettingsStore
+import org.determine.app.ui.DetermineApp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            DetermineTheme { DetermineNav() }
-        }
+        val platform = AndroidAppPlatform(this)
+        setContent { DetermineApp(platform) }
     }
 }
 
-private object Routes {
-    const val MAIN = "main"
-    const val JUDGE = "judge"
-    const val CALIBRATION = "calibration"
-    const val SETTINGS = "settings"
-}
+/** The shared UI's view of Android: the foreground service, runtime permissions and the system back gesture. */
+private class AndroidAppPlatform(private val context: Context) : AppPlatform {
+    override val settings: SettingsStore = (context.applicationContext as DetermineApplication).settings
+    override val phoneCameraSupported = true
 
-@Composable
-private fun DetermineNav() {
-    val nav = rememberNavController()
-    val context = LocalContext.current
-    // The service runs without the notification permission too (its notification is then hidden), so the
-    // loop starts whatever the answer is; refusing must never stop the warnings.
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        DetermineService.start(context)
-    }
-    val start = {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
+    @Composable
+    override fun rememberStartAction(): () -> Unit {
+        // The service runs without the notification permission too (its notification is then hidden), so the
+        // loop starts whatever the answer is; refusing must never stop the warnings.
+        val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
             DetermineService.start(context)
         }
-    }
-    NavHost(navController = nav, startDestination = Routes.MAIN) {
-        composable(Routes.MAIN) {
-            MainScreen(
-                onStart = start,
-                onStop = { DetermineService.stop(context) },
-                onJudge = { nav.navigate(Routes.JUDGE) },
-                onCalibrate = { nav.navigate(Routes.CALIBRATION) },
-                onSettings = { nav.navigate(Routes.SETTINGS) },
-            )
+        return {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                DetermineService.start(context)
+            }
         }
-        composable(Routes.JUDGE) { JudgeScreen(onBack = { nav.popBackStack() }) }
-        composable(Routes.CALIBRATION) { CalibrationScreen(onBack = { nav.popBackStack() }) }
-        composable(Routes.SETTINGS) { SettingsScreen(onBack = { nav.popBackStack() }) }
     }
+
+    override fun stop() = DetermineService.stop(context)
+
+    @Composable
+    override fun rememberCameraRequest(onGranted: () -> Unit): () -> Unit {
+        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) onGranted()
+        }
+        return {
+            val has = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            if (has) onGranted() else launcher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    @Composable
+    override fun BackHandler(enabled: Boolean, onBack: () -> Unit) =
+        androidx.activity.compose.BackHandler(enabled = enabled, onBack = onBack)
 }

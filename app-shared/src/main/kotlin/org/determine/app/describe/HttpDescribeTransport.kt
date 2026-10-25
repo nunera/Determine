@@ -1,6 +1,6 @@
-package org.determine.android.describe
+package org.determine.app.describe
 
-import android.util.Log
+import java.util.logging.Logger
 import org.determine.core.describe.DescribeRequest
 import org.determine.core.describe.DescribeResult
 import org.determine.core.describe.DescribeTransport
@@ -104,7 +104,7 @@ class HttpDescribeTransport(
             return if (call.timedOut) DescribeHttp.timeout(req.requestId) else DescribeHttp.mapResponse(req.requestId, status, text)
         } catch (e: Exception) {
             // IOException for network/HTTP; RuntimeException for platform quirks (e.g. a malformed host).
-            if (!call.cancelled) Log.w(TAG, "describe ${req.requestId} failed: ${e.javaClass.simpleName}")
+            if (!call.cancelled) log.warning("describe ${req.requestId} failed: ${e.javaClass.simpleName}")
             return DescribeHttp.mapException(req.requestId, e, call.timedOut)
         } finally {
             watchdog.cancel(false)
@@ -131,7 +131,7 @@ class HttpDescribeTransport(
     }
 
     private companion object {
-        const val TAG = "DescribeHttp"
+        val log: Logger = Logger.getLogger("DescribeHttp")
     }
 }
 
@@ -157,7 +157,7 @@ internal object DescribeHttp {
         return null
     }
 
-    /** `redacted` is always true: the controller only sends images the [FaceRedactor] produced. */
+    /** `redacted` is always true: the controller only sends images the platform redactor produced. */
     fun requestBody(req: DescribeRequest): String = JSONObject()
         .put("request_id", req.requestId)
         .put("image_jpeg_b64", Base64.getEncoder().encodeToString(req.jpeg))

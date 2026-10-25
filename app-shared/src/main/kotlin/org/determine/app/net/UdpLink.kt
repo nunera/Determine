@@ -1,6 +1,7 @@
-package org.determine.android.net
+package org.determine.app.net
 
-import android.util.Log
+import java.util.logging.Level
+import java.util.logging.Logger
 import org.determine.core.BoardId
 import org.determine.core.Outbox
 import org.determine.core.wire.Wire
@@ -59,16 +60,16 @@ class UdpLink(
                 s.receive(packet)
                 val rxUs = clockUs()
                 val len = packet.length
-                val board = addressBook.attribute(Wire.senderBoard(buf, len), packet.address)
+                val board = addressBook.attribute(Wire.senderBoard(buf, len), packet.address, packet.port)
                 if (board == null) {
                     onUnattributed()
                     continue
                 }
                 onPacket(board, buf, len, rxUs)
             } catch (e: SocketException) {
-                if (!s.isClosed) Log.w(TAG, "receive failed", e)
+                if (!s.isClosed) log.log(Level.WARNING, "receive failed", e)
             } catch (e: IOException) {
-                Log.w(TAG, "receive failed", e)
+                log.log(Level.WARNING, "receive failed", e)
             }
         }
     }
@@ -89,7 +90,7 @@ class UdpLink(
         } catch (e: IOException) {
             // A failed CUE surfaces as a missing ACK inside the engine → UNAVAILABLE (Arch §4.2).
             sendErrors++
-            Log.w(TAG, "send to $board failed", e)
+            log.log(Level.WARNING, "send to $board failed", e)
         }
     }
 
@@ -101,7 +102,7 @@ class UdpLink(
     }
 
     private companion object {
-        const val TAG = "UdpLink"
+        val log: Logger = Logger.getLogger("UdpLink")
         const val MAX_DATAGRAM = 1500
     }
 }

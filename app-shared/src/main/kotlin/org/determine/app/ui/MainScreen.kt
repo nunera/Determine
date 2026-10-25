@@ -1,4 +1,4 @@
-package org.determine.android.ui
+package org.determine.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,14 +11,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import org.determine.android.runtime.DetermineRuntime
+import org.determine.app.runtime.DetermineRuntime
 import org.determine.core.Band
 import org.determine.core.SystemState
 import org.determine.core.hearing.HearingMode
@@ -30,7 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
-import org.determine.android.DetermineApplication
+import org.determine.app.platform.LocalPlatform
 import org.determine.core.describe.DescribeOutcome
 
 @Composable
@@ -41,15 +40,16 @@ fun MainScreen(
     onCalibrate: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    val context = LocalContext.current
+    val settings = LocalPlatform.current.settings
     val running by DetermineRuntime.running.collectAsStateWithLifecycle()
     val stateInfo by DetermineRuntime.state.collectAsStateWithLifecycle()
     val alert by DetermineRuntime.alert.collectAsStateWithLifecycle()
     val profile by DetermineRuntime.profile.collectAsStateWithLifecycle()
     val headset by DetermineRuntime.headset.collectAsStateWithLifecycle()
+    val fallbacks by DetermineRuntime.fallbacks.collectAsStateWithLifecycle()
 
     val state = stateInfo?.state
-    val stateText = describe(context, state)
+    val stateText = describe(state)
     val failing = running && state == SystemState.UNAVAILABLE
 
     Screen(title = "Determine", onBack = null) {
@@ -93,6 +93,17 @@ fun MainScreen(
             )
         }
 
+        if (running && headset == null) {
+            Text(
+                "Desktop test: system audio (possibly speakers), no verified Bluetooth headset or physical haptic motor. " +
+                    "One forward distance only; left and right are not measured.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        fallbacks?.phoneAudioError?.takeIf { running }?.let {
+            Text("Local audio unavailable: $it", style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error)
+        }
         // The current warning, if any. Not a live region: the earcon and spearcon already announce it, and a
         // second spoken copy would mask the cue. When there is no warning nothing is shown: silence is not
         // a clear path, and the app never claims one.
@@ -128,7 +139,6 @@ fun MainScreen(
             BigButton("Start Determine", onStart)
         }
 
-        val settings = (context.applicationContext as DetermineApplication).settings
         val describeOn by settings.describeEnabled.collectAsStateWithLifecycle()
         val outcome by DetermineRuntime.describeOutcome.collectAsStateWithLifecycle()
         if (running && describeOn) {

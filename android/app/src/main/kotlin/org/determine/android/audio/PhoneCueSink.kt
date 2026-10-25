@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
+import org.determine.app.audio.CueBank
 import org.determine.core.AUDIO_ROUTE_LOST
 import org.determine.core.CueCommand
 import org.determine.core.LocalCueSink
@@ -61,7 +62,6 @@ class PhoneCueSink(
     private class Request(val cueId: Int, val gainLDb: Int, val gainRDb: Int)
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-
     private val attributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)

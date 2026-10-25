@@ -92,6 +92,15 @@ class ScenarioTest(unittest.TestCase):
     def read(self, s, t):
         return measure(s.objects(t), noise=False, invalid_status=s.invalid_status(t, random.Random(0)))
 
+    def test_looped_invalid_range_recovers_and_repeats(self):
+        s = scenarios.looped(scenarios.get("approach_then_unknown"))
+        for lap in (0, 1):
+            for t, expected in ((s.marks["glass_from"] - 0.01, dw.RANGE_VALID),
+                                (s.marks["glass_from"], dw.RANGE_UNKNOWN),
+                                (s.marks["glass_to"], dw.RANGE_VALID)):
+                with self.subTest(lap=lap, time=t):
+                    self.assertEqual(self.read(s, lap * s.duration_s + t)[1], expected)
+
     def test_all_scenarios_deterministic(self):
         for name in scenarios.SCENARIOS:
             a, b = scenarios.get(name, 3), scenarios.get(name, 3)

@@ -37,6 +37,7 @@ than `bandExitMs` = 600 ms and at most 2 reported band changes per second).
 python3 -m unittest discover -s tools/sim/tests -v                   # unit + loopback tests
 python3 -m unittest discover -s protocol/python -v                   # codec + golden vectors
 python3 tools/sim/sim_boards.py --scenario approach_centre            # boards → phone at 127.0.0.1:47000
+python3 tools/sim/sim_boards.py --scenario approach_then_unknown --loop # repeat warning, UNKNOWN and recovery
 python3 tools/sim/bench.py                                            # phone side, interactive dashboard
 python3 tools/sim/bench.py --cue OBSTACLE_NEAR --side L --intensity 180   # one test haptic cue
 python3 tools/sim/bench.py --profile --mode SSD --haptic-max 120      # PROFILE (haptic_max 1–255)
@@ -44,6 +45,10 @@ python3 tools/sim/bench.py --latency 50 --cue OBSTACLE_FAR            # command�
 python3 tools/sim/bench.py --fault-test                               # stop pinging, expect the haptic LSS watchdog
 nix shell nixpkgs#jdk17 -c python3 tools/sim/e2e.py [--build] [--scenario NAME ...]
 ```
+
+`--loop` repeats scene motion, scalar sensor-invalid intervals and board dropouts without rebooting the
+simulated boards. Sensor recovery and the next lap's UNKNOWN interval both recur; clock sync and sequence
+numbers continue across laps.
 
 `e2e.py` needs `phone/cli` installed (`--build` runs `./gradlew :cli:installDist`) and `java` on PATH.
 Logs land in `/tmp/determine-e2e/<scenario>/{phone,sim}.log`; `--evaluate-only` re-checks them.

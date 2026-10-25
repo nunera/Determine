@@ -1,6 +1,6 @@
-package org.determine.android.ui
+package org.determine.app.ui
 
-import androidx.activity.compose.BackHandler
+import org.determine.app.platform.LocalPlatform
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,9 +33,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import org.determine.android.runtime.CalibrationAction
-import org.determine.android.runtime.CalibrationView
-import org.determine.android.runtime.DetermineRuntime
+import org.determine.app.runtime.CalibrationAction
+import org.determine.app.runtime.CalibrationView
+import org.determine.app.runtime.DetermineRuntime
 import org.determine.core.hearing.CalBand
 import org.determine.core.hearing.CalStep
 import org.determine.core.hearing.CalibrationSession
@@ -54,6 +54,9 @@ fun CalibrationScreen(onBack: () -> Unit) {
     val running by DetermineRuntime.running.collectAsStateWithLifecycle()
     val view by DetermineRuntime.calibration.collectAsStateWithLifecycle()
     val headset by DetermineRuntime.headset.collectAsStateWithLifecycle()
+    val fallbacks by DetermineRuntime.fallbacks.collectAsStateWithLifecycle()
+    val desktopAudio = running && fallbacks != null && headset == null
+    val audioReady = headset?.routeReady ?: (desktopAudio && fallbacks?.phoneAudioError == null)
     var applying by remember { mutableStateOf(false) }
 
     // A commit is asynchronous. Leave only after the host actually clears the session; a failed commit stays visible.
@@ -66,7 +69,7 @@ fun CalibrationScreen(onBack: () -> Unit) {
         if (view != null) DetermineRuntime.cancelCalibration()
         onBack()
     }
-    BackHandler(enabled = view != null) { leave() }
+    LocalPlatform.current.BackHandler(enabled = view != null) { leave() }
 
     Screen(title = "Hearing calibration", onBack = leave) {
         if (!running) {
@@ -75,18 +78,18 @@ fun CalibrationScreen(onBack: () -> Unit) {
         }
         val v = view
         if (v == null) {
-            Intro(headsetReady = headset?.routeReady == true)
+            Intro(audioReady, desktopAudio)
             return@Screen
         }
         StepHeading(v)
         when (v.step) {
-            CalStep.FIT -> FitStep()
+            CalStep.FIT -> FitStep(desktopAudio)
             CalStep.THRESHOLD -> ThresholdStep()
             CalStep.LEVEL -> LevelStep()
             CalStep.BALANCE -> BalanceStep(v)
             CalStep.VERIFY -> VerifyStep()
             CalStep.DONE -> DoneStep(v, { applying = true }, leave)
-            CalStep.FAILED -> FailedStep(v, headset?.routeReady == true, leave)
+            CalStep.FAILED -> FailedStep(v, audioReady, leave)
         }
         if (v.step != CalStep.FAILED) {
             Text("Ceiling: ${minOf(v.ceilingDb, HARD_CEILING_DB)} dBFS. No step plays louder than this.",
@@ -100,7 +103,7 @@ fun CalibrationScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun Intro(headsetReady: Boolean) {
+private fun Intro(headsetReady: Boolean, desktopAudio: Boolean) {
     Text(
         "This matches how loud each side feels to you with the headset as it sits today. It is not a hearing " +
             "test and does not restore hearing. If you have known hearing loss, see an audiologist.",
@@ -108,9 +111,17 @@ private fun Intro(headsetReady: Boolean) {
     )
     Text("It takes about 3 minutes. Obstacle warnings are paused until you finish or cancel.",
         style = MaterialTheme.typography.bodyLarge)
+    if (desktopAudio) {
+        Text(
+            "Desktop test calibration uses the system audio device, which may be speakers. No Bluetooth headset " +
+                "or wearable fit is verified. These levels are not a calibrated wearable hearing profile.",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+    }
     if (!headsetReady) {
         Text(
-            "No Bluetooth headset is connected, so tones cannot play. Pair and connect your bone-conduction " +
+            if (desktopAudio) "The desktop audio output is unavailable. Restore the audio device and restart calibration."
+            else "No Bluetooth headset is connected, so tones cannot play. Pair and connect your bone-conduction " +
                 "headset. Calibration needs it; haptic-only warnings do not. Nothing plays on the phone speaker.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.error,
@@ -142,9 +153,10 @@ private fun StepHeading(v: CalibrationView) {
 }
 
 @Composable
-private fun FitStep() {
+private fun FitStep(desktopAudio: Boolean) {
     var weaker by rememberSaveable { mutableStateOf<String?>(null) }
-    Text("Seat the headset as you will wear it. Tones play on your Bluetooth bone-conduction headset.",
+    Text(if (desktopAudio) "Use the system audio device you intend to test. Desktop cannot verify Bluetooth or headset fit."
+        else "Seat the headset as you will wear it. Tones play on your Bluetooth bone-conduction headset.",
         style = MaterialTheme.typography.bodyLarge)
     Text("Which side is weaker, if any?", style = MaterialTheme.typography.titleMedium)
     Column(Modifier.selectableGroup()) {
@@ -153,7 +165,10 @@ private fun FitStep() {
         }
     }
     BigButton("Continue", {
-        DetermineRuntime.calibration(CalibrationAction.Fit(DEVICE_ID, weaker?.let { Ear.valueOf(it) }))
+        DetermineRuntime.calibration(CalibrationAction.Fit(
+            if (desktopAudio) "desktop-system-audio" else DEVICE_ID,
+            weaker?.let { Ear.valueOf(it) },
+        ))
     })
 }
 

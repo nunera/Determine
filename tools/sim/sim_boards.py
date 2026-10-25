@@ -61,6 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cam-boot-age", type=float, default=DEFAULT_CAM_CLOCK.boot_age_s)
     p.add_argument("--cam-drift-ppm", type=float, default=DEFAULT_CAM_CLOCK.drift_ppm)
     p.add_argument("--list", action="store_true", help="list scenarios and exit")
+    p.add_argument("--loop", action="store_true",
+                   help="repeat the scenario every duration_s with the boards running continuously; runs until Ctrl-C")
     return p
 
 
@@ -73,6 +75,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     scen = scenarios.get(args.scenario, args.seed)
     duration = scen.duration_s if args.duration is None else args.duration
+    if args.loop:
+        scen = scenarios.looped(scen)
+        duration = 0 if args.duration is None else args.duration
 
     def out(line: str):
         sys.stdout.write(line + "\n")

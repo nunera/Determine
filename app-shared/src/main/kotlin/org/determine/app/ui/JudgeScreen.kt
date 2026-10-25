@@ -1,4 +1,4 @@
-package org.determine.android.ui
+package org.determine.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,8 +23,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import org.determine.android.runtime.DetermineRuntime
-import org.determine.android.runtime.HeadsetInfo
+import org.determine.app.runtime.DetermineRuntime
+import org.determine.app.runtime.HeadsetInfo
 import org.determine.core.Band
 import org.determine.core.hearing.HearingMode
 import org.determine.core.BoardDiagnostics
@@ -70,6 +70,7 @@ fun JudgeScreen(onBack: () -> Unit) {
         Metric("Camera frame age", ms(diag?.frameAgeMs))
         Metric("Forward distance age", ms(diag?.rangeAgeMs))
         HeadsetBlock(headset, audioOff = profile?.mode == HearingMode.HAPTIC_ONLY)
+        fallbacks?.phoneAudioError?.let { Metric("Local audio error", it) }
         diag?.let {
             BoardBlock("Camera board", it.cam, link?.camIp)
             BoardBlock("Cue board (forward ToF + temple haptics)", it.cue, link?.cueIp)
@@ -124,7 +125,7 @@ private fun HeadsetBlock(h: HeadsetInfo?, audioOff: Boolean) {
         val route = when {
             audioOff -> "not required: warning sounds are off (haptic only)" +
                 (if (h?.routeReady == true) ", headset ready: ${h.name ?: "headset"}" else "")
-            h == null -> "-"
+            h == null -> "not verified on this platform (desktop Java Sound)"
             h.routeReady -> "ready: ${h.name ?: "headset"}"
             h.present -> "headset ${h.name ?: ""} found, audio route not ready".replace("  ", " ")
             else -> "NOT CONNECTED: warnings unavailable"
@@ -132,7 +133,9 @@ private fun HeadsetBlock(h: HeadsetInfo?, audioOff: Boolean) {
         Metric("Route", route)
         h?.takeIf { !it.routeReady && !audioOff }?.error?.let { Metric("Reason", it) }
         Text(
-            "Warning sounds play only on this headset. Without it the system reports system off, unless warning " +
+            if (h == null) "Desktop playback uses the system audio device, which may be speakers. No physical Bluetooth " +
+                "headset is verified; this is not a wearable safety check."
+            else "Warning sounds play only on this headset. Without it the system reports system off, unless warning " +
                 "sounds are switched off (haptic only); it never falls back to the phone speaker.",
             style = MaterialTheme.typography.bodySmall,
         )

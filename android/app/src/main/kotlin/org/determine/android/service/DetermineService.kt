@@ -25,26 +25,25 @@ import kotlinx.coroutines.launch
 import org.determine.android.DetermineApplication
 import org.determine.android.R
 import org.determine.android.power.BatteryCriticalGate
-import org.determine.android.runtime.DetermineRuntime
-import org.determine.android.runtime.EngineHost
-import org.determine.android.runtime.HostOptions
 import org.determine.core.FrameSourceKind
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.drop
 import android.Manifest
 import android.content.pm.PackageManager
 import org.determine.android.ui.MainActivity
-import org.determine.android.ui.describe
+import org.determine.android.runtime.AndroidHostPlatform
+import org.determine.app.runtime.DetermineRuntime
+import org.determine.app.runtime.DetermineSession
+import org.determine.app.ui.describe
+import org.determine.core.SystemState
 
 /**
  * Foreground service that keeps the hazard loop alive with the screen off (Arch §4): it owns the
- * [EngineHost] (UDP :47000, engine, headset audio sink, 10 ms tick), a partial wake lock so the tick keeps running,
+ * [DetermineSession] (UDP :47000, engine, headset audio sink, 10 ms tick), a partial wake lock so the tick keeps running,
  * a Wi-Fi lock, and the battery watcher that feeds "phone battery critical" to the engine.
  *
  * Type connectedDevice: the service exists to talk to the two wearable boards.
  */
 class DetermineService : Service() {
-    private var host: EngineHost? = null
+    private var session: DetermineSession? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private val batteryGate = BatteryCriticalGate()
@@ -61,7 +60,7 @@ class DetermineService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (host != null) return START_STICKY
+        if (session != null) return START_STICKY
 
         val app = application as DetermineApplication
         val settings = app.settings
@@ -69,14 +68,17 @@ class DetermineService : Service() {
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            buildNotification(getString(R.string.state_starting)),
+            buildNotification(describe(SystemState.STARTING)),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
                     (if (phoneCamera && hasCameraPermission()) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0)
             } else 0,
         )
         acquireLocks()
-        startHost()
+        session = DetermineSession(AndroidHostPlatform(this), settings, scope).also {
+            it.setBatteryCritical(batteryGate.critical)
+            it.start()
+        }
 
         // Sticky battery broadcast delivers the current level immediately on registration.
         ContextCompat.registerReceiver(
@@ -86,50 +88,11 @@ class DetermineService : Service() {
         scope.launch {
             DetermineRuntime.state.collectLatest { info ->
                 info ?: return@collectLatest
-                updateNotification(describe(this@DetermineService, info.state))
+                updateNotification(describe(info.state))
             }
-        }
-        scope.launch {
-            settings.spearcons.collectLatest { DetermineRuntime.setSpearcons(it) }
-        }
-        // Frame source and the Describe opt-in are fixed per engine session: a change restarts it (the restart
-        // passes through STARTING, so the user hears the state change). The haptic cap is applied live.
-        scope.launch {
-            combine(settings.frameSource, settings.describeEnabled) { f, d -> f to d }
-                .drop(1)
-                .collectLatest { restartHost() }
-        }
-        scope.launch {
-            settings.hapticMax.drop(1).collectLatest { DetermineRuntime.setHapticMax(it) }
         }
         // Restarted by the system after a kill: resume the loop, never stay silently off.
         return START_STICKY
-    }
-
-    private fun startHost() {
-        val s = (application as DetermineApplication).settings
-        val h = EngineHost(
-            this,
-            HostOptions(
-                spearcons = s.spearcons.value,
-                frameSource = s.frameSource.value,
-                describeEnabled = s.describeEnabled.value,
-                hapticMax = s.hapticMax.value,
-                describeEndpoint = s::describeEndpoint,
-            ),
-        )
-        host = h
-        DetermineRuntime.host = h
-        DetermineRuntime._running.value = true
-        h.start()
-        batteryGate.critical.takeIf { it }?.let { h.setBatteryCritical(true) }
-    }
-
-    private fun restartHost() {
-        DetermineRuntime.host = null
-        host?.stop()
-        host = null
-        startHost()
     }
 
     private fun hasCameraPermission() =
@@ -141,7 +104,7 @@ class DetermineService : Service() {
         val pct = if (level >= 0 && scale > 0) level * 100 / scale else -1
         val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
         val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
-        if (batteryGate.update(pct, charging)) host?.setBatteryCritical(batteryGate.critical)
+        if (batteryGate.update(pct, charging)) session?.setBatteryCritical(batteryGate.critical)
     }
 
     private fun acquireLocks() {
@@ -190,10 +153,8 @@ class DetermineService : Service() {
     override fun onDestroy() {
         scope.cancel()
         try { unregisterReceiver(batteryReceiver) } catch (_: IllegalArgumentException) { }
-        DetermineRuntime.host = null
-        host?.stop()
-        host = null
-        DetermineRuntime.clear()
+        session?.stop()
+        session = null
         wifiLock?.release()
         wakeLock?.release()
         super.onDestroy()

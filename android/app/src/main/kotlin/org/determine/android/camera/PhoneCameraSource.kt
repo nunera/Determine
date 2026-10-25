@@ -36,8 +36,8 @@ import java.util.concurrent.Executors
  *
  * The camera is bound to a private [LifecycleOwner] that lives exactly from [start] to [stop] (the foreground
  * service's engine session), not to any activity, so frames keep flowing with the screen off. Needs the CAMERA
- * permission and the service's `camera` foreground type. If the camera cannot be opened no frames arrive, and the
- * engine's frame-freshness rule takes the system to UNAVAILABLE (failure is loud); [stats] carries the reason.
+ * permission and the service's `camera` foreground type. If the camera cannot be opened no frames arrive,
+ * Describe remains unavailable and [stats] carries the reason; hazard distance still comes only from the board.
  */
 class PhoneCameraSource(
     private val context: Context,

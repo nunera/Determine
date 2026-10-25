@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Callable
 
 from dtwire import dw
@@ -51,6 +51,26 @@ class Scenario:
 
     def cam_down(self, t: float) -> bool:
         return any(a <= t < b for a, b in self.cam_dropouts)
+
+
+class LoopedScenario(Scenario):
+    """The same scenario repeating every duration_s while the boards keep running (no reboot between laps)."""
+
+    def objects(self, t: float) -> list[Box]:
+        return super().objects(t % self.duration_s)
+
+    def invalid_status(self, t: float, rng: random.Random) -> int | None:
+        return super().invalid_status(t % self.duration_s, rng)
+
+    def cue_down(self, t: float) -> bool:
+        return super().cue_down(t % self.duration_s)
+
+    def cam_down(self, t: float) -> bool:
+        return super().cam_down(t % self.duration_s)
+
+
+def looped(s: Scenario) -> Scenario:
+    return LoopedScenario(**{f.name: getattr(s, f.name) for f in fields(s)})
 
 
 def _lerp_dist(t: float, t0: float, d0: float, d1: float, speed: float) -> float:

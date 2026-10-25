@@ -1,4 +1,4 @@
-package org.determine.android.ui
+package org.determine.app.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,30 +17,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import org.determine.android.DetermineApplication
-import org.determine.android.net.BoardAddressBook
-import org.determine.android.runtime.DetermineRuntime
+import org.determine.app.net.BoardAddressBook
+import org.determine.app.runtime.DetermineRuntime
 import org.determine.core.hearing.HearingMode
 import java.net.Inet4Address
 import java.net.NetworkInterface
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.core.content.ContextCompat
+import org.determine.app.platform.LocalPlatform
 import androidx.compose.material3.Slider
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
@@ -50,8 +43,8 @@ import org.determine.core.FrameSourceKind
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val settings = (context.applicationContext as DetermineApplication).settings
+    val platform = LocalPlatform.current
+    val settings = platform.settings
     val spearcons by settings.spearcons.collectAsStateWithLifecycle()
     val running by DetermineRuntime.running.collectAsStateWithLifecycle()
     val link by DetermineRuntime.link.collectAsStateWithLifecycle()
@@ -63,11 +56,10 @@ fun SettingsScreen(onBack: () -> Unit) {
     val frameSource by settings.frameSource.collectAsStateWithLifecycle()
     val hapticMax by settings.hapticMax.collectAsStateWithLifecycle()
     val headset by DetermineRuntime.headset.collectAsStateWithLifecycle()
+    val fallbacks by DetermineRuntime.fallbacks.collectAsStateWithLifecycle()
     var urlDraft by remember(describeUrl) { mutableStateOf(describeUrl) }
     var keyDraft by remember { mutableStateOf("") }
-    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) settings.setFrameSource(FrameSourceKind.PHONE_CAMERA)
-    }
+    val requestCamera = platform.rememberCameraRequest { settings.setFrameSource(FrameSourceKind.PHONE_CAMERA) }
 
     Screen(title = "Settings", onBack = onBack) {
         SectionHeading("Spoken words")
@@ -103,7 +95,9 @@ fun SettingsScreen(onBack: () -> Unit) {
 
         SectionHeading("Headset audio")
         Text(
-            "Every warning sound plays on your Bluetooth bone-conduction headset. If it is not connected, Determine " +
+            if (running && headset == null) "Desktop sounds use the system audio device (possibly speakers), not a verified " +
+                "Bluetooth headset. This test app cannot verify wearable audio or physical temple vibration."
+            else "Every warning sound plays on your Bluetooth bone-conduction headset. If it is not connected, Determine " +
                 "reports system off and stays silent on the phone speaker. With warning sounds off (haptic only) no " +
                 "headset is needed; calibration tones always need it.",
             style = MaterialTheme.typography.bodyMedium,
@@ -113,11 +107,13 @@ fun SettingsScreen(onBack: () -> Unit) {
             when {
                 !running -> "stopped"
                 profile?.mode == HearingMode.HAPTIC_ONLY -> "not required: warning sounds are off"
+                headset == null -> "not verified on this platform (desktop Java Sound)"
                 headset?.routeReady == true -> "ready: ${headset?.name ?: "connected"}"
                 headset?.present == true -> "found, audio route not ready"
                 else -> "NOT CONNECTED"
             },
         )
+        fallbacks?.phoneAudioError?.let { InfoLine("Local audio error", it) }
 
         SectionHeading("Temple vibration strength")
         var strength by remember(hapticMax) { mutableStateOf(hapticMax.toFloat()) }
@@ -135,7 +131,6 @@ fun SettingsScreen(onBack: () -> Unit) {
             onValueChangeFinished = {
                 val v = strength.roundToInt().coerceIn(MIN_HAPTIC_MAX, 255)
                 settings.setHapticMax(v)
-                DetermineRuntime.setHapticMax(v)
             },
             valueRange = MIN_HAPTIC_MAX.toFloat()..255f,
             modifier = Modifier.fillMaxWidth().semantics {
@@ -189,10 +184,9 @@ fun SettingsScreen(onBack: () -> Unit) {
             ),
             selected = frameSource,
             onSelect = { choice ->
-                if (choice == FrameSourceKind.PHONE_CAMERA && !hasCamera(context)) {
-                    cameraPermission.launch(Manifest.permission.CAMERA)
-                } else settings.setFrameSource(choice)
+                if (choice == FrameSourceKind.PHONE_CAMERA) requestCamera() else settings.setFrameSource(choice)
             },
+            unavailable = if (platform.phoneCameraSupported) emptySet() else setOf(FrameSourceKind.PHONE_CAMERA),
         )
         Text("Changing the camera restarts Determine. The forward distance sensor on the cue board is always required.",
             style = MaterialTheme.typography.bodyMedium)
@@ -227,26 +221,34 @@ private fun ToggleRow(label: String, checked: Boolean, enabled: Boolean, onChang
 }
 
 @Composable
-private fun <T> ChoiceGroup(title: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+private fun <T> ChoiceGroup(
+    title: String,
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    unavailable: Set<T> = emptySet(),
+) {
     Text(title, style = MaterialTheme.typography.titleMedium)
     Column(Modifier.selectableGroup()) {
         options.forEach { (value, label) ->
+            val enabled = value !in unavailable
             Row(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(min = 64.dp)
-                    .selectable(selected = value == selected, role = Role.RadioButton) { onSelect(value) },
+                    .selectable(selected = value == selected, enabled = enabled, role = Role.RadioButton) { onSelect(value) },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RadioButton(selected = value == selected, onClick = null)
-                Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 12.dp))
+                RadioButton(selected = value == selected, onClick = null, enabled = enabled)
+                Text(
+                    if (enabled) label else "$label (not on this device)",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(start = 12.dp),
+                )
             }
         }
     }
 }
-
-private fun hasCamera(context: Context) =
-    ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
 @Composable
 private fun InfoLine(label: String, value: String) {

@@ -1,4 +1,4 @@
-package org.determine.android.audio
+package org.determine.app.audio
 
 import org.determine.core.CueCommand
 import org.determine.core.wire.AckStatus
@@ -11,9 +11,8 @@ import kotlin.math.sin
 /**
  * The phone's cue sound bank (Arch §8): note table, waveforms, dBFS gain maths and the play/clamp decision for
  * every cue id in PROTOCOL.md. Since protocol v2 the cue board is haptic-only, so this is the single home of the
- * warning sounds, played through the Bluetooth bone-conduction headset by [PhoneCueSink]. (The table and
- * waveforms originate from the retired firmware audio bank; the timing rules are unchanged and checked by
- * CueBankTest.)
+ * warning sounds, played through a local PCM sink (Android: Bluetooth bone-conduction headset; desktop:
+ * Java Sound). The table and waveforms originate from the retired firmware audio bank.
  *
  * Pure: no Android dependencies.
  */

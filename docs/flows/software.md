@@ -232,10 +232,11 @@ flowchart TD
 
 [rendered](rendered/software-8.svg)
 
-## (h) Module / package map (phone `core`, `cli`, Android app)
+## (h) Module / package map (phone `core`, `cli`, shared app layer, Android and desktop apps)
 
 Matches the code in the working tree (`phone/core/src/main/kotlin/org/determine/core`, `phone/cli`,
-`android/app/src/main/kotlin/org/determine/android`). Public API: `phone/core/API.md`.
+`app-shared/src/main/kotlin/org/determine/app`, `android/app/…/org/determine/android`,
+`desktop/…/org/determine/desktop`). Public API: `phone/core/API.md`.
 
 ```mermaid
 flowchart LR
@@ -257,29 +258,50 @@ flowchart LR
     MAIN["Main.kt<br/>UDP :47000 · BoardDirectory · EventLog (stable stdout)"]
   end
   MAIN --> ENG
-  subgraph app["android/app — org.determine.android"]
-    SVC["service/DetermineService<br/>foreground service"]
+  subgraph shared["app-shared — org.determine.app (compiled into both apps)"]
+    UI["ui/ DetermineApp · Main · Judge · Calibration · Settings"]
+    SESS["runtime/DetermineSession<br/>starts/restarts EngineHost on setting changes"]
     HOST["runtime/EngineHost<br/>engine lock · 10 ms tick · HostOptions"]
+    HP["runtime/HostPlatform<br/>clock · loop · alerts · cue sink · camera · redactor"]
     RT["runtime/DetermineRuntime<br/>state flows for UI"]
     UDP["net/UdpLink · BoardAddressBook<br/>implements Outbox"]
-    FRM["Frame use<br/>Describe client + judge frame age<br/>no object detector"]
-    ALR["alerts/AndroidPhoneAlerts<br/>TTS · Vibrator · system-off · DescribeSpeech"]
-    CAMS["camera/PhoneCameraSource<br/>Tier 0 CameraX fallback"]
-    CUES["audio/PhoneCueSink · CueBank<br/>primary cue audio to the BT bone headset<br/>explicit route failure"]
-    DSC["describe/FaceRedactor · HttpDescribeTransport"]
-    PWR["power/BatteryCriticalGate"]
-    UI["ui/ Main · Judge · Calibration · Settings screens"]
-    SET["settings/UserSettings"]
+    CUES["audio/CueBank · PhoneSounds<br/>cue bank and system-off tone"]
+    DSC["describe/HttpDescribeTransport"]
+    AP["platform/AppPlatform · SettingsStore"]
   end
   DESC["core describe/DescribeController"]
-  SVC --> HOST
+  subgraph app["android/app — org.determine.android"]
+    SVC["service/DetermineService<br/>foreground service"]
+    AHP["runtime/AndroidHostPlatform<br/>HandlerThread loop"]
+    ALR["alerts/AndroidPhoneAlerts<br/>TTS · Vibrator"]
+    CAMS["camera/PhoneCameraSource<br/>Tier 0 CameraX"]
+    PCS["audio/PhoneCueSink<br/>Bluetooth-only AudioTrack · explicit route failure"]
+    RED["describe/FaceRedactor<br/>BlazeFace"]
+    PWR["power/BatteryCriticalGate"]
+    SET["settings/UserSettings · MainActivity"]
+  end
+  subgraph desk["desktop — org.determine.desktop"]
+    DMAIN["Main.kt<br/>window · --sim launcher"]
+    DHP["DesktopHostPlatform<br/>Java Sound · espeak-ng<br/>no verified headset · no camera or redactor"]
+    DSET["DesktopSettings<br/>java.util.prefs"]
+  end
+  SVC --> SESS
+  DMAIN --> SESS
+  SESS --> HOST
   HOST --> ENG
   HOST --> DESC
   DESC --> ENG
-  HOST --> UDP & FRM & ALR & PWR & CAMS & CUES & DSC
-  HOST --> RT
+  HOST --> HP & UDP & DSC & RT
   RT --> UI
-  UI --> SET
+  UI --> AP
+  AHP -. implements .-> HP
+  DHP -. implements .-> HP
+  AHP --> ALR & CAMS & PCS & RED
+  PCS --> CUES
+  DHP --> CUES
+  SVC --> PWR
+  SET -. implements .-> AP
+  DSET -. implements .-> AP
   DSC -. HTTPS .-> CLOUD["cloud/describe-api → cloud/inference"]
   SIM["tools/sim<br/>sim_boards · bench · e2e"] -. UDP .-> MAIN
 ```

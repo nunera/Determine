@@ -1,5 +1,6 @@
 package org.determine.android.describe
 
+import org.determine.app.runtime.PlatformRedactor
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -11,7 +12,6 @@ import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facedetector.FaceDetector
 import org.determine.core.AssembledFrame
-import org.determine.core.describe.Redactor
 import java.io.ByteArrayOutputStream
 
 /**
@@ -25,7 +25,7 @@ import java.io.ByteArrayOutputStream
  *
  * Called synchronously from DescribeController.request() under the engine lock, once per user long-press.
  */
-class FaceRedactor(context: Context) : Redactor {
+class FaceRedactor(context: Context) : PlatformRedactor {
     private val detector: FaceDetector? = try {
         FaceDetector.createFromOptions(
             context,
@@ -44,7 +44,7 @@ class FaceRedactor(context: Context) : Redactor {
         null
     }
 
-    val available: Boolean get() = detector != null
+    override val available: Boolean get() = detector != null
 
     @Volatile var lastFaceCount: Int = 0
         private set
@@ -94,7 +94,7 @@ class FaceRedactor(context: Context) : Redactor {
         region.recycle(); small.recycle(); blocky.recycle()
     }
 
-    fun close() {
+    override fun close() {
         detector?.close()
     }
 

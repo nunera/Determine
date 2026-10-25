@@ -1,6 +1,5 @@
-package org.determine.android.ui
+package org.determine.app.ui
 
-import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,22 +30,19 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import org.determine.android.R
 import org.determine.core.Alert
 import org.determine.core.Band
 import org.determine.core.SystemState
 
 /** Spoken/visible description of a state (also used for the notification). There is no "clear" state. */
-fun describe(context: Context, state: SystemState?): String = context.getString(
-    when (state) {
-        null -> R.string.state_stopped
-        SystemState.STARTING -> R.string.state_starting
-        SystemState.READY -> R.string.state_ready
-        SystemState.DEGRADED -> R.string.state_degraded
-        SystemState.UNAVAILABLE -> R.string.state_unavailable
-        SystemState.PAUSED -> R.string.state_paused
-    },
-)
+fun describe(state: SystemState?): String = when (state) {
+    null -> "Stopped: no warnings"
+    SystemState.STARTING -> "Starting: waiting for both boards"
+    SystemState.READY -> "Ready"
+    SystemState.DEGRADED -> "Limited: distance sensor not fully usable"
+    SystemState.UNAVAILABLE -> "System off: warnings unavailable"
+    SystemState.PAUSED -> "Paused: no warnings"
+}
 
 /** "Obstacle ahead, near, 0.4 metres". Distance only when backed by a valid forward ToF reading (Arch §7.2). */
 fun describe(alert: Alert): String {
@@ -62,7 +58,7 @@ fun describe(alert: Alert): String {
 
 /** PROTOCOL.md BEAT fault bits. Bit 2 is reserved since v2 (the board's I2S audio was removed). */
 val FAULT_NAMES = listOf(
-    "sensor init failed", "sensor read error", "reserved", "left haptic error", "right haptic error",
+    "sensor init failed", "sensor read error", "reserved", "haptic motor error", "second haptic field error (one motor)",
     "brownout seen", "no clock sync", "watchdog active", "low heap", "capture failed",
 )
 
