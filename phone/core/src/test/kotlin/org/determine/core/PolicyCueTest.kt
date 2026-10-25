@@ -5,10 +5,9 @@ import org.determine.core.hearing.BandProfile
 import org.determine.core.hearing.CalBand
 import org.determine.core.hearing.HearingMode
 import org.determine.core.hearing.HearingProfile
+import org.determine.core.range.ForwardRange
 import org.determine.core.policy.HazardPolicy
-import org.determine.core.policy.RegionObservation
 import org.determine.core.wire.CueId
-import org.determine.core.wire.GAIN_MUTE
 import org.determine.core.wire.Haptic
 import org.determine.core.wire.Side
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -18,143 +17,246 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
-private fun obs(c: Int? = null, l: Int? = null, r: Int? = null, unknownC: Boolean = false): Map<Region, RegionObservation> {
-    val p = HazardPolicy()
-    fun o(mm: Int?, unknown: Boolean = false) = if (unknown) RegionObservation(Band.NONE, null, false)
-    else if (mm == null) RegionObservation(Band.NONE, null, true)
-    else p.band(mm).let { RegionObservation(it, if (it == Band.NONE) null else mm, true) }
-    return mapOf(Region.CENTER to o(c, unknownC), Region.LEFT to o(l), Region.RIGHT to o(r))
+private val NOTHING = ForwardRange.NothingSeen
+private val UNKNOWN = ForwardRange.Unknown
+private fun at(mm: Int) = ForwardRange.Target(mm)
+private fun HazardPolicy.at(ms: Int, r: ForwardRange, scanning: Boolean = false): Alert? = step(r, scanning, ms * 1000L)
+
+/** Feeds [r] every [dtMs] from [fromMs] to [toMs] inclusive; returns the last alert. */
+private fun HazardPolicy.feed(r: ForwardRange, fromMs: Int, toMs: Int, dtMs: Int = 50, scanning: Boolean = false): Alert? {
+    var last: Alert? = null
+    var t = fromMs
+    while (t <= toMs) { last = at(t, r, scanning); t += dtMs }
+    return last
 }
 
 class HazardPolicyTest {
-    private val dt = 66_667L // 15 Hz
-
     @Test
-    fun `band boundaries`() {
+    fun `band boundaries are the conservative near-field edges`() {
         val p = HazardPolicy()
-        assertEquals(Band.NEAR, p.band(999)); assertEquals(Band.MID, p.band(1000))
-        assertEquals(Band.MID, p.band(1999)); assertEquals(Band.FAR, p.band(2000))
-        assertEquals(Band.FAR, p.band(2999)); assertEquals(Band.NONE, p.band(3000))
+        assertEquals(Band.NEAR, p.band(0)); assertEquals(Band.NEAR, p.band(499))
+        assertEquals(Band.MID, p.band(500)); assertEquals(Band.MID, p.band(899))
+        assertEquals(Band.FAR, p.band(900)); assertEquals(Band.FAR, p.band(1200))
+        assertEquals(Band.NONE, p.band(1201)) // nothing beyond 1.2 m: the sensor cannot honestly vouch for it
+        assertEquals(Band.NONE, p.band(4000))
     }
 
     @Test
-    fun `enter needs 3 consecutive samples, exit needs 5 none samples`() {
+    fun `default tuning never exceeds 1200 mm and uses the contract defaults`() {
+        val t = Tuning()
+        assertEquals(500, t.nearMm); assertEquals(900, t.midMm); assertEquals(1200, t.farMm)
+        assertEquals(150, t.bandEnterMs); assertEquals(600, t.bandExitMs); assertEquals(50, t.bandHysteresisMm)
+        assertEquals(1000, t.farPeriodMs); assertEquals(400, t.midPeriodMs); assertEquals(200, t.nearPeriodMs)
+        assertEquals(1500, t.announceHoldMs); assertEquals(10_000, t.announceRepeatMs)
+        assertEquals(-70, t.weakLinkRssiDbm); assertEquals(2000, t.weakLinkHoldMs); assertEquals(30_000, t.weakLinkRepeatMs)
+        assertFalse(t.approachEnabled); assertEquals(300, t.approachWindowMs)
+        assertEquals(1500, t.approachTtcMs); assertEquals(300, t.approachMinSpeedMmPerS)
+        assertFalse(t.exploreEnabled); assertEquals(120, t.explorePeriodMs)
+        assertEquals(1200, t.exploreMaxMm); assertEquals(30, t.exploreMinIntensity)
+    }
+
+    @Test
+    fun `a band is entered only after 150 ms of consistent readings`() {
         val p = HazardPolicy()
-        var t = 0L
-        assertNull(p.step(obs(c = 1500), emptyList(), false, t)); t += dt
-        assertNull(p.step(obs(c = 1500), emptyList(), false, t)); t += dt
-        val a = p.step(obs(c = 1500), emptyList(), false, t); t += dt
-        assertEquals(Alert(Region.CENTER, Band.MID, "obstacle", 1500), a)
+        assertNull(p.at(0, at(700)))
+        assertNull(p.at(100, at(700)))
+        assertNull(p.at(149, at(700)))
+        assertEquals(Alert(Band.MID, 700), p.at(150, at(700)))
         assertTrue(p.takeOnset()); assertFalse(p.takeOnset())
-        repeat(4) { assertNotNull(p.step(obs(), emptyList(), false, t)); t += dt }
-        assertNull(p.step(obs(), emptyList(), false, t))
     }
 
     @Test
-    fun `interrupted run restarts the count and a single none sample does not exit`() {
-        val p = HazardPolicy()
-        var t = 0L
-        p.step(obs(c = 1500), emptyList(), false, t); t += dt
-        p.step(obs(c = 1500), emptyList(), false, t); t += dt
-        p.step(obs(), emptyList(), false, t); t += dt
-        p.step(obs(c = 1500), emptyList(), false, t); t += dt
-        assertNull(p.step(obs(c = 1500), emptyList(), false, t)); t += dt
-        assertNotNull(p.step(obs(c = 1500), emptyList(), false, t)); t += dt
-        p.step(obs(), emptyList(), false, t); t += dt
-        assertNotNull(p.step(obs(c = 1500), emptyList(), false, t))
-    }
-
-    @Test
-    fun `unknown is never clear - unknown samples do not count toward exit`() {
-        val p = HazardPolicy()
-        var t = 0L
-        repeat(3) { p.step(obs(c = 800), emptyList(), false, t); t += dt }
-        repeat(20) { assertNotNull(p.step(obs(unknownC = true), emptyList(), false, t)); t += dt }
-        // and unknown never produces an alert from nothing
-        val q = HazardPolicy()
-        repeat(20) { assertNull(q.step(obs(unknownC = true), emptyList(), false, it * dt)) }
-    }
-
-    @Test
-    fun `priority order`() {
-        fun pick(o: Map<Region, RegionObservation>): Alert? {
-            val p = HazardPolicy(); var a: Alert? = null
-            repeat(3) { a = p.step(o, emptyList(), false, it * dt) }
-            return a
+    fun `leaving to nothing to report takes 600 ms for no-target and for valid-beyond-far`() {
+        for (gone in listOf(NOTHING, at(2500))) {
+            val p = HazardPolicy()
+            p.feed(at(700), 0, 200)
+            assertNotNull(p.at(1000, gone))
+            assertNotNull(p.at(1599, gone))
+            assertNull(p.at(1600, gone))
         }
-        assertEquals(Region.CENTER, pick(obs(c = 900, l = 500))!!.region)          // NEAR corridor > NEAR flank
-        assertEquals(Region.LEFT, pick(obs(c = 1500, l = 900))!!.region)           // NEAR flank > MID corridor
-        assertEquals(Region.CENTER, pick(obs(c = 1500, r = 1200))!!.region)        // MID corridor > MID flank
-        assertEquals(Region.RIGHT, pick(obs(c = 2500, r = 1900))!!.region)         // MID flank > FAR corridor
-        assertEquals(Region.RIGHT, pick(obs(l = 1800, r = 1100))!!.region)        // nearer flank wins a tie in band
-        assertNull(pick(obs(l = 2500, r = 2500)))                                  // FAR flank never alerts
     }
 
     @Test
-    fun `region change exits and onset is rate limited to 700 ms`() {
+    fun `an interrupting sample restarts the exit and the enter run`() {
         val p = HazardPolicy()
-        var t = 0L
-        repeat(3) { p.step(obs(c = 1500), emptyList(), false, t); t += dt }
+        p.feed(at(700), 0, 200)                  // MID active
+        p.feed(NOTHING, 1000, 1500)              // exit run started at 1000
+        assertNotNull(p.at(1550, at(700)))       // back in band: run reset
+        p.feed(NOTHING, 1600, 2100)              // new run from 1600
+        assertNotNull(p.at(2150, NOTHING))       // only 550 ms
+        assertNull(p.at(2200, NOTHING))
+        // enter side: a gap of NO_TARGET restarts the enter run
+        val q = HazardPolicy()
+        q.at(0, at(700)); q.at(100, at(700)); q.at(140, NOTHING)
+        assertNull(q.at(200, at(700)))
+        assertNull(q.at(340, at(700)))
+        assertNotNull(q.at(350, at(700)))
+    }
+
+    @Test
+    fun `hysteresis keeps the band until the distance exceeds its upper bound by 50 mm`() {
+        // NEAR (< 500): readings up to 550 never leave, however long
+        val p = HazardPolicy()
+        p.feed(at(300), 0, 200)
+        assertEquals(Band.NEAR, p.feed(at(550), 300, 5000)!!.band)
+        // 551 mm held for 600 ms leaves NEAR → MID
+        assertEquals(Band.NEAR, p.feed(at(551), 5000, 5550)!!.band)
+        assertEquals(Band.MID, p.at(5600, at(551))!!.band)
+        // MID (< 900): 950 holds, 951 leaves → FAR
+        assertEquals(Band.MID, p.feed(at(950), 6000, 9000)!!.band)
+        assertEquals(Band.MID, p.feed(at(951), 9050, 9600)!!.band)
+        assertEquals(Band.FAR, p.at(9650, at(951))!!.band)
+        // FAR (≤ 1200): 1250 holds, 1251 leaves → nothing
+        assertEquals(Band.FAR, p.feed(at(1250), 10_000, 13_000)!!.band)
+        assertEquals(Band.FAR, p.feed(at(1251), 13_050, 13_600)!!.band)
+        assertNull(p.at(13_650, at(1251)))
+    }
+
+    @Test
+    fun `hysteresis is exit only - entering uses the raw band`() {
+        val p = HazardPolicy()
+        assertEquals(Band.FAR, p.feed(at(1200), 0, 200)!!.band)   // 1200 is FAR, no margin on the way in
+        assertNull(HazardPolicy().feed(at(1201), 0, 1000))
+    }
+
+    @Test
+    fun `a more urgent band is entered after 150 ms and the run keeps the least urgent reading`() {
+        val p = HazardPolicy()
+        p.feed(at(1000), 0, 200)                  // FAR
+        assertEquals(Band.FAR, p.at(300, at(700))!!.band)
+        assertEquals(Band.FAR, p.at(400, at(300))!!.band)   // alternating MID/NEAR: only MID is consistent so far
+        assertEquals(Band.MID, p.at(450, at(700))!!.band)    // 150 ms after the first more-urgent sample (300)
+        assertEquals(Band.NEAR, p.feed(at(300), 500, 700)!!.band)
+    }
+
+    @Test
+    fun `unknown drops the active alert at once and presents nothing until valid readings re-enter`() {
+        val p = HazardPolicy()
+        p.feed(at(700), 0, 200) // MID alert active
         assertTrue(p.takeOnset())
-        val onsetT = t - dt
-        // obstacle moves to the left flank (NEAR): region change exits immediately
-        assertNull(p.step(obs(l = 900), emptyList(), false, t)); t += dt
-        p.step(obs(l = 900), emptyList(), false, t); t += dt
-        // third consecutive sample is at onset+200 ms: blocked by rate limit
-        assertNull(p.step(obs(l = 900), emptyList(), false, t)); t += dt
-        while (t - onsetT < 700_000) { assertNull(p.step(obs(l = 900), emptyList(), false, t)); t += dt }
-        assertEquals(Region.LEFT, p.step(obs(l = 900), emptyList(), false, t)!!.region)
+        // The measurement no longer exists: no stale MID, no distance, no onset, no all-clear.
+        assertNull(p.at(250, UNKNOWN))
+        assertNull(p.feed(UNKNOWN, 300, 2000))
+        assertFalse(p.takeOnset())
+        // VALID readings resume through the normal enter rules: 150 ms, then a fresh onset.
+        assertNull(p.at(2050, at(700))); assertNull(p.at(2150, at(700)))
+        assertEquals(Alert(Band.MID, 700), p.at(2200, at(700)))
+        assertTrue(p.takeOnset())
     }
 
     @Test
-    fun `band updates within an active alert without a new onset`() {
+    fun `unknown never produces an alert from nothing and an unknown sample restarts the enter run`() {
+        assertNull(HazardPolicy().feed(UNKNOWN, 0, 2000))
         val p = HazardPolicy()
-        repeat(3) { p.step(obs(c = 2500), emptyList(), false, it * dt) }
+        p.at(0, at(700)); p.at(100, at(700))
+        assertNull(p.at(120, UNKNOWN))
+        assertNull(p.at(200, at(700)))
+        assertNull(p.at(349, at(700)))
+        assertNotNull(p.at(350, at(700)))
+    }
+
+    @Test
+    fun `onset is rate limited to 700 ms`() {
+        val p = HazardPolicy(Tuning(bandExitMs = 0))
+        p.feed(at(700), 0, 100)
+        assertEquals(Band.MID, p.at(150, at(700))!!.band)
+        assertTrue(p.takeOnset())
+        assertNull(p.at(200, NOTHING))                      // exit (no hold configured)
+        assertNull(p.feed(at(700), 250, 800))               // active again but within 700 ms of the last onset: hidden
+        assertFalse(p.takeOnset())
+        assertNotNull(p.at(850, at(700)))                   // 700 ms after the onset at 150
+        assertTrue(p.takeOnset())
+    }
+
+    @Test
+    fun `band changes within an active alert have no new onset`() {
+        val p = HazardPolicy()
+        p.feed(at(1100), 0, 200)
         p.takeOnset()
-        assertEquals(Band.NEAR, p.step(obs(c = 700), emptyList(), false, 4 * dt)!!.band)
+        assertEquals(Band.NEAR, p.feed(at(300), 250, 500)!!.band)
         assertFalse(p.takeOnset())
     }
 
     @Test
     fun `scanning holds FAR only`() {
         val p = HazardPolicy()
-        repeat(5) { assertNull(p.step(obs(c = 2500), emptyList(), true, it * dt)) }
+        assertNull(p.feed(at(1100), 0, 500, scanning = true))
+        assertFalse(p.takeOnset())
         val q = HazardPolicy()
-        var a: Alert? = null
-        repeat(3) { a = q.step(obs(c = 700), emptyList(), true, it * dt) }
-        assertEquals(Band.NEAR, a!!.band)
-        // FAR resumes once scanning stops; counts were kept
-        assertNotNull(p.step(obs(c = 2500), emptyList(), false, 6 * dt))
+        assertEquals(Band.NEAR, q.feed(at(300), 0, 200, scanning = true)!!.band)
+        // FAR resumes once scanning stops, with its onset
+        assertNotNull(p.at(550, at(1100)))
+        assertTrue(p.takeOnset())
     }
 
     @Test
-    fun `label from matching confident detection by bearing`() {
-        val p = HazardPolicy()
-        val person = Detection("Person", 0.8f, 0.4f, 0.1f, 0.6f, 0.9f)       // centre
-        val weakDoor = Detection("door", 0.3f, 0.4f, 0.1f, 0.6f, 0.9f)       // centre, below threshold
-        val leftChair = Detection("chair", 0.9f, 0.0f, 0.1f, 0.2f, 0.9f)     // left
-        var a: Alert? = null
-        repeat(3) { a = p.step(obs(c = 1500), listOf(weakDoor, leftChair), false, it * dt) }
-        assertEquals("obstacle", a!!.label)
-        assertEquals("person", p.step(obs(c = 1500), listOf(person, leftChair), false, 4 * dt)!!.label)
-        assertEquals(Region.LEFT, p.regionOf(leftChair))
-        assertEquals(Region.RIGHT, p.regionOf(Detection("x", 1f, 0.7f, 0f, 0.9f, 1f)))
+    fun `the alert carries only band and forward distance - no side or label`() {
+        // Alert has exactly (band, distanceMm): nothing to lateralize and no object label to infer.
+        val a = Alert(Band.NEAR, 320)
+        assertEquals(setOf("band", "distanceMm"), Alert::class.java.declaredFields.map { it.name }.toSet())
+        assertEquals(320, a.distanceMm)
     }
 
     @Test
-    fun `relative cues without tof never carry distance`() {
+    fun `a sample time going backwards drops the old session`() {
         val p = HazardPolicy()
-        val small = Detection("person", 0.9f, 0.45f, 0.4f, 0.55f, 0.6f)      // area 0.02
-        val big = Detection("person", 0.9f, 0.4f, 0.3f, 0.6f, 0.7f)          // area 0.08
-        val o0 = p.relativeObservations(listOf(small), 0)
-        assertEquals(Band.NONE, o0.getValue(Region.CENTER).band)
-        val o1 = p.relativeObservations(listOf(big), 500_000)
-        assertEquals(RegionObservation(Band.FAR, null, true), o1.getValue(Region.CENTER))
-        assertEquals(Band.NONE, o1.getValue(Region.LEFT).band)
-        // no growth (static object) → nothing
-        val q = HazardPolicy()
-        q.relativeObservations(listOf(big), 0)
-        assertEquals(Band.NONE, q.relativeObservations(listOf(big), 500_000).getValue(Region.CENTER).band)
+        p.feed(at(700), 10_000, 10_300)
+        assertNull(p.at(100, at(700)))
+    }
+
+    @Test
+    fun `closing speed is the least squares slope and needs 3 samples in the window`() {
+        val p = HazardPolicy()
+        p.at(0, at(1000)); p.at(50, at(960))
+        assertNull(p.closingSpeedMmPerS)
+        p.at(100, at(920))
+        assertEquals(800.0, p.closingSpeedMmPerS!!, 1e-6)       // 40 mm / 50 ms, approaching
+        p.at(150, at(960)); p.at(200, at(1000)); p.at(250, at(1040)); p.at(300, at(1080))
+        assertTrue(p.closingSpeedMmPerS!! < 0, "receding is negative: ${p.closingSpeedMmPerS}") // 0..300 inclusive window
+        // beyond the window the old samples are gone
+        p.at(1000, at(500)); p.at(1050, at(500)); p.at(1100, at(500))
+        assertEquals(0.0, p.closingSpeedMmPerS!!, 1e-6)
+        // an unknown sample or no target erases the history
+        p.at(1150, NOTHING)
+        assertNull(p.closingSpeedMmPerS)
+    }
+
+    @Test
+    fun `approach off never escalates, approach on escalates by one when fast and about to collide`() {
+        val closing = listOf(880, 840, 800, 760, 720, 680, 640, 600)
+        val off = HazardPolicy()
+        closing.forEachIndexed { i, mm -> off.at(i * 50, at(mm)) }
+        assertFalse(off.approachActive)
+        assertEquals(Band.MID, off.at(400, at(560))!!.band)
+
+        val on = HazardPolicy(Tuning(approachEnabled = true))
+        assertNull(on.at(0, at(880))); assertNull(on.at(50, at(840)))
+        // 3 samples at 800 mm/s, 800 mm away: TTC 1.0 s < 1.5 s. NONE within farMm escalates to FAR at once.
+        assertEquals(Alert(Band.FAR, 800), on.at(100, at(800)))
+        assertTrue(on.approachActive); assertTrue(on.takeOnset())
+        // MID has been entered by now (150 ms): escalated to NEAR
+        assertEquals(Band.NEAR, on.at(150, at(760))!!.band)
+        // NEAR stays NEAR; no second onset
+        assertEquals(Band.NEAR, on.at(200, at(300))!!.band)
+        assertFalse(on.takeOnset())
+    }
+
+    @Test
+    fun `approach needs the minimum speed and a short time to contact`() {
+        val slow = HazardPolicy(Tuning(approachEnabled = true))
+        slow.feed(at(800), 0, 100)
+        assertFalse(slow.approachActive)                 // 0 mm/s
+        val far = HazardPolicy(Tuning(approachEnabled = true))
+        far.at(0, at(1200)); far.at(50, at(1180)); far.at(100, at(1160)) // 400 mm/s, TTC 2.9 s
+        assertEquals(400.0, far.closingSpeedMmPerS!!, 1e-6)
+        assertFalse(far.approachActive)
+        val fast = HazardPolicy(Tuning(approachEnabled = true, approachTtcMs = 3000))
+        fast.at(0, at(1200)); fast.at(50, at(1180)); fast.at(100, at(1160))
+        assertTrue(fast.approachActive)
+        // closing speed is always computed, even with the feature disabled
+        val off = HazardPolicy()
+        off.at(0, at(1200)); off.at(50, at(1180)); off.at(100, at(1160))
+        assertEquals(400.0, off.closingSpeedMmPerS!!, 1e-6); assertFalse(off.approachActive)
     }
 }
 
@@ -168,16 +270,16 @@ class CueSchedulerTest {
     @Test
     fun `cadence per band and onset interrupts`() {
         val s = CueScheduler()
-        val far = Alert(Region.CENTER, Band.FAR, "obstacle", 2500)
+        val far = Alert(Band.FAR, 1100)
         val first = s.update(far, true, profile, 0)!!
         assertEquals(1, first.flags)
         assertNull(s.update(far, false, profile, 999_999))
         assertEquals(0, s.update(far, false, profile, 1_000_000)!!.flags)
-        val mid = far.copy(band = Band.MID, distanceMm = 1500)
+        val mid = Alert(Band.MID, 700)
         assertEquals(1, s.update(mid, false, profile, 1_010_000)!!.flags) // band change plays now
         assertNull(s.update(mid, false, profile, 1_409_999))
         assertNotNull(s.update(mid, false, profile, 1_410_000))
-        val near = far.copy(band = Band.NEAR, distanceMm = 800)
+        val near = Alert(Band.NEAR, 300)
         var n = 0
         for (t in 2_000_000L until 3_000_000L step 10_000) if (s.update(near, false, profile, t) != null) n++
         assertEquals(5, n) // 5/s
@@ -185,50 +287,70 @@ class CueSchedulerTest {
     }
 
     @Test
-    fun `stereo side mapping, cue family and haptic patterns`() {
+    fun `cue family, both sides always, and haptic patterns`() {
         val s = CueScheduler()
-        val l = s.build(Alert(Region.LEFT, Band.FAR, "obstacle", 2500), profile, false)
-        assertEquals(CueId.OBSTACLE_FAR, l.cueId); assertEquals(Side.L, l.side)
-        assertEquals(-25, l.gainLDb); assertEquals(GAIN_MUTE, l.gainRDb)
-        assertEquals(Haptic.PULSE40, l.hapticPattern); assertEquals(120, l.hapticL); assertEquals(0, l.hapticR)
-        assertEquals(150, l.ttlMs)
-        val r = s.build(Alert(Region.RIGHT, Band.MID, "person", 1500), profile, false)
-        assertEquals(CueId.PERSON_MID, r.cueId); assertEquals(Side.R, r.side)
-        assertEquals(GAIN_MUTE, r.gainLDb); assertEquals(-15, r.gainRDb)
-        assertEquals(Haptic.PULSE60, r.hapticPattern); assertEquals(0, r.hapticL); assertEquals(80, r.hapticR)
-        val c = s.build(Alert(Region.CENTER, Band.NEAR, "person", 800), profile, false)
-        assertEquals(CueId.PERSON_NEAR, c.cueId); assertEquals(Side.BOTH, c.side)
-        assertEquals(Haptic.BUZZ150, c.hapticPattern)
-        assertEquals(180, c.hapticL) // capped at haptic_max
-        assertEquals(100, c.hapticR)
+        val far = s.build(Alert(Band.FAR, 1100), profile, false)
+        assertEquals(CueId.OBSTACLE_FAR, far.cueId); assertEquals(Side.BOTH, far.side)
+        assertEquals(-25, far.gainLDb); assertEquals(-15, far.gainRDb)
+        assertEquals(Haptic.PULSE40, far.hapticPattern); assertEquals(120, far.hapticL); assertEquals(60, far.hapticR)
+        assertEquals(150, far.ttlMs)
+        val mid = s.build(Alert(Band.MID, 700), profile, false)
+        assertEquals(CueId.OBSTACLE_MID, mid.cueId); assertEquals(Side.BOTH, mid.side)
+        assertEquals(Haptic.PULSE60, mid.hapticPattern); assertEquals(160, mid.hapticL); assertEquals(80, mid.hapticR)
+        val near = s.build(Alert(Band.NEAR, 300), profile, false)
+        assertEquals(CueId.OBSTACLE_NEAR, near.cueId); assertEquals(Side.BOTH, near.side)
+        assertEquals(Haptic.BUZZ150, near.hapticPattern)
+        assertEquals(180, near.hapticL) // capped at haptic_max
+        assertEquals(100, near.hapticR)
+    }
+
+    @Test
+    fun `no person cue is ever selected from the forward zone`() {
+        val s = CueScheduler()
+        for (b in listOf(Band.FAR, Band.MID, Band.NEAR)) {
+            val id = s.build(Alert(b, 800), profile, false).cueId
+            assertTrue(id in CueId.OBSTACLE_FAR..CueId.OBSTACLE_NEAR, "band $b → cue $id")
+        }
     }
 
     @Test
     fun `near adds 6 dB but never exceeds ceiling`() {
         val s = CueScheduler()
-        val c = s.build(Alert(Region.CENTER, Band.NEAR, "obstacle", 800), profile, false)
+        val c = s.build(Alert(Band.NEAR, 300), profile, false)
         assertEquals(-19, c.gainLDb)       // -40+15+6
         assertEquals(-14, c.gainRDb)       // -30+15+6 = -9 → ceiling -14
         val loud = profile.copy(ceilingDb = 0)
-        val c2 = s.build(Alert(Region.CENTER, Band.NEAR, "obstacle", 800), loud, false)
-        assertEquals(-10, c2.gainRDb)      // firmware hard ceiling −10 applies on the phone too
+        val c2 = s.build(Alert(Band.NEAR, 300), loud, false)
+        assertEquals(-10, c2.gainRDb)      // hard ceiling −10 applies on the phone too
     }
 
     @Test
-    fun `ssd plays identical audio both sides, direction on haptics, haptic only mutes`() {
+    fun `per-side ceiling, ssd with an unusable side, and haptic only mutes the phone audio`() {
         val s = CueScheduler()
         val ssd = profile.copy(mode = HearingMode.SSD, bands = CalBand.HZ.map { BandProfile(it, -40, null, 15, 0, 0) })
-        val c = s.build(Alert(Region.LEFT, Band.MID, "obstacle", 1500), ssd, false)
-        assertEquals(Side.BOTH, c.side); assertEquals(-25, c.gainLDb); assertEquals(GAIN_MUTE, c.gainRDb)
-        assertTrue(c.hapticL > 0); assertEquals(0, c.hapticR)
-        val h = s.build(Alert(Region.RIGHT, Band.NEAR, "obstacle", 800), profile.copy(mode = HearingMode.HAPTIC_ONLY), false)
+        val c = s.build(Alert(Band.MID, 700), ssd, false)
+        assertEquals(Side.BOTH, c.side); assertEquals(-25, c.gainLDb); assertEquals(GAIN_MUTE, c.gainRDb) // unusable side stays muted
+        assertTrue(c.hapticL > 0 && c.hapticR > 0) // board haptics unaffected, both temples
+        val h = s.build(Alert(Band.NEAR, 300), profile.copy(mode = HearingMode.HAPTIC_ONLY), false)
         assertEquals(GAIN_MUTE, h.gainLDb); assertEquals(GAIN_MUTE, h.gainRDb)
-        assertEquals(0, h.hapticL); assertTrue(h.hapticR > 0)
+        assertTrue(h.hapticL > 0 && h.hapticR > 0) // haptics still go to the board
     }
 
     @Test
-    fun `spearcon never states distance without tof`() {
-        assertEquals("person left, 1.5 metres", CueScheduler.spearcon(Alert(Region.LEFT, Band.MID, "person", 1500)))
-        assertEquals("obstacle ahead", CueScheduler.spearcon(Alert(Region.CENTER, Band.FAR, "obstacle", null)))
+    fun `spearcon never states distance without tof and never names an object`() {
+        assertEquals("obstacle ahead, 0.7 metres", CueScheduler.spearcon(Alert(Band.MID, 700)))
+        assertEquals("obstacle ahead", CueScheduler.spearcon(Alert(Band.FAR, null)))
+    }
+
+    @Test
+    fun `repetition periods come from the tuning and follow a runtime change`() {
+        val s = CueScheduler(Tuning(farPeriodMs = 500, midPeriodMs = 250, nearPeriodMs = 100))
+        assertEquals(500_000L, s.period(Band.FAR)); assertEquals(250_000L, s.period(Band.MID)); assertEquals(100_000L, s.period(Band.NEAR))
+        val near = Alert(Band.NEAR, 300)
+        var n = 0
+        for (t in 0L until 1_000_000L step 10_000) if (s.update(near, false, profile, t) != null) n++
+        assertEquals(10, n)
+        s.tuning = Tuning()
+        assertEquals(200_000L, s.period(Band.NEAR))
     }
 }

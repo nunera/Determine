@@ -46,6 +46,7 @@ fun MainScreen(
     val stateInfo by DetermineRuntime.state.collectAsStateWithLifecycle()
     val alert by DetermineRuntime.alert.collectAsStateWithLifecycle()
     val profile by DetermineRuntime.profile.collectAsStateWithLifecycle()
+    val headset by DetermineRuntime.headset.collectAsStateWithLifecycle()
 
     val state = stateInfo?.state
     val stateText = describe(context, state)
@@ -73,6 +74,23 @@ fun MainScreen(
                 Text(it.replace('_', ' '), style = MaterialTheme.typography.bodyMedium,
                     color = if (failing) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onBackground)
             }
+        }
+
+        // No Bluetooth bone-conduction headset: say so in words next to the status. Warning sounds never fall back
+        // to the phone speaker, and the engine is in system off while the route is missing. Not shown when the
+        // profile intentionally has warning sounds off (haptic only): then no headset is needed.
+        headset?.takeIf { running && !it.routeReady && profile?.mode != HearingMode.HAPTIC_ONLY }?.let { h ->
+            Text(
+                if (h.present) "Headset found but its audio route is not ready. Warning sounds are off."
+                else "No Bluetooth headset connected. Warning sounds are off. Pair and connect your bone-conduction headset.",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(2.dp, MaterialTheme.colorScheme.error)
+                    .padding(16.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+            )
         }
 
         // The current warning, if any. Not a live region: the earcon and spearcon already announce it, and a
@@ -176,7 +194,7 @@ private fun outcomeText(o: DescribeOutcome): String = when (o) {
 }
 
 fun modeName(mode: HearingMode): String = when (mode) {
-    HearingMode.STEREO -> "stereo"
-    HearingMode.SSD -> "one-ear mode (mono audio, direction by haptics)"
-    HearingMode.HAPTIC_ONLY -> "haptic only"
+    HearingMode.STEREO -> "stereo (each side at its calibrated level)"
+    HearingMode.SSD -> "one-ear mode (only the usable side plays)"
+    HearingMode.HAPTIC_ONLY -> "warning sounds off, temple haptics only"
 }

@@ -3,7 +3,6 @@ package org.determine.android.runtime
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import org.determine.android.detect.DetectorRunner
 import org.determine.core.Alert
 import org.determine.core.Diagnostics
 import org.determine.core.RangeSnapshot
@@ -12,7 +11,6 @@ import org.determine.core.hearing.CalStep
 import org.determine.core.hearing.Ear
 import org.determine.core.hearing.HearingMode
 import org.determine.core.hearing.HearingProfile
-import org.determine.core.CueOutput
 import org.determine.core.FrameSourceKind
 import org.determine.core.describe.DescribeOutcome
 import org.determine.core.describe.DescribeResult
@@ -33,6 +31,7 @@ data class CalibrationView(
     val verifyCorrect: Int,
     val ceilingDb: Int,
     val result: HearingProfile?,
+    val failureReason: String?,
 )
 
 /** Transport facts for the settings and judge screens. */
@@ -45,13 +44,22 @@ data class LinkInfo(
     val sendErrors: Long,
 )
 
-/** Which inputs/outputs this session uses; fallbacks are software demos, not the proposed glasses (Arch §11.4). */
+/** Which inputs this session uses; the phone-camera fallback is a software demo, not the proposed glasses (Arch §11.4). */
 data class FallbackInfo(
     val frameSource: FrameSourceKind,
-    val cueOutput: CueOutput,
     val phoneCameraError: String?,
-    val phoneAudioError: String?,
     val redactorAvailable: Boolean,
+)
+
+/**
+ * The phone → Bluetooth bone-conduction headset audio route. [routeReady] is false whenever no headset output
+ * exists or the track is not bound to it; the engine is then UNAVAILABLE (`headset_route_lost`). Never a speaker.
+ */
+data class HeadsetInfo(
+    val present: Boolean,
+    val name: String?,
+    val routeReady: Boolean,
+    val error: String?,
 )
 
 /** The last Describe answer or failure, for the judge screen (never the answer text: that is spoken only). */
@@ -99,8 +107,8 @@ object DetermineRuntime {
     internal val _range = MutableStateFlow<RangeSnapshot?>(null)
     val range: StateFlow<RangeSnapshot?> = _range.asStateFlow()
 
-    internal val _detector = MutableStateFlow<DetectorRunner.Stats?>(null)
-    val detector: StateFlow<DetectorRunner.Stats?> = _detector.asStateFlow()
+    internal val _headset = MutableStateFlow<HeadsetInfo?>(null)
+    val headset: StateFlow<HeadsetInfo?> = _headset.asStateFlow()
 
     internal val _link = MutableStateFlow<LinkInfo?>(null)
     val link: StateFlow<LinkInfo?> = _link.asStateFlow()
@@ -125,6 +133,7 @@ object DetermineRuntime {
     fun setPaused(paused: Boolean) { host?.setPaused(paused) }
     fun setSpearcons(enabled: Boolean) { host?.setSpearcons(enabled) }
     fun setMode(mode: HearingMode) { host?.setMode(mode) }
+    fun setHapticMax(value: Int) { host?.setHapticMax(value) }
 
     fun startCalibration() { host?.startCalibration() }
     fun cancelCalibration() { host?.cancelCalibration() }
@@ -139,7 +148,7 @@ object DetermineRuntime {
         _alert.value = null
         _diagnostics.value = null
         _range.value = null
-        _detector.value = null
+        _headset.value = null
         _link.value = null
         _calibration.value = null
         _fallbacks.value = null

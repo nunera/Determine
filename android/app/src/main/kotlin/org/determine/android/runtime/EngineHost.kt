@@ -7,7 +7,11 @@ import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import org.determine.android.alerts.AndroidPhoneAlerts
-import org.determine.android.detect.DetectorRunner
+import org.determine.android.audio.PhoneCueSink
+import org.determine.android.camera.PhoneCameraSource
+import org.determine.android.describe.DescribeEndpoint
+import org.determine.android.describe.FaceRedactor
+import org.determine.android.describe.HttpDescribeTransport
 import org.determine.android.net.BoardAddressBook
 import org.determine.android.net.UdpLink
 import org.determine.core.Alert
@@ -16,38 +20,38 @@ import org.determine.core.Diagnostics
 import org.determine.core.Engine
 import org.determine.core.EngineConfig
 import org.determine.core.EngineListener
+import org.determine.core.FrameSourceKind
 import org.determine.core.SystemState
+import org.determine.core.describe.DescribeController
 import org.determine.core.hearing.CalBand
 import org.determine.core.hearing.CalStep
 import org.determine.core.hearing.CalibrationSession
 import org.determine.core.hearing.HearingMode
-import org.determine.android.audio.PhoneCueSink
-import org.determine.android.camera.PhoneCameraSource
-import org.determine.android.describe.DescribeEndpoint
-import org.determine.android.describe.FaceRedactor
-import org.determine.android.describe.HttpDescribeTransport
-import org.determine.core.CueOutput
-import org.determine.core.FrameSourceKind
-import org.determine.core.describe.DescribeController
+import org.determine.core.hearing.HearingProfile
+import org.determine.core.hearing.MIN_HAPTIC_MAX
 import java.net.SocketException
 
 /** Session options fixed for one engine run; changing any of them restarts the service's session. */
 data class HostOptions(
     val spearcons: Boolean,
     val frameSource: FrameSourceKind,
-    val cueOutput: CueOutput,
     val describeEnabled: Boolean,
+    /** Board haptic cap at start (1..255); changed live with [EngineHost.setHapticMax]. */
+    val hapticMax: Int,
     /** Read on the Describe HTTP thread for every request (URL + key may change while running). */
     val describeEndpoint: () -> DescribeEndpoint?,
 )
 
 /**
- * Owns the phone's hazard loop (Arch §4, §7): the [Engine], the UDP link, the detector and a 10 ms tick.
+ * Owns the phone's hazard loop (Arch §4, §7): the [Engine], the UDP link, the headset audio sink and a 10 ms tick.
  *
- * Threading: [Engine] is not thread-safe, so every engine call happens under [lock]. Three threads take it:
+ * Output: every warning sound plays on the phone through the Bluetooth bone-conduction headset
+ * ([PhoneCueSink], explicit failure when the route is missing) and the temple haptics go to the cue board in the
+ * same cue. The single forward ToF zone is the only distance source; the camera frames only feed Describe.
+ *
+ * Threading: [Engine] is not thread-safe, so every engine call happens under [lock]. Two threads take it:
  *  - the UDP receive thread (packets go straight in, no hand-off latency);
- *  - the engine thread (10 ms tick, UI commands, calibration);
- *  - the MediaPipe result thread (detections).
+ *  - the engine thread (10 ms tick, UI commands, calibration).
  * The UI thread never touches the engine directly: Outbox sends happen inside engine calls and Android
  * forbids network I/O on the main thread.
  */
@@ -85,32 +89,27 @@ class EngineHost(context: Context, private val options: HostOptions) {
         }
     }
 
-    /** Arch §4.1 CueSink fallback: phone audio to a headset when the transducers are missing. */
-    private val phoneCues: PhoneCueSink? =
-        if (options.cueOutput == CueOutput.PHONE_AUDIO) PhoneCueSink(context) { engine.profile } else null
+    /** The only audio output: the Bluetooth bone-conduction headset. Reads the live profile under the engine lock. */
+    private val headsetAudio = PhoneCueSink(context) { engine.profile }
 
     private val engine: Engine = Engine(
         // Judge screen refreshes ages at 4 Hz; the rest of the config is the core's Arch defaults.
         EngineConfig(
+            initialProfile = HearingProfile.uncalibrated().copy(hapticMax = options.hapticMax.coerceIn(MIN_HAPTIC_MAX, 255)),
             diagnosticsIntervalUs = 250_000,
             spearcons = options.spearcons,
             frameSource = options.frameSource,
-            cueOutput = options.cueOutput,
         ),
         udp,
         alerts,
         listener,
-        phoneCues,
+        headsetAudio,
     )
 
     /** Tier 0 FrameSource: the phone's own camera on a headband (Arch §11.4 software fallback). */
     private val phoneCamera: PhoneCameraSource? = if (options.frameSource == FrameSourceKind.PHONE_CAMERA) {
         PhoneCameraSource(context) { jpeg, w, h, capUs -> synchronized(lock) { engine.onPhoneFrame(jpeg, w, h, capUs) } }
     } else null
-
-    private val detector = DetectorRunner(context, ::nowUs) { frameId, capturePhoneUs, detections, now ->
-        synchronized(lock) { engine.onDetections(frameId, capturePhoneUs, detections, now) }
-    }
 
     private val redactor = FaceRedactor(context)
     private val describeTransport = HttpDescribeTransport(
@@ -131,13 +130,11 @@ class EngineHost(context: Context, private val options: HostOptions) {
         override fun run() {
             if (stopped) return
             val now = nowUs()
-            val frame = synchronized(lock) {
+            synchronized(lock) {
                 engine.tick(now)
+                failCalibrationIfRouteLost()
                 describeController?.tick(now)
-                engine.latestJpeg()
             }
-            // Outside the lock: offering is cheap, and decode/inference never holds the engine.
-            frame?.let { detector.offer(it, now) }
             if (now >= nextPublishUs) {
                 nextPublishUs = now + PUBLISH_INTERVAL_US
                 publishSlow()
@@ -186,9 +183,8 @@ class EngineHost(context: Context, private val options: HostOptions) {
         describeTransport.close()
         // Release on the engine thread after any in-flight tick, then let the thread end.
         handler.post {
-            detector.close()
             redactor.close()
-            phoneCues?.close()
+            headsetAudio.close()
             alerts.close()
         }
         thread.quitSafely()
@@ -199,15 +195,25 @@ class EngineHost(context: Context, private val options: HostOptions) {
 
     fun setPaused(paused: Boolean) = onEngineThread {
         pausedByUser = paused
-        // Calibration keeps the engine paused; the user's choice applies when calibration ends.
-        if (calibration == null) engine.setPaused(paused)
+        // A failed session stays visible until restart/cancel, but no longer owns the pause.
+        if (calibration == null || calibration?.step == CalStep.FAILED) engine.setPaused(paused)
     }
 
     fun setSpearcons(enabled: Boolean) = onEngineThread { engine.setSpearcons(enabled) }
 
-    /** Live mode switch (Arch §11.4 "one-ear mode"): same calibrated levels, new mode on both ends. */
+    /** Live mode switch (Arch §11.4 "one-ear mode"): same calibrated levels, new mode for the phone's audio. */
     fun setMode(mode: HearingMode) = onEngineThread {
         val p = engine.profile.copy(mode = mode)
+        engine.setProfile(p)
+        DetermineRuntime._profile.value = p
+    }
+
+    /**
+     * Board haptic cap (PROFILE.haptic_max). Never below [MIN_HAPTIC_MAX]: the temples are the only failure
+     * channel that survives phone loss (the board's watchdog), so the cap cannot be turned off.
+     */
+    fun setHapticMax(value: Int) = onEngineThread {
+        val p = engine.profile.copy(hapticMax = value.coerceIn(MIN_HAPTIC_MAX, 255))
         engine.setProfile(p)
         DetermineRuntime._profile.value = p
     }
@@ -220,6 +226,7 @@ class EngineHost(context: Context, private val options: HostOptions) {
             ceilingDb = engine.profile.ceilingDb,
             sink = { cmd -> engine.sendCalibrationCue(cmd, nowUs()) },
         )
+        failCalibrationIfRouteLost()
         publishCalibration()
     }
 
@@ -231,20 +238,29 @@ class EngineHost(context: Context, private val options: HostOptions) {
 
     fun calibrate(action: CalibrationAction) = onEngineThread {
         val s = calibration ?: return@onEngineThread
+        failCalibrationIfRouteLost()
+        if (s.step == CalStep.FAILED) return@onEngineThread
         try {
             when (action) {
                 is CalibrationAction.Fit -> s.setFit(action.deviceId, action.weakerEar)
                 is CalibrationAction.Heard -> s.answerHeard(action.heard)
                 is CalibrationAction.SensationLevel -> s.setSensationLevel(action.db)
                 is CalibrationAction.NudgeBalance -> s.nudgeBalance(action.deltaDb)
-                CalibrationAction.ConfirmBalance -> { s.confirmBalance(); calibrationConfirms++ }
+                CalibrationAction.ConfirmBalance -> {
+                    s.confirmBalance()
+                    if (s.step != CalStep.FAILED) calibrationConfirms++
+                }
                 is CalibrationAction.NameSide -> s.answerSide(action.ear)
                 CalibrationAction.Replay -> s.replay()
                 CalibrationAction.HapticOnly -> s.chooseHapticOnly()
                 CalibrationAction.Apply -> {
+                    // The route is checked again at commit, even if the session finished while it was connected.
+                    failCalibrationIfRouteLost()
                     val result = s.result() ?: return@onEngineThread
-                    engine.setProfile(result)
-                    DetermineRuntime._profile.value = result
+                    // Calibration fits the phone audio; the user's board haptic cap is a separate setting and stays.
+                    val applied = result.copy(hapticMax = engine.profile.hapticMax)
+                    engine.setProfile(applied)
+                    DetermineRuntime._profile.value = applied
                     calibration = null
                     engine.setPaused(pausedByUser)
                     DetermineRuntime._calibration.value = null
@@ -255,6 +271,16 @@ class EngineHost(context: Context, private val options: HostOptions) {
             // A stale tap for a step the session already left (double tap): ignore, the view is republished.
             Log.w(TAG, "calibration action $action ignored", e)
         }
+        if (s.step == CalStep.FAILED) engine.setPaused(pausedByUser)
+        publishCalibration()
+    }
+
+    /** A lost route aborts even an idle or finished-unapplied session, not just the next played tone. */
+    private fun failCalibrationIfRouteLost() {
+        val s = calibration ?: return
+        if (s.step == CalStep.FAILED || headsetAudio.stats().routeReady) return
+        s.fail("Headset disconnected or audio route unavailable. Reconnect your headset and restart calibration.")
+        engine.setPaused(pausedByUser)
         publishCalibration()
     }
 
@@ -271,15 +297,17 @@ class EngineHost(context: Context, private val options: HostOptions) {
             verifyTrials = s.verifyTrials,
             verifyCorrect = s.verifyCorrect,
             ceilingDb = s.ceilingDb,
-            result = if (s.step == CalStep.DONE) s.result() else null,
+            result = s.result(),
+            failureReason = s.failureReason,
         )
     }
 
-    /** Slower-changing views for the UI (range grid, detector, link), 10 Hz. */
+    /** Slower-changing views for the UI (forward range, headset route, link), 10 Hz. */
     private fun publishSlow() {
         val range = synchronized(lock) { engine.latestRange() }
         if (range != null) DetermineRuntime._range.value = range
-        DetermineRuntime._detector.value = detector.stats()
+        val audio = headsetAudio.stats()
+        DetermineRuntime._headset.value = HeadsetInfo(audio.headsetPresent, audio.headsetName, audio.routeReady, audio.error)
         DetermineRuntime._link.value = LinkInfo(
             bound = bindError == null,
             bindError = bindError,
@@ -290,9 +318,7 @@ class EngineHost(context: Context, private val options: HostOptions) {
         )
         DetermineRuntime._fallbacks.value = FallbackInfo(
             frameSource = options.frameSource,
-            cueOutput = options.cueOutput,
             phoneCameraError = phoneCamera?.stats()?.error,
-            phoneAudioError = phoneCues?.stats()?.error,
             redactorAvailable = redactor.available,
         )
     }

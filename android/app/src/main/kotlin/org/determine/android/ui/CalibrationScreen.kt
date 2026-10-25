@@ -14,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -52,8 +53,14 @@ import kotlin.math.roundToInt
 fun CalibrationScreen(onBack: () -> Unit) {
     val running by DetermineRuntime.running.collectAsStateWithLifecycle()
     val view by DetermineRuntime.calibration.collectAsStateWithLifecycle()
-    val diag by DetermineRuntime.diagnostics.collectAsStateWithLifecycle()
+    val headset by DetermineRuntime.headset.collectAsStateWithLifecycle()
+    var applying by remember { mutableStateOf(false) }
 
+    // A commit is asynchronous. Leave only after the host actually clears the session; a failed commit stays visible.
+    LaunchedEffect(view, applying) {
+        if (applying && view == null) onBack()
+        if (view?.step == CalStep.FAILED) applying = false
+    }
     // Leaving mid-calibration cancels it, which also lifts the calibration pause on obstacle cues.
     val leave = {
         if (view != null) DetermineRuntime.cancelCalibration()
@@ -63,12 +70,12 @@ fun CalibrationScreen(onBack: () -> Unit) {
 
     Screen(title = "Hearing calibration", onBack = leave) {
         if (!running) {
-            Text("Start Determine first. Calibration plays its tones on the glasses.", style = MaterialTheme.typography.bodyLarge)
+            Text("Start Determine first. Calibration plays its tones on your Bluetooth headset.", style = MaterialTheme.typography.bodyLarge)
             return@Screen
         }
         val v = view
         if (v == null) {
-            Intro(cueSynced = diag?.cue?.synced == true)
+            Intro(headsetReady = headset?.routeReady == true)
             return@Screen
         }
         StepHeading(v)
@@ -78,11 +85,14 @@ fun CalibrationScreen(onBack: () -> Unit) {
             CalStep.LEVEL -> LevelStep()
             CalStep.BALANCE -> BalanceStep(v)
             CalStep.VERIFY -> VerifyStep()
-            CalStep.DONE -> DoneStep(v, onBack)
+            CalStep.DONE -> DoneStep(v, { applying = true }, leave)
+            CalStep.FAILED -> FailedStep(v, headset?.routeReady == true, leave)
         }
-        Text("Ceiling: ${minOf(v.ceilingDb, HARD_CEILING_DB)} dBFS. No step plays louder than this.",
-            style = MaterialTheme.typography.bodySmall)
-        if (v.step != CalStep.DONE) {
+        if (v.step != CalStep.FAILED) {
+            Text("Ceiling: ${minOf(v.ceilingDb, HARD_CEILING_DB)} dBFS. No step plays louder than this.",
+                style = MaterialTheme.typography.bodySmall)
+        }
+        if (v.step != CalStep.DONE && v.step != CalStep.FAILED) {
             BigButton("Use haptics only instead", { DetermineRuntime.calibration(CalibrationAction.HapticOnly) }, primary = false)
             BigButton("Cancel calibration", leave, primary = false)
         }
@@ -90,23 +100,23 @@ fun CalibrationScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun Intro(cueSynced: Boolean) {
+private fun Intro(headsetReady: Boolean) {
     Text(
-        "This matches how loud each side feels to you with the glasses as they sit today. It is not a hearing " +
+        "This matches how loud each side feels to you with the headset as it sits today. It is not a hearing " +
             "test and does not restore hearing. If you have known hearing loss, see an audiologist.",
         style = MaterialTheme.typography.bodyLarge,
     )
     Text("It takes about 3 minutes. Obstacle warnings are paused until you finish or cancel.",
         style = MaterialTheme.typography.bodyLarge)
-    if (!cueSynced) {
+    if (!headsetReady) {
         Text(
-            "The cue board is not connected and synchronised yet, so tones cannot play. Wait for the status to " +
-                "show Ready.",
+            "No Bluetooth headset is connected, so tones cannot play. Pair and connect your bone-conduction " +
+                "headset. Calibration needs it; haptic-only warnings do not. Nothing plays on the phone speaker.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.error,
         )
     }
-    BigButton("Start calibration", { DetermineRuntime.startCalibration() }, enabled = cueSynced)
+    BigButton("Start calibration", { DetermineRuntime.startCalibration() }, enabled = headsetReady)
 }
 
 @Composable
@@ -122,6 +132,7 @@ private fun StepHeading(v: CalibrationView) {
         CalStep.BALANCE -> "Step 4 of 5: balance, check ${v.balanceConfirms + 1} of 2"
         CalStep.VERIFY -> "Step 5 of 5: which side? Trial ${v.verifyTrials + 1} of ${CalibrationSession.VERIFY_TRIALS}"
         CalStep.DONE -> "Calibration finished"
+        CalStep.FAILED -> "Calibration stopped"
     }
     Text(
         text,
@@ -133,7 +144,7 @@ private fun StepHeading(v: CalibrationView) {
 @Composable
 private fun FitStep() {
     var weaker by rememberSaveable { mutableStateOf<String?>(null) }
-    Text("Seat the headband as you will wear it. Tones play on the glasses' bone transducers.",
+    Text("Seat the headset as you will wear it. Tones play on your Bluetooth bone-conduction headset.",
         style = MaterialTheme.typography.bodyLarge)
     Text("Which side is weaker, if any?", style = MaterialTheme.typography.titleMedium)
     Column(Modifier.selectableGroup()) {
@@ -228,7 +239,7 @@ private fun VerifyStep() {
 }
 
 @Composable
-private fun DoneStep(v: CalibrationView, onBack: () -> Unit) {
+private fun DoneStep(v: CalibrationView, onApply: () -> Unit, onDiscard: () -> Unit) {
     val p = v.result ?: return
     Text("Mode: ${modeName(p.mode)}", style = MaterialTheme.typography.headlineMedium)
     if (p.verifiedTrials > 0) {
@@ -238,19 +249,29 @@ private fun DoneStep(v: CalibrationView, onBack: () -> Unit) {
     if (unusable.isNotEmpty()) {
         Text(
             "${unusable.joinToString(" and ") { if (it == Ear.LEFT) "Left" else "Right" }} side could not hear the " +
-                "tones at the ceiling, so no extra energy is sent there. Direction comes from the haptics.",
+                "tones at the ceiling, so no sound is sent there. The forward sensor cannot tell left from right.",
             style = MaterialTheme.typography.bodyLarge,
         )
     }
-    Text("Run calibration again each time you put the glasses on.", style = MaterialTheme.typography.bodyMedium)
+    Text("Run calibration again each time you put the headset on.", style = MaterialTheme.typography.bodyMedium)
     BigButton("Use this profile", {
+        onApply()
         DetermineRuntime.calibration(CalibrationAction.Apply)
-        onBack()
     })
-    BigButton("Discard", {
-        DetermineRuntime.cancelCalibration()
-        onBack()
-    }, primary = false)
+    BigButton("Discard", onDiscard, primary = false)
+}
+
+@Composable
+private fun FailedStep(v: CalibrationView, headsetReady: Boolean, onCancel: () -> Unit) {
+    Text(
+        v.failureReason ?: "Calibration sound could not play. Reconnect the headset and restart calibration.",
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.error,
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+    )
+    Text("No hearing profile was saved. Previous answers cannot be reused.", style = MaterialTheme.typography.bodyLarge)
+    BigButton("Restart calibration", { DetermineRuntime.startCalibration() }, enabled = headsetReady)
+    BigButton("Cancel calibration", onCancel, primary = false)
 }
 
 @Composable
@@ -269,8 +290,8 @@ private fun ChoiceRow(label: String, selected: Boolean, onSelect: () -> Unit) {
     }
 }
 
-/** This build has one calibrated output: the cue board's bone transducers (Arch §9 "records the device"). */
-private const val DEVICE_ID = "glasses-cue-board"
+/** This build has one calibrated output: the phone's Bluetooth bone-conduction headset (Arch §9 "records the device"). */
+private const val DEVICE_ID = "bt-bone-conduction-headset"
 private const val BALANCE_STEP_DB = 2
 /** CalibrationSession clamps balance to ±12 dB. */
 private const val BALANCE_RANGE_DB = 12

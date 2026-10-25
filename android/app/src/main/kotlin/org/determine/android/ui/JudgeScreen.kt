@@ -6,8 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -22,28 +22,34 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.determine.android.runtime.DetermineRuntime
+import org.determine.android.runtime.HeadsetInfo
+import org.determine.core.Band
+import org.determine.core.hearing.HearingMode
 import org.determine.core.BoardDiagnostics
-import org.determine.core.RangeSnapshot
-import org.determine.core.CueOutput
 import org.determine.core.FrameSourceKind
+import org.determine.core.RangeSnapshot
+import org.determine.core.Tuning
+import org.determine.core.wire.RangeStatus
 
 /**
- * Judge diagnostics (Arch §11.4): both streams' age, the 8×8 ToF grid with millimetres, the chosen alert,
- * measured latency p50/p95, board faults. Numbers only from the engine; nothing here is simulated.
+ * Judge diagnostics (Arch §11.4): stream ages, the headset route, the ONE forward distance with its status, the
+ * chosen alert, measured latency p50/p95 and board faults. Numbers only from the engine; nothing is simulated.
+ * Works without a paired headset: the route then reads "not connected" and the forward measurement stays visible.
  */
 @Composable
 fun JudgeScreen(onBack: () -> Unit) {
     val running by DetermineRuntime.running.collectAsStateWithLifecycle()
     val d by DetermineRuntime.diagnostics.collectAsStateWithLifecycle()
     val range by DetermineRuntime.range.collectAsStateWithLifecycle()
-    val det by DetermineRuntime.detector.collectAsStateWithLifecycle()
     val link by DetermineRuntime.link.collectAsStateWithLifecycle()
+    val headset by DetermineRuntime.headset.collectAsStateWithLifecycle()
     val alert by DetermineRuntime.alert.collectAsStateWithLifecycle()
+    val state by DetermineRuntime.state.collectAsStateWithLifecycle()
     val fallbacks by DetermineRuntime.fallbacks.collectAsStateWithLifecycle()
     val describeInfo by DetermineRuntime.describe.collectAsStateWithLifecycle()
+    val profile by DetermineRuntime.profile.collectAsStateWithLifecycle()
 
     Screen(title = "Judge diagnostics", onBack = onBack) {
         if (!running) {
@@ -53,19 +59,24 @@ fun JudgeScreen(onBack: () -> Unit) {
         val diag = d
         SectionHeading("Streams")
         fallbacks?.let { f ->
-            val fb = " — software fallback, not the proposed glasses"
-            Metric("Frame source", if (f.frameSource == FrameSourceKind.PHONE_CAMERA) "phone camera$fb" else "glasses camera board")
-            Metric("Cue output", if (f.cueOutput == CueOutput.PHONE_AUDIO) "phone audio$fb" else "glasses transducers")
+            Metric(
+                "Frame source",
+                if (f.frameSource == FrameSourceKind.PHONE_CAMERA) "phone camera — software fallback, not the proposed glasses"
+                else "glasses camera board",
+            )
             f.phoneCameraError?.let { Metric("Phone camera error", it) }
-            f.phoneAudioError?.let { Metric("Phone audio error", it) }
         }
-        Metric("State", diag?.state?.name ?: "-")
+        Metric("State", diag?.state?.name?.let { s -> state?.reason?.takeIf { it.isNotBlank() }?.let { "$s (${it.replace('_', ' ')})" } ?: s } ?: "-")
         Metric("Camera frame age", ms(diag?.frameAgeMs))
-        Metric("ToF grid age", ms(diag?.rangeAgeMs))
+        Metric("Forward distance age", ms(diag?.rangeAgeMs))
+        HeadsetBlock(headset, audioOff = profile?.mode == HearingMode.HAPTIC_ONLY)
         diag?.let {
             BoardBlock("Camera board", it.cam, link?.camIp)
-            BoardBlock("Cue board", it.cue, link?.cueIp)
+            BoardBlock("Cue board (forward ToF + temple haptics)", it.cue, link?.cueIp)
         }
+
+        SectionHeading("Forward distance")
+        ForwardRange(range)
 
         SectionHeading("Chosen alert")
         Text(alert?.let { describe(it) } ?: "No alert (not a clear path)", style = MaterialTheme.typography.titleMedium)
@@ -74,7 +85,6 @@ fun JudgeScreen(onBack: () -> Unit) {
         Metric("Capture to cue, last", msD(diag?.lastCueLatencyMs))
         Metric("Capture to cue p50 / p95", "${msD(diag?.captureToCueP50Ms)} / ${msD(diag?.captureToCueP95Ms)}")
         Metric("Cue to ACK p50 / p95", "${msD(diag?.ackP50Ms)} / ${msD(diag?.ackP95Ms)}")
-        Metric("Detector inference, last", msD(det?.lastInferenceMs))
 
         SectionHeading("Describe (Annapurna silicon, measured)")
         val di = describeInfo
@@ -90,24 +100,42 @@ fun JudgeScreen(onBack: () -> Unit) {
         }
         fallbacks?.takeIf { !it.redactorAvailable }?.let { Metric("Face blur", "unavailable: no uploads") }
 
-        SectionHeading("ToF grid (mm)")
-        RangeGrid(range)
-
         SectionHeading("Counters")
         diag?.let {
             Metric("Cues sent / ACKs", "${it.cuesSent} / ${it.acks}")
             Metric("NACKs / missed ACKs", "${it.nacks} / ${it.missedAcks}")
             Metric("Malformed / stale dropped", "${it.malformed} / ${it.staleDropped}")
         }
-        det?.let {
-            Metric("Detector", if (it.available) "MediaPipe EfficientDet-Lite0" else "unavailable: ${it.error ?: "unknown"} (ToF only)")
-            Metric("Frames detected / busy-skipped", "${it.submitted} / ${it.skippedBusy}")
-            Metric("Stale-skipped / abandoned / bad JPEG", "${it.skippedStale} / ${it.abandoned} / ${it.decodeFailures}")
-        }
         link?.let {
             Metric("UDP :47000", if (it.bound) "listening" else "FAILED: ${it.bindError}")
             Metric("Unattributed packets / send errors", "${it.unattributedPackets} / ${it.sendErrors}")
         }
+    }
+}
+
+/**
+ * The audio route: Bluetooth bone-conduction headset or nothing (never the phone speaker). With warning sounds off
+ * on purpose (haptic only) no headset is needed and its absence is not a failure.
+ */
+@Composable
+private fun HeadsetBlock(h: HeadsetInfo?, audioOff: Boolean) {
+    Column(Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline).padding(12.dp)) {
+        Text("Headset audio (Bluetooth bone conduction)", style = MaterialTheme.typography.titleMedium)
+        val route = when {
+            audioOff -> "not required: warning sounds are off (haptic only)" +
+                (if (h?.routeReady == true) ", headset ready: ${h.name ?: "headset"}" else "")
+            h == null -> "-"
+            h.routeReady -> "ready: ${h.name ?: "headset"}"
+            h.present -> "headset ${h.name ?: ""} found, audio route not ready".replace("  ", " ")
+            else -> "NOT CONNECTED: warnings unavailable"
+        }
+        Metric("Route", route)
+        h?.takeIf { !it.routeReady && !audioOff }?.error?.let { Metric("Reason", it) }
+        Text(
+            "Warning sounds play only on this headset. Without it the system reports system off, unless warning " +
+                "sounds are switched off (haptic only); it never falls back to the phone speaker.",
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
 
@@ -137,51 +165,87 @@ private fun Metric(label: String, value: String) {
 private fun ms(v: Long?) = v?.let { "$it ms" } ?: "-"
 private fun msD(v: Double?) = v?.let { "%.0f ms".format(it) } ?: "-"
 
-/** PROTOCOL.md RANGE status: 5 and 9 valid, 255 NO_TARGET, anything else UNKNOWN (never "far"). */
-private fun zoneText(mm: Int, status: Int): String = when (status) {
-    5, 9 -> mm.toString()
-    255 -> "none"
-    else -> "?"
+/** RANGE v2 canonical status: VALID reads as millimetres; NO_TARGET and UNKNOWN never read as a distance. */
+internal fun rangeText(mm: Int, status: Int): String = when (status) {
+    RangeStatus.VALID -> "$mm mm"
+    RangeStatus.NO_TARGET -> "no target"
+    RangeStatus.UNKNOWN -> "unknown"
+    else -> "invalid status $status"
 }
 
+/** Band for a VALID reading using the engine's default (proposed, tunable) thresholds; null otherwise. */
+internal fun bandOf(r: RangeSnapshot): Band? =
+    if (r.status != RangeStatus.VALID) null else with(Tuning()) {
+        when {
+            r.mm < nearMm -> Band.NEAR
+            r.mm < midMm -> Band.MID
+            r.mm <= farMm -> Band.FAR
+            else -> Band.NONE
+        }
+    }
+
 /**
- * 8×8 heatmap, row 0 = top of the wearer's view, col 0 = wearer's left (PROTOCOL.md). Bands follow Arch §7.2
- * (NEAR < 1000, MID < 2000, FAR < 3000 mm). Unknown zones are grey "?", never coloured as far.
- * TalkBack reads one row at a time.
+ * One forward measurement: the single ToF zone straight ahead. Left and right are shown as "not measured" — one
+ * sensor cannot say what is beside the wearer, so nothing is inferred and nothing is drawn as far.
  */
 @Composable
-private fun RangeGrid(r: RangeSnapshot?) {
+private fun ForwardRange(r: RangeSnapshot?) {
     if (r == null) {
-        Text("No ToF grid received yet", style = MaterialTheme.typography.bodyLarge)
+        Text("No forward distance received yet", style = MaterialTheme.typography.bodyLarge)
         return
     }
-    Column(Modifier.fillMaxWidth().border(2.dp, MaterialTheme.colorScheme.outline)) {
-        for (row in 0 until 8) {
-            val rowText = (0 until 8).joinToString(", ") { col -> zoneText(r.mm[row * 8 + col], r.status[row * 8 + col]) }
-            Row(Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "Row ${row + 1}, left to right: $rowText" }) {
-                for (col in 0 until 8) {
-                    val i = row * 8 + col
-                    val (bg, fg) = zoneColors(r.mm[i], r.status[i])
-                    Box(
-                        Modifier.weight(1f).aspectRatio(1f).background(bg).border(0.5.dp, Palette.Rule),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(zoneText(r.mm[i], r.status[i]), color = fg, fontSize = 11.sp, fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.SemiBold)
-                    }
-                }
+    val band = bandOf(r)
+    val (bg, fg) = bandColors(band, r.status)
+    val text = rangeText(r.mm, r.status)
+    val bandText = when (band) {
+        Band.NEAR -> "near"
+        Band.MID -> "mid"
+        Band.FAR -> "far"
+        Band.NONE -> "beyond ${Tuning().farMm} mm: not reported"
+        null -> if (r.status == RangeStatus.NO_TARGET) "nothing seen: not a clear path" else "do not know: not far, not clear"
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .border(2.dp, MaterialTheme.colorScheme.outline)
+            .background(bg)
+            .padding(16.dp)
+            .semantics(mergeDescendants = true) { contentDescription = "Forward distance: $text, $bandText" },
+    ) {
+        Text("Ahead", style = MaterialTheme.typography.labelMedium, color = fg)
+        Text(text, style = MaterialTheme.typography.displaySmall, color = fg, fontFamily = FontFamily.Monospace)
+        Text(bandText, style = MaterialTheme.typography.bodyLarge, color = fg)
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        for (side in listOf("Left", "Right")) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = 64.dp)
+                    .border(1.dp, MaterialTheme.colorScheme.outline)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(8.dp)
+                    .clearAndSetSemantics { contentDescription = "$side: not measured, one forward sensor only" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("$side: not measured", style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
-    Text("Left of grid = wearer's left. Yellow < 1 m, orange < 2 m, blue < 3 m, grey ? = unknown.",
-        style = MaterialTheme.typography.bodySmall)
+    val c = Tuning()
+    Text(
+        "One forward sensor. Bands are proposed and tunable: near under ${c.nearMm} mm, mid ${c.nearMm}–${c.midMm - 1} mm, " +
+            "far ${c.midMm}–${c.farMm} mm; beyond ${c.farMm} mm nothing is reported. Yellow near, orange mid, blue far, grey " +
+            "unknown. Left and right are not measured.",
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
 
-private fun zoneColors(mm: Int, status: Int): Pair<Color, Color> = when {
-    status != 5 && status != 9 && status != 255 -> Color(0xFF8A8D94) to Color.Black // UNKNOWN
-    status == 255 -> Color.White to Palette.MutedInk // NO_TARGET
-    mm < 1000 -> Palette.Hazard to Color.Black
-    mm < 2000 -> Color(0xFFFF9F43) to Color.Black
-    mm < 3000 -> Color(0xFFA9C0FF) to Color.Black
+private fun bandColors(band: Band?, status: Int): Pair<Color, Color> = when {
+    status != RangeStatus.VALID && status != RangeStatus.NO_TARGET -> Color(0xFF8A8D94) to Color.Black // UNKNOWN
+    status == RangeStatus.NO_TARGET -> Color.White to Palette.MutedInk
+    band == Band.NEAR -> Palette.Hazard to Color.Black
+    band == Band.MID -> Color(0xFFFF9F43) to Color.Black
+    band == Band.FAR -> Color(0xFFA9C0FF) to Color.Black
     else -> Color.White to Color.Black
 }

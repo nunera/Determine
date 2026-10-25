@@ -1,9 +1,13 @@
 # Determine — software flowcharts
 
-Grounded in `protocol/PROTOCOL.md` (wire v1, frozen), `firmware/common/include/determine_wire.h` and
+Grounded in `protocol/PROTOCOL.md` (wire **v2**), `firmware/common/include/determine_wire.h` and
 `Determine-Architecture.html` §4.2, §7.1–§7.3, §8, §9. **PROPOSED** marks untuned numbers from the docs.
+v2 basis: one forward ToF zone (VL53L4ED), scalar RANGE, haptic-only cue board (one Modulino Vibro, no lateral haptics), phone-synthesised cue audio on a
+Bluetooth bone-conduction headset. No grid, no board audio, no lateral range.
+The audio path is implemented software/bench behavior only: the separate OpenRun is not approved, and integrated bone-conduction hardware remains unresolved (Architecture §12.2–12.4).
 
-Rendered copies: [`rendered/`](rendered/).
+Rendered copies: [`rendered/`](rendered/). The checked-in SVGs are regenerated from these sources with
+`render.py`; regenerate after editing.
 
 ## (a) Cue-board firmware (XIAO ESP32-C3)
 
@@ -11,20 +15,17 @@ Rendered copies: [`rendered/`](rendered/).
 
 ```mermaid
 flowchart TB
-  BOOT["Boot: record esp_reset_reason()<br/>init I2S, mux + DRV2605L L/R, VL53L5CX fw upload<br/>init failures set fault bits 0/2/3/4"] --> WIFI["Join phone hotspot (station)"]
+  BOOT["Boot: record esp_reset_reason()<br/>init I2C 400 kHz, VL53L4ED (probe 0x29), Modulino Vibro (0x38)<br/>init failures set fault bits 0/3/4 (bit 2 reserved; bits 3 and 4 both reflect the single Vibro)"] --> WIFI["Join phone hotspot (station)"]
   WIFI --> TASKS
   subgraph TASKS["Concurrent tasks"]
-    NET["Network loop<br/>recv UDP :47001<br/>PING: PONG + feed watchdog<br/>CUE: CUE handler<br/>PROFILE: store ceiling/mode/haptic_max, ACK 0"]
-    TOF["ToF task 15 Hz<br/>read 8x8 grid, mounting transform<br/>no target: status 255, mm 0<br/>send RANGE t_us; read error: fault bit 1"]
-    AUD["Audio render task<br/>synthesise earcon per cue_id<br/>per-side gain, I2S stereo frames<br/>flags bit0 interrupts current sound"]
-    HAP["Haptic task<br/>pattern NONE/PULSE40/PULSE60/BUZZ150/LSS<br/>DRV2605L via mux ch0/ch1<br/>or MOSFET PWM if DT_HAPTIC_MOSFET"]
-    WD["Watchdog<br/>no PING 800 ms, or none 5 s after boot<br/>SYSTEM_OFF + LSS every 5 s at min(ceiling, -20 dBFS)<br/>fault bit 7 until PINGs resume"]
+    NET["Network loop<br/>recv UDP :47001<br/>PING: PONG + feed watchdog<br/>CUE: CUE handler<br/>PROFILE: store mode, haptic_max (1..255); 0 = BAD_CUE; ACK"]
+    TOF["ToF task 15 Hz<br/>one VL53L4ED zone<br/>raw status 0: VALID, mm<br/>all other statuses or read errors: UNKNOWN, mm 0<br/>empty or out-of-range is also UNKNOWN<br/>send RANGE t_us, mm, status"]
+    HAP["Haptic task<br/>pattern NONE/PULSE40/PULSE60/BUZZ150/LSS<br/>one Modulino Vibro (I2C 0x38) at max(haptic_l, haptic_r)<br/>intensity clamped to haptic_max, 0..255 maps to Vibro power 0..50<br/>each ON write carries a 1000 ms device-side auto-off<br/>flags bit0 interrupts current pattern"]
+    WD["Watchdog<br/>no PING 800 ms, or none 5 s after boot<br/>haptic LSS every 5 s on the Vibro at haptic_max<br/>no sound; fault bit 7 until PINGs resume"]
     BEAT["Beat task 10 Hz<br/>BEAT board=2, faults, t_us, RSSI, temp, heap"]
   end
-  NET -- "play request" --> AUD
   NET -- "pattern + intensity" --> HAP
   NET -- "PING seen" --> WD
-  WD -- "SYSTEM_OFF" --> AUD
   WD -- "LSS" --> HAP
 ```
 
@@ -34,28 +35,27 @@ flowchart TB
 
 ```mermaid
 flowchart TD
-  RX["UDP datagram"] --> V{"dt_validate:<br/>magic 0x5444, ver 1,<br/>known type, exact length?"}
+  RX["UDP datagram"] --> V{"dt_validate:<br/>magic 0x5444, ver 2,<br/>known type, exact length?"}
   V -- no --> DROP["Drop silently"]
-  V -- "yes, CUE" --> F{"cue_id <= 11, side <= 2,<br/>haptic_pattern <= 4,<br/>gains <= 0 or -128?"}
+  V -- "yes, CUE" --> F{"cue_id <= 11, side <= 2,<br/>haptic_pattern <= 4?"}
   F -- no --> BAD["ACK BAD_CUE (4)"]
   F -- yes --> S{"deadline_board_us == 0?"}
   S -- yes --> NS["ACK NO_SYNC (3)<br/>not played"]
   S -- no --> D{"now > deadline_board_us?"}
   D -- yes --> EX["ACK EXPIRED (1)<br/>never played late"]
-  D -- no --> C["Clamp each gain to<br/>min(profile.ceiling_db, DT_FW_HARD_CEILING_DB = -10)"]
-  C --> M{"Profile mode"}
-  M -- "HAPTIC_ONLY" --> MUTE["Mute audio, haptic only"]
-  M -- "SSD / STEREO" --> BUSY{"Sound playing and<br/>flags bit0 not set?"}
+  D -- no --> BUSY{"Haptic pattern playing and<br/>flags bit0 not set?"}
   BUSY -- "yes, cannot queue" --> BD["ACK BUSY_DROPPED (5)"]
-  BUSY -- no --> PLAY["Render earcon at clamped L/R gains<br/>+ haptic pattern at min(haptic, haptic_max)"]
-  MUTE --> PLAY
-  PLAY --> K{"Clamp changed a gain?"}
-  K -- yes --> AC["ACK PLAYED_CLAMPED (2)<br/>applied gains, t_board_us"]
-  K -- no --> AP["ACK PLAYED (0)"]
+  BUSY -- no --> C["Clamp haptic_l and haptic_r to profile.haptic_max<br/>single Vibro runs at max(haptic_l, haptic_r); side cannot lateralise"]
+  C --> PLAY["Play haptic_pattern on the Modulino Vibro<br/>(power 0..50, 1000 ms device auto-off)"]
+  PLAY --> K{"haptic_max lowered a requested intensity?"}
+  K -- yes --> AC["ACK APPLIED_CLAMPED (2)<br/>t_board_us"]
+  K -- no --> AP["ACK APPLIED (0)"]
 ```
 
-[rendered](rendered/software-2.svg) · In SSD mode the phone sends identical L/R gains (Arch §9); the board plays what it is sent within the ceiling.
-Haptic intensity limited by `haptic_max` follows PROFILE semantics; the exact BUSY policy is the firmware's.
+[rendered](rendered/software-2.svg) · The board makes no sound in any profile mode; `mode` (STEREO/SSD/HAPTIC_ONLY) is phone
+audio-route semantics. Side exclusion (L/R zeroing the other channel) is not clamping. An unknown `mode` or `haptic_max` = 0 in a
+PROFILE is also ACK BAD_CUE (haptic_max must be 1..255 so the watchdog LSS can never be configured silent). The exact BUSY policy is
+the firmware's.
 
 ## (b) Camera board (ESP32-CAM) capture / chunk / pace loop
 
@@ -86,29 +86,30 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-  UDP["UDP socket :47000"] --> PARSE{"Header valid?<br/>magic, ver, type, length"}
+  UDP["UDP socket :47000"] --> PARSE{"Header valid?<br/>magic, ver 2, type, length"}
   PARSE -- no --> X["Drop"]
   PARSE -- yes --> ROUTE{"type"}
   ROUTE -- "BEAT" --> HEALTH["Health: last BEAT per board,<br/>fault bits, learn board IP"]
   ROUTE -- "PONG" --> SYNC["Clock sync per board<br/>offset/rtt NTP-style,<br/>lowest-RTT in window"]
   ROUTE -- "ACK" --> ACKS["Cue ACK tracker"]
   ROUTE -- "FRAME" --> ASM["Frame assembly<br/>drop if not complete 150 ms after first chunk"]
-  ROUTE -- "RANGE" --> RG["Range grid"]
-  ASM --> FG{"Freshness gate:<br/>offset-corrected age and receive age<br/>&le; 500 ms (PROPOSED)"}
-  RG --> FG
+  ROUTE -- "RANGE" --> RG["Forward range<br/>mm + status: 0 VALID, 1 NO_TARGET, 2 UNKNOWN"]
+  ASM --> FRAMEUSE["Frame use: Describe path and<br/>context display only, never the hazard decision"]
+  RG --> FG{"Freshness gate:<br/>offset-corrected age and receive age<br/>&le; 500 ms (PROPOSED)"}
   SYNC -.-> FG
   FG -- stale --> X
-  FG -- "fresh JPEG" --> DET["Detector (MediaPipe, allowlist + threshold)<br/>labels + bearing only"]
-  FG -- "fresh grid" --> COR["Range corridor<br/>centre cols x head-chest rows + L/R flanks<br/>min valid mm; status 5/9 VALID,<br/>255 NO_TARGET, else UNKNOWN"]
-  DET --> FUS["Fusion: match detections to ToF regions by bearing;<br/>unmatched corridor return = obstacle"]
-  COR --> FUS
-  FUS --> POL["HazardPolicy<br/>at most one alert"]
-  POL --> SCH["Cue scheduler<br/>band cadence, profile gains + ceiling,<br/>deadline = now + offset + ttl"]
-  SCH --> OUT["Outbox.send(CUE, CUE packet)"]
+  FG -- "fresh sample" --> BAND["Band the single distance<br/>NEAR under 500, MID 500-899, FAR 900-1200 mm<br/>VALID only; NO_TARGET = nothing to report;<br/>UNKNOWN never far, never none"]
+  BAND --> POL["HazardPolicy<br/>at most one alert, no side, never CLEAR"]
+  POL --> SCH["Cue scheduler<br/>band cadence, deadline = now + offset + ttl"]
+  SCH --> AUD["Phone cue synthesis + HearingProfile<br/>calibrated level under the ceiling<br/>to the Bluetooth bone headset"]
+  SCH --> OUT["Outbox.send(CUE packet)<br/>haptics only, side BOTH"]
+  AUD --> RT{"Headset route active?"}
+  RT -- no --> RF["Explicit route fault: UNAVAILABLE<br/>never the phone speaker"]
   HEALTH --> SM["System state machine"]
   ACKS --> SM
+  RF --> SM
   SM -- "UNAVAILABLE: suppress" --> SCH
-  SM -- "UNAVAILABLE" --> ALERTS["PhoneAlerts: systemOff, vibrate"]
+  SM -- "UNAVAILABLE" --> ALERTS["PhoneAlerts: systemOff on headset if alive,<br/>CUE SYSTEM_OFF haptics, vibrate"]
 ```
 
 [rendered](rendered/software-4.svg)
@@ -117,23 +118,22 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  IN["Per ToF sample: corridor_min_mm, left_min_mm, right_min_mm<br/>(valid flags), detections, head_yaw_rate"] --> BAND["band(d): NEAR d < 1000; MID d < 2000;<br/>FAR d < 3000; else NONE (mm, PROPOSED)<br/>invalid region = UNKNOWN, never NONE/far"]
-  BAND --> PRI["Pick top region by priority:<br/>NEAR corridor > NEAR flank > MID corridor<br/>> MID flank > FAR corridor"]
-  PRI --> ACT{"Alert active?"}
-  ACT -- no --> ENT{"Same region, band >= FAR<br/>for >= 3 consecutive samples<br/>(~200 ms @ 15 Hz)?"}
+  IN["Per range sample: mm + status<br/>head_yaw_rate"] --> BAND["band(d), VALID only: NEAR d < 500;<br/>MID d < 900; FAR d <= 1200; else NONE (mm, PROPOSED)<br/>NO_TARGET = NONE, nothing to report<br/>UNKNOWN = never far, never none"]
+  BAND -- "UNKNOWN: no supported distance" --> UNKNOWN["Cancel active metric alert<br/>announce DEGRADED<br/>fresh samples required to re-enter"]
+  BAND -- "known reading" --> ACT{"Alert active?"}
+  ACT -- no --> ENT{"Same band >= FAR<br/>for >= 3 consecutive VALID samples<br/>(~200 ms @ 15 Hz)?"}
   ENT -- no --> Q["Quiet (silence)<br/>never CLEAR"]
   ENT -- yes --> RL{"Last onset < 700 ms ago?"}
   RL -- yes --> Q
   RL -- no --> YAW
-  ACT -- yes --> EXIT{"Band NONE for >= 5 samples?"}
+  ACT -- yes --> EXIT{"Band NONE (valid-far or NO_TARGET)<br/>for >= 5 samples?<br/>UNKNOWN never counts toward exit"}
   EXIT -- yes --> END["End alert, Quiet<br/>never CLEAR"]
-  EXIT -- no --> RC{"Region changed?"}
+  EXIT -- no --> RC{"Band changed?"}
   RC -- yes --> RL
   RC -- no --> YAW{"head_yaw_rate high (scanning)<br/>and band FAR?"}
   YAW -- yes --> HOLD["Hold FAR cue"]
-  YAW -- no --> LAB["Label: matched detection class if confident,<br/>else obstacle"]
-  LAB --> ALERT["Alert(region, band, label)<br/>repeat cadence by band:<br/>FAR 1/s, MID 2.5/s, NEAR 5/s"]
-  NOTE["NEAR always passes yaw suppression.<br/>Never speak distance without valid ToF.<br/>Describe never pre-empts NEAR."]
+  YAW -- no --> ALERT["Alert(band, distance)<br/>generic obstacle, side BOTH<br/>repeat cadence by band:<br/>FAR 1/s, MID 2.5/s, NEAR 5/s"]
+  NOTE["NEAR and MID always pass yaw suppression.<br/>No left or right. No camera object attached.<br/>Never speak distance without a VALID sample.<br/>Describe never pre-empts NEAR."]
 ```
 
 [rendered](rendered/software-5.svg)
@@ -143,9 +143,10 @@ flowchart TD
 ```mermaid
 stateDiagram-v2
   [*] --> STARTING
-  STARTING --> READY: frames fresh AND ToF ok AND cue ack
-  READY --> DEGRADED: ToF invalid OR low light OR confidence low (announce once)
-  READY --> UNAVAILABLE: frame age > 500 ms OR no BEAT > 500 ms from either board OR cue NACK OR phone battery critical
+  STARTING --> READY: frames fresh AND ToF ok AND cue ack AND (HAPTIC_ONLY OR headset route confirmed)
+  STARTING --> DEGRADED: links and outputs confirmed AND fresh UNKNOWN range
+  READY --> DEGRADED: ToF UNKNOWN OR range stale (stop metric cues, announce once)
+  READY --> UNAVAILABLE: stale frame OR missing BEAT OR repeated cue failure OR enabled audio route lost OR battery critical
   DEGRADED --> UNAVAILABLE: same conditions as READY
   STARTING --> PAUSED: user pause (spoken confirmation)
   READY --> PAUSED: user pause
@@ -154,8 +155,9 @@ stateDiagram-v2
   PAUSED --> STARTING: user resume
   UNAVAILABLE --> STARTING: links recover (retry link)
   note right of UNAVAILABLE
-    system-off on any surviving output
-    plus phone speaker/vibration;
+    system-off on every surviving output:
+    headset audio, board haptics (single Vibro), phone vibration;
+    never silently the phone speaker;
     all obstacle cues suppressed
   end note
   note right of PAUSED
@@ -164,15 +166,17 @@ stateDiagram-v2
 ```
 
 [rendered](rendered/software-6.svg) · Arch §4.2 states "retry link" for UNAVAILABLE and does not spell out the
-DEGRADED→READY and resume edges; `UNAVAILABLE → STARTING` and `PAUSED → STARTING` re-require the STARTING conditions ([INFERENCE], matches the demo "reconnect and wait for READY", Arch §11.4).
+DEGRADED→READY and resume edges; `UNAVAILABLE → STARTING` and `PAUSED → STARTING` re-require the STARTING conditions ([INFERENCE], matches the demo "reconnect and wait for READY", Arch §11.4). The headset-route conditions follow Arch §4.2.
 
 ## (f) Calibration (Arch §9; staircase details PROPOSED)
 
+Cue tones are synthesised on the phone and played on the Bluetooth bone headset; calibration refuses to start if that route is not the active cue output.
+
 ```mermaid
 flowchart TD
-  FIT["1. Fit and device: seat frame,<br/>record output device + weaker side,<br/>warn on high ambient noise"] --> SEL["Next band x side<br/>bands 500 Hz, 1 kHz, 2 kHz; sides L, R"]
+  FIT["1. Fit and device: seat headset,<br/>require bone-headset route (no speaker fallback),<br/>record weaker side, warn on high ambient noise"] --> SEL["Next band x side<br/>bands 500 Hz, 1 kHz, 2 kHz; sides L, R"]
   SEL --> START["Start quiet level"]
-  START --> PLAY["CUE CAL_TONE_500/1K/2K (ids 8-10)<br/>ttl 1000 ms, gain clamped to ceiling"]
+  START --> PLAY["Phone plays CAL_TONE_500/1K/2K (ids 8-10)<br/>level clamped to the phone-side ceiling"]
   PLAY --> ANS{"Wearer taps heard?"}
   ANS -- "heard" --> TWO{"2nd consecutive heard?"}
   TWO -- yes --> DOWN["Level down one step"]
@@ -189,17 +193,17 @@ flowchart TD
   MORE -- yes --> SEL
   MORE -- no --> LVL["3. Level = threshold + SL 10-20 dB<br/>(wearer choice), clamped to ceiling"]
   LVL --> BAL["4. Balance: alternate CAL_OBSTACLE (id 11) L/R,<br/>wearer nudges balance; repeat once"]
-  BAL --> VER["5. Verify: 5 random-side cues,<br/>wearer names side"]
+  BAL --> VER["5. Verify: 5 random-side calibration cues,<br/>wearer names side"]
   VER --> MODE{"Mode"}
-  MODE -- "wearer prefers / cannot use audio" --> HO["HAPTIC_ONLY"]
+  MODE -- "wearer prefers / cannot use audio" --> HO["HAPTIC_ONLY: warning audio off<br/>no headset required"]
   MODE -- ">= 4 of 5 correct and no side at ceiling" --> ST["STEREO"]
-  MODE -- "side undetectable at ceiling or naming at chance" --> SSD["SSD: mono audio,<br/>direction via haptics + spearcons"]
-  HO --> PROF["HearingProfile (timestamped)<br/>send PROFILE ceiling_db, mode, haptic_max; expect ACK 0"]
+  MODE -- "side undetectable at ceiling or naming at chance" --> SSD["SSD: mono audio<br/>(hazard cues carry no side anyway)"]
+  HO --> PROF["HearingProfile (timestamped)<br/>send PROFILE mode, haptic_max (1..255); expect ACK APPLIED"]
   ST --> PROF
   SSD --> PROF
 ```
 
-[rendered](rendered/software-7.svg) · Arch §9 defines STEREO (≥ 4/5, no side at ceiling) and SSD (side undetectable or chance); outcomes in between are not specified there.
+[rendered](rendered/software-7.svg) · Arch §9 defines STEREO (≥ 4/5, no side at ceiling) and SSD (side undetectable or chance); outcomes in between are not specified there. `haptic_max` has a floor of 1: the haptic channel cannot be configured away, but 1 is not a measured guarantee of perceptibility.
 
 ## (g) Describe loop (Arch §7.3) — as implemented in `phone/core/describe` + `cloud/`
 
@@ -230,20 +234,20 @@ flowchart TD
 
 ## (h) Module / package map (phone `core`, `cli`, Android app)
 
-Matches the code as of this commit (`phone/core/src/main/kotlin/org/determine/core`, `phone/cli`,
+Matches the code in the working tree (`phone/core/src/main/kotlin/org/determine/core`, `phone/cli`,
 `android/app/src/main/kotlin/org/determine/android`). Public API: `phone/core/API.md`.
 
 ```mermaid
 flowchart LR
   subgraph core["phone/core — org.determine.core (pure Kotlin)"]
-    API["Api.kt<br/>BoardId · Outbox · PhoneAlerts · EngineListener<br/>Detection · Alert · Diagnostics · CueCommand"]
+    API["Api.kt<br/>BoardId · Outbox · PhoneAlerts · EngineListener<br/>Alert · Diagnostics · CueCommand"]
     ENG["Engine.kt<br/>Engine · EngineConfig · LatencyStats"]
-    WIRE["wire/Wire.kt<br/>codec for 8 packet types"]
+    WIRE["wire/Wire.kt<br/>codec for 8 packet types, ver 2"]
     CLK["clock/ClockSync.kt<br/>min-RTT offset per board"]
     ING["ingest/Ingest.kt<br/>FrameAssembler · freshness"]
-    RNG["range/RangeCorridor.kt<br/>corridor + flanks, UNKNOWN"]
-    POL["policy/HazardPolicy.kt<br/>bands · hysteresis · priority"]
-    CUE["cue/CueScheduler.kt<br/>cadence · side · gains · haptics"]
+    RNG["range/ForwardRange.kt<br/>one forward zone: Target · NothingSeen · Unknown"]
+    POL["policy/HazardPolicy.kt<br/>bands · hysteresis, no side"]
+    CUE["cue/CueScheduler.kt<br/>cadence · haptics · side BOTH"]
     SYS["system/SystemMonitor.kt<br/>STARTING/READY/DEGRADED/UNAVAILABLE/PAUSED"]
     HEAR["hearing/Hearing.kt · CalibrationSession.kt<br/>HearingProfile · Staircase · CalibrationSession"]
   end
@@ -254,14 +258,14 @@ flowchart LR
   end
   MAIN --> ENG
   subgraph app["android/app — org.determine.android"]
-    SVC["service/DetermineService<br/>foreground service, restarts on fallback change"]
+    SVC["service/DetermineService<br/>foreground service"]
     HOST["runtime/EngineHost<br/>engine lock · 10 ms tick · HostOptions"]
     RT["runtime/DetermineRuntime<br/>state flows for UI"]
     UDP["net/UdpLink · BoardAddressBook<br/>implements Outbox"]
-    DET["detect/DetectorRunner · FramePacer<br/>MediaPipe EfficientDet-Lite0"]
+    FRM["Frame use<br/>Describe client + judge frame age<br/>no object detector"]
     ALR["alerts/AndroidPhoneAlerts<br/>TTS · Vibrator · system-off · DescribeSpeech"]
     CAMS["camera/PhoneCameraSource<br/>Tier 0 CameraX fallback"]
-    CUES["audio/PhoneCueSink · CueBank<br/>phone-audio cue fallback"]
+    CUES["audio/PhoneCueSink · CueBank<br/>primary cue audio to the BT bone headset<br/>explicit route failure"]
     DSC["describe/FaceRedactor · HttpDescribeTransport"]
     PWR["power/BatteryCriticalGate"]
     UI["ui/ Main · Judge · Calibration · Settings screens"]
@@ -272,7 +276,7 @@ flowchart LR
   HOST --> ENG
   HOST --> DESC
   DESC --> ENG
-  HOST --> UDP & DET & ALR & PWR & CAMS & CUES & DSC
+  HOST --> UDP & FRM & ALR & PWR & CAMS & CUES & DSC
   HOST --> RT
   RT --> UI
   UI --> SET
@@ -280,4 +284,5 @@ flowchart LR
   SIM["tools/sim<br/>sim_boards · bench · e2e"] -. UDP .-> MAIN
 ```
 
-[rendered](rendered/software-9.svg)
+[rendered](rendered/software-9.svg) · The module names track the working tree while the v2 cutover is in progress; re-check against
+`phone/core/API.md` when regenerating.

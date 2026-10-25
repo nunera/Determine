@@ -55,13 +55,13 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 
 <!-- ============ COVER ============ -->
 <section>
-<div class="kicker">Design baseline 0.2 · Research cut 24 October 2026 · Compact Houston-first BOM revision 24 October 2026</div>
+<div class="kicker">Design baseline 0.3 · Research cut 24 October 2026 · Micro Center-only single-zone revision 24 October 2026</div>
 <h1>Determine</h1>
 <p class="lede">Dumb glasses, a capable phone, and a calibrated warning about what is directly ahead of you.</p>
 <p><b>Architecture and prototype contract</b><br>
 <span class="meta">Status: proposed design. Nothing here is built, clinically validated, or cleared as a medical device. It does not replace a white cane, a guide dog or orientation-and-mobility training.</span></p>
 <div class="cover-band">
-<div><b>Wearable</b>Two dumb boards: an ESP32-CAM that streams JPEG, and a XIAO ESP32-C3 carrying the time-of-flight array, stereo bone-conduction cues and two haptic motors. No AI on the frame.</div>
+<div><b>Wearable</b>Two dumb boards: an ESP32-CAM that streams JPEG, and a XIAO ESP32-C3 carrying one forward time-of-flight zone and the two temple haptic drivers. No AI on the frame, and no audio hardware on it either: cue sounds are synthesised on the phone and played through a finished bone-conduction Bluetooth headset.</div>
 <div><b>Phone</b>Does all perception, decides which hazard to report, runs calibration and the user interface. Android first.</div>
 <div><b>Users</b>Blind and low-vision travellers, including people with unilateral or asymmetric hearing loss.</div>
 <div><b>Target</b>HackTX 26, Oct 24–25 2026, UT Austin. Build on site within the event rules.</div>
@@ -79,7 +79,7 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 <tr><td><span class="tag t-g">GATE</span></td><td>Measured evidence required before a capability may be claimed or the next layer built.</td></tr>
 </tbody>
 </table>
-<p class="small">Vendor prices below are historical checks from 15–24 Oct 2026, excluding tax and shipping; the current bill of materials quotes no unverified total. The user reports the listed Houston Micro Center components in stock, but automated reads of Micro Center inventory returned HTTP 403 and no reservation or receipt was observed. The Mini ToF sensor and raw bone transducers require separate delivery unless an exact local source is secured. Layout follows the reference <i>MisaOS-Architecture.pdf</i>. Determine is an independent project.</p>
+<p class="small"><b>Procurement status, 24 Oct 2026 ~1:40 PM CDT:</b> Houston stock and prices were checked in Zen (Chapter 12), not reserved. The motor supply is one short, the LM3671 is sold out, and integrated bone-conduction audio is unresolved. The separate OpenRun headset is not approved for this build; headset diagrams and calibration describe the implemented software/bench path, not completed integrated hardware. All new purchases remain Micro Center-only. Prices exclude tax and may change; phone/tools are owned only if confirmed. Determine is an independent project.</p>
 </section>
 
 <!-- ============ CONTENTS ============ -->
@@ -98,7 +98,7 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 <div><b>9</b>Calibration for asymmetric hearing</div>
 <div><b>10</b>Safety, privacy and regulatory boundary</div>
 <div><b>11</b>HackTX 26 build plan</div>
-<div><b>12</b>Sourcing in Houston and bill of materials</div>
+<div><b>12</b>Micro Center-only sourcing and bill of materials</div>
 <div><b>13</b>Verification gates and failure catalogue</div>
 <div><b>14</b>Roadmap after HackTX</div>
 <div><b>15</b>Architecture decision records</div>
@@ -108,13 +108,13 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 <table>
 <thead><tr><th style="width:24%">Question</th><th style="width:38%">Decision</th><th>Why</th></tr></thead>
 <tbody>
-<tr><td>Where does computing happen?</td><td>On the phone. Two dumb boards on the glasses capture, transmit and play back. <span class="tag t-d">DESIGN</span></td><td>Cheap, replaceable frame. The phone already has an NPU, a battery and accessibility settings. One place to update models.</td></tr>
-<tr><td>Two cameras?</td><td>No, for v0. Use one RGB camera plus an 8×8 time-of-flight (ToF) array. <span class="tag t-d">DESIGN</span></td><td>Stereo depth needs synchronised capture and calibration. ToF measures distance whatever the obstacle class, which is what head-level hazards need.</td></tr>
+<tr><td>Where does computing happen?</td><td>On the phone. Two dumb boards on the glasses capture, transmit and buzz; the phone synthesises and plays the sound. <span class="tag t-d">DESIGN</span></td><td>Cheap, replaceable frame. The phone already has an NPU, a battery and accessibility settings. One place to update models.</td></tr>
+<tr><td>Two cameras?</td><td>No, for v0. One RGB camera whose frames feed only the optional Describe path and frame diagnostics (no on-phone object detection), plus ONE single-zone short-range ToF (VL53L4CD on an Arduino Modulino Distance) for forward proximity. The camera never supplies range, and neither sensor supplies left/right. <span class="tag t-d">DESIGN</span></td><td>Stereo depth needs synchronised capture and calibration, and the second ESP32-CAM is a spare, not a stereo partner. The 8×8 grid of the earlier revision is not locally purchasable; a single zone measures forward distance class-agnostically inside a Micro Center-only budget.</td></tr>
 <tr><td>Camera on the cue board?</td><td>No. A separate ESP32-CAM streams JPEG over the same hotspot. <span class="tag t-d">DESIGN</span></td><td>The XIAO ESP32-C3 has no camera, and the esp32-camera driver supports ESP32, S2 and S3 only [13][59]. A second Wi-Fi producer is the price of keeping the cue board simple.</td></tr>
 <tr><td>Camera link</td><td>JPEG from the ESP32-CAM over the phone's Wi-Fi hotspot. USB UVC only after a per-phone check. <span class="tag t-d">DESIGN</span></td><td>BLE cannot carry useful video [15]. Android external-camera support depends on the phone maker [10].</td></tr>
-<tr><td>Urgent cue path</td><td>The phone sends a cue ID and the cue board plays a stored earcon and haptic pattern. No A2DP. <span class="tag t-d">DESIGN</span></td><td>A2DP typically adds 100–200 ms [16]. Reflex cues need to arrive in tens of milliseconds.</td></tr>
-<tr><td>Conveying direction</td><td>Redundantly: calibrated audio side, haptic side, and an optional spoken word. Never stereo panning alone. <span class="tag t-d">DESIGN</span></td><td>Bone-conducted sound crosses the skull [26]. People with single-sided deafness cannot use level differences [28][29].</td></tr>
-<tr><td>Calibration</td><td>Per session, per side: detection threshold, then a loudness balance, with a hard ceiling. <span class="tag t-d">DESIGN</span></td><td>This is the user's core requirement. Coupling and hearing differ by person and by how the frame sits.</td></tr>
+<tr><td>Urgent cue path</td><td>The phone synthesises the cue sound and plays it over a finished bone-conduction Bluetooth headset; the same CUE command fires temple haptics on the C3 over UDP. No board audio. <span class="tag t-d">DESIGN</span></td><td>Dropping on-board I²S audio removes amplifiers, raw transducers and their shipped parts from the bill of materials, leaving one store for everything new. A2DP's 100–200 ms [16] lands only on the audio leg; urgency rides the millisecond haptic leg and the tempo grammar.</td></tr>
+<tr><td>Conveying direction</td><td>Not claimed in v0. One forward zone has no lateral resolution, and a camera detection is never associated with the ToF return. The two calibrated audio channels and two temple motors remain for hearing calibration and future lateral sensing. <span class="tag t-d">DESIGN</span></td><td>Inferring left/right range from one zone, or attaching an unrelated camera object to it, would be fabrication. Redundant per-side channels survive in the calibration story (Chapter 9), not in hazard claims.</td></tr>
+<tr><td>Calibration</td><td>Per session, per side: detection threshold, then a loudness balance, with a hard ceiling enforced by the phone's audio path. <span class="tag t-d">DESIGN</span></td><td>This is the user's core requirement. Coupling and hearing differ by person and by how the frame sits.</td></tr>
 <tr><td>Cloud</td><td>Never in the hazard loop. Scene description is optional and labelled "may be wrong". <span class="tag t-d">DESIGN</span></td><td>Network loss must not silence warnings. A 2026 study found multimodal-LLM answers wrong 22.2% of the time [30].</td></tr>
 <tr><td>Meta and AWS</td><td>Meta DAT is an alternative frame source behind the same interface. AWS is user-requested description only: a Graviton2 Lambda API plus SmolVLM on Inferentia2 is the design target, untested (§7.3). <span class="tag t-d">DESIGN</span></td><td>Shows real integration without weakening the cost thesis or the offline invariant.</td></tr>
 </tbody>
@@ -131,11 +131,11 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 
 <h3>1.2 Guarantees</h3>
 <ol>
-<li><b>G1 Fail loud.</b> If the camera, ToF, link, phone app or wearable power fails, the system targets an audible or tactile "system unavailable" notification through a surviving output within ≤ 1 s <span class="tag t-p">PROPOSED</span>. If the cue board loses power, the phone uses its own speaker and vibration: the camera board has no audio or haptic output, so a dead cue board leaves the frame unable to play an earcon. Silence means "nothing to report <i>from a working system</i>", never "path clear".</li>
+<li><b>G1 Fail loud.</b> If the camera, ToF, link, headset route, phone app or wearable power fails, the system targets an audible or tactile "system unavailable" notification through a surviving output within ≤ 1 s <span class="tag t-p">PROPOSED</span>. The phone owns audio, so losing the headset route is itself a fault: it is announced explicitly (and the temples keep buzzing if the cue board is alive); the app never silently reroutes cue audio to the phone speaker. Silence means "nothing to report <i>from a working system</i>", never "path clear".</li>
 <li><b>G2 Unknown is not clear.</b> An empty detection list never produces a reassurance cue. Determine has no "all clear" sound.</li>
 <li><b>G3 Offline hazard loop.</b> Capture → perception → decision → cue runs with no internet connection.</li>
-<li><b>G4 Calibrated, capped output.</b> Per-side gain comes from the wearer's own calibration and is clamped by a ceiling that no setting can exceed.</li>
-<li><b>G5 Redundant direction.</b> Every directional cue is carried by at least two channels the wearer has confirmed during calibration that they can perceive.</li>
+<li><b>G4 Calibrated, capped output.</b> Per-side listening level comes from the wearer's own calibration and is clamped by a phone-enforced ceiling that no setting can exceed; the board separately clamps haptic intensity to <code>haptic_max</code>.</li>
+<li><b>G5 Redundant urgency.</b> Every warning travels on at least two channels the wearer has confirmed during calibration that they can perceive (headset audio plus temple haptics). Direction is not carried at all in v0, rather than carried badly.</li>
 <li><b>G6 Bounded vocabulary.</b> Hazard cues come from a small, learnable set (Chapter 8). Free-form speech never pre-empts a hazard cue.</li>
 <li><b>G7 Privacy by default.</b> Frames stay in phone memory. Images are not retained or uploaded unless the user explicitly turns on a separate feature.</li>
 </ol>
@@ -149,7 +149,7 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 <tr><td>Street crossing or traffic judgement</td><td>Safety-critical. Out of scope.</td></tr>
 <tr><td>Glass doors, thin wires, wet or very dark surfaces</td><td>Known failure modes for camera and ToF sensing, listed as "cannot see" in the app.</td></tr>
 <tr><td>Restoring directional hearing</td><td>Bone conduction and rerouting do not restore localisation in single-sided deafness [28].</td></tr>
-<tr><td>A certified sound-exposure dose from bone conduction</td><td>No verified standard maps bone-conduction transducer output to air-conduction dose limits. The prototype caps output but cannot certify it.</td></tr>
+<tr><td>A certified sound-exposure dose from bone conduction</td><td>No verified standard maps bone-conduction headset output to air-conduction dose limits. The prototype caps output but cannot certify it.</td></tr>
 <tr><td>Unsupervised public trials during HackTX</td><td>Demos run on a staged indoor course with a sighted spotter.</td></tr>
 </tbody>
 </table>
@@ -159,7 +159,7 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 <thead><tr><th style="width:12%">Class</th><th style="width:30%">Meaning</th><th>Example</th></tr></thead>
 <tbody>
 <tr><td><b>C0</b></td><td>Measured on the prototype, with the log kept</td><td>"p95 capture-to-cue latency was 212 ms over 120 trials." Only after the test exists.</td></tr>
-<tr><td><b>C1</b></td><td>Vendor or primary-source fact about a part</td><td>"The VL53L5CX module has 8×8 zones and a 4 m range" [20].</td></tr>
+<tr><td><b>C1</b></td><td>Vendor or primary-source fact about a part</td><td>"The VL53L4CD reaches 1200 mm indoors at 90% detection on a white target, 18° diagonal FOV" [20].</td></tr>
 <tr><td><b>C2</b></td><td>Design target</td><td>"Unavailable cue within 1 s."</td></tr>
 <tr><td><b>C3</b></td><td>Research direction</td><td>"Deliver cues to LE Audio hearing aids."</td></tr>
 </tbody>
@@ -232,8 +232,8 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 <p>None of the products found combines all four of the following: a low-cost glasses form, phone-side perception, bone-conduction <i>and</i> haptic output, and explicit calibration for asymmetric hearing. No ETA product or paper found addresses unilateral hearing loss in its cue design. That is an inference from absence of evidence, not a verified gap. <span class="tag t-i">INFERENCE</span></p>
 <div class="grid3">
 <div class="card"><h4>Not "AI glasses for the blind"</h4>That framing is crowded and invites overclaiming. Determine is a <i>parking sensor for walking</i>, whose output follows a defined set of rules.</div>
-<div class="card"><h4>Commodity hardware, unpriced build</h4>The phone does perception; the frame uses two commodity boards. Only the Mini ToF has a price rechecked for this list ($25.95 [20]). Micro Center prices for the boards, amps, haptic parts and regulator are unverified, and power and mounts remain unpriced (Chapter 12). Do not quote a frame total yet.</div>
-<div class="card"><h4>Hearing-aware by construction</h4>Calibration, a mono-safe mode and haptic direction are core features, not settings bolted on later.</div>
+<div class="card"><h4>Commodity hardware, one store</h4>Two boards, one forward ToF zone and two intended temple haptics. Houston stock was checked in Zen; the motor shortage, sold-out regulator and unresolved integrated audio prevent a complete-build purchase claim (Chapter 12).</div>
+<div class="card"><h4>Hearing-aware by construction</h4>Per-side calibration, a mono-safe mode for single-sided deafness and haptic confirmation are core features, not settings bolted on later.</div>
 </div>
 <div class="caution"><b>Claims to avoid in the pitch:</b> "replaces the cane", "detects stairs, curbs or traffic", "makes navigation safe", "restores hearing", "first obstacle sensor for the blind" (WeWALK and NOA already exist), "uses Auracast" (unless it was actually built and demonstrated).</div>
 </section>
@@ -248,17 +248,17 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 <text x="24" y="42" font-size="13" font-weight="700" fill="#0f3d4f">Glasses: two dumb boards</text>
 <rect x="26" y="56" width="218" height="38" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="36" y="73" font-size="11" fill="#16202e">ESP32-CAM: separate JPEG board</text><text x="36" y="87" font-size="9.5" fill="#566377">sensor per module · own Wi-Fi client</text>
 <rect x="26" y="100" width="218" height="38" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="36" y="117" font-size="11" fill="#16202e">XIAO ESP32-C3: cue board</text><text x="36" y="131" font-size="9.5" fill="#566377">No camera [59]. Watchdog + heartbeat</text>
-<rect x="26" y="144" width="218" height="38" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="36" y="161" font-size="11" fill="#16202e">8×8 ToF array (VL53L5CX)</text><text x="36" y="175" font-size="9.5" fill="#566377">64 distances + status @ 15 Hz · one I²C bus</text>
-<rect x="26" y="188" width="104" height="52" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="34" y="206" font-size="10.5" fill="#16202e">L bone + L</text><text x="34" y="220" font-size="10.5" fill="#16202e">haptic</text><text x="34" y="233" font-size="9" fill="#566377">I²S amp, ERM</text>
-<rect x="140" y="188" width="104" height="52" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="148" y="206" font-size="10.5" fill="#16202e">R bone + R</text><text x="148" y="220" font-size="10.5" fill="#16202e">haptic</text><text x="148" y="233" font-size="9" fill="#566377">I²S amp, ERM</text>
+<rect x="26" y="144" width="218" height="38" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="36" y="161" font-size="11" fill="#16202e">Modulino Distance: one ToF zone</text><text x="36" y="175" font-size="9.5" fill="#566377">VL53L4CD · 1 distance + status @ 15 Hz · I²C</text>
+<rect x="26" y="188" width="104" height="52" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="34" y="206" font-size="10.5" fill="#16202e">L temple haptic</text><text x="34" y="220" font-size="10.5" fill="#16202e">DRV2605L</text><text x="34" y="233" font-size="9" fill="#566377">no audio hardware</text>
+<rect x="140" y="188" width="104" height="52" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="148" y="206" font-size="10.5" fill="#16202e">R temple haptic</text><text x="148" y="220" font-size="10.5" fill="#16202e">DRV2605L</text><text x="148" y="233" font-size="9" fill="#566377">no audio hardware</text>
 <rect x="26" y="248" width="218" height="46" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="36" y="266" font-size="11" fill="#16202e">Pocket USB power bank</text><text x="36" y="281" font-size="9.5" fill="#566377">Two boards, separate power runs</text>
 <rect x="440" y="20" width="250" height="290" rx="8" fill="#f4f8fb" stroke="#36479a" stroke-width="1.5"/>
 <text x="454" y="42" font-size="13" font-weight="700" fill="#22306e">Phone: processing unit</text>
 <rect x="456" y="56" width="218" height="30" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="466" y="75" font-size="11" fill="#16202e">FrameSource / RangeSource</text>
 <rect x="456" y="92" width="218" height="30" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="466" y="111" font-size="11" fill="#16202e">Freshness gate + health</text>
-<rect x="456" y="128" width="218" height="30" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="466" y="147" font-size="11" fill="#16202e">Perception: detector + ToF fusion</text>
+<rect x="456" y="128" width="218" height="30" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="466" y="147" font-size="11" fill="#16202e">Forward-range banding</text>
 <rect x="456" y="164" width="218" height="30" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="466" y="183" font-size="11" fill="#16202e">HazardPolicy: one alert or UNKNOWN</text>
-<rect x="456" y="200" width="218" height="30" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="466" y="219" font-size="11" fill="#16202e">CueEngine + HearingProfile</text>
+<rect x="456" y="200" width="218" height="30" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="466" y="219" font-size="11" fill="#16202e">Cue synthesis + HearingProfile</text>
 <rect x="456" y="236" width="218" height="30" rx="4" fill="#fff" stroke="#9fb3c4"/><text x="466" y="255" font-size="11" fill="#16202e">Accessible UI, calibration, logs</text>
 <rect x="456" y="272" width="218" height="26" rx="4" fill="#fff" stroke="#c9a46a" stroke-dasharray="4 3"/><text x="466" y="289" font-size="10" fill="#7a4b12">Optional: scene description (not in loop)</text>
 <line x1="260" y1="75" x2="440" y2="75" stroke="#0f6874" stroke-width="2"/><polygon points="440,75 430,70 430,80" fill="#0f6874"/>
@@ -266,11 +266,11 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 <line x1="260" y1="119" x2="440" y2="119" stroke="#0f6874" stroke-width="2"/><polygon points="440,119 430,114 430,124" fill="#0f6874"/>
 <text x="285" y="111" font-size="10" fill="#0f6874">Wi-Fi: ToF + heartbeat</text><text x="285" y="133" font-size="9.5" fill="#566377">clock-offset estimate #2</text>
 <line x1="440" y1="200" x2="260" y2="200" stroke="#36479a" stroke-width="2"/><polygon points="260,200 270,195 270,205" fill="#36479a"/>
-<text x="285" y="192" font-size="10" fill="#36479a">Cue commands (UDP)</text><text x="285" y="214" font-size="9.5" fill="#566377">cue_id, side gains, haptics, TTL</text>
-<line x1="440" y1="262" x2="260" y2="262" stroke="#999" stroke-width="1.2" stroke-dasharray="5 4"/>
-<text x="268" y="278" font-size="9.5" fill="#566377">Fallback: phone audio → bone headset</text>
+<text x="285" y="192" font-size="10" fill="#36479a">CUE commands (UDP): haptics only</text><text x="285" y="214" font-size="9.5" fill="#566377">cue_id, side, haptics, TTL — no audio gains</text>
+<line x1="440" y1="262" x2="260" y2="262" stroke="#7a4b12" stroke-width="2"/><polygon points="260,262 270,257 270,267" fill="#7a4b12"/>
+<text x="285" y="254" font-size="10" fill="#7a4b12">Cue audio: phone → BT bone headset</text><text x="285" y="276" font-size="9.5" fill="#566377">A2DP leg ~100–200 ms; loss is announced, never silent</text>
 </svg>
-<figcaption>Figure 4.1. Topology: two independent Wi-Fi producers and no board-to-board bus. The phone is the only integrator — it aligns each stream by that board's estimated clock offset and receive age, and discards stale input. The wearable never decides what is hazardous. Cue commands carry a time-to-live (TTL), so a stale command is dropped rather than played late.</figcaption>
+<figcaption>Figure 4.1. Topology: two independent Wi-Fi producers and no board-to-board bus. The phone is the only integrator — it aligns each stream by that board's estimated clock offset and receive age, and discards stale input. The wearable never decides what is hazardous. Cue audio is synthesised on the phone and played over a finished bone-conduction Bluetooth headset; the wearable only plays haptics. Cue commands carry a time-to-live (TTL), so a stale command is dropped rather than played late.</figcaption>
 </figure>
 
 <h3>4.1 Module seams</h3>
@@ -279,36 +279,47 @@ svg text { font-family:"Liberation Sans",Arial,sans-serif; }
 <thead><tr><th style="width:21%">Module</th><th style="width:33%">Interface</th><th style="width:22%">Adapters</th><th>Invariants and error modes</th></tr></thead>
 <tbody>
 <tr><td><b>FrameSource</b></td><td><code>next(): Frame{seq, tCapture, w, h, jpeg}</code> or <code>Unavailable(reason)</code></td><td>ESP32-CAM Wi-Fi · USB UVC · Meta DAT · phone camera (Tier 0)</td><td>Sequence numbers increase monotonically. Clock offset is estimated per board by PING/PONG; receive age is tracked. Stale input is discarded. Disconnection is explicit, never an empty frame.</td></tr>
-<tr><td><b>RangeSource</b></td><td><code>next(): RangeGrid{seq, t, mm[64], status[64]}</code></td><td>VL53L5CX on the XIAO ESP32-C3 · none (camera only)</td><td>An invalid zone means UNKNOWN, never "far". Same per-board offset and staleness rules as frames.</td></tr>
-<tr><td><b>Perception</b></td><td><code>evaluate(frame, range?): Observations</code></td><td>MediaPipe detector · plus optional depth model</td><td>Every observation carries its source age and confidence. No metric distance from bounding-box size alone.</td></tr>
-<tr><td><b>HazardPolicy</b></td><td><code>select(obs, motion): Alert | Unknown | Quiet</code></td><td>Single rule-based implementation (internal seam for tests)</td><td>At most one alert at a time. Entry and exit use hysteresis. Never emits "clear".</td></tr>
-<tr><td><b>CueSink</b></td><td><code>present(alert, profile): Ack | Fault</code></td><td>Glasses playback over UDP · phone audio to headset · phone vibration (non-directional)</td><td>Gains are clamped by the profile ceiling. A missing acknowledgement escalates to UNAVAILABLE.</td></tr>
-<tr><td><b>HearingProfile</b></td><td><code>calibrate(sink): Profile</code> · <code>gains(cue): (gL, gR)</code></td><td>One per output device</td><td>Calibration is timestamped and re-run each session. A side outside the ceiling is marked unusable.</td></tr>
+<tr><td><b>RangeSource</b></td><td><code>next(): RangeSample{seq, t, mm:u16, status:u8}</code></td><td>VL53L4CD (Modulino Distance) on the XIAO ESP32-C3 · none (camera only)</td><td>Canonical status: 0 VALID, 1 NO_TARGET, 2 UNKNOWN (raw VL53L4CD 0 is valid; invalid/error maps to UNKNOWN, never to NO_TARGET). An invalid sample means UNKNOWN, never "far". Same per-board offset and staleness rules as frames.</td></tr>
+<tr><td><b>Frame use</b></td><td><code>latest(): Frame</code> for Describe and diagnostics</td><td>Describe client with on-phone face redaction · judge screen frame age</td><td>Frames never enter the hazard decision: there is no on-phone object detector, no label and no bearing. Nothing from the image is attached to the ToF return, so the camera never gates, bands, ranges or lateralises a hazard.</td></tr>
+<tr><td><b>HazardPolicy</b></td><td><code>select(range, motion): Alert | Unknown | Quiet</code></td><td>Single rule-based implementation (internal seam for tests)</td><td>At most one alert at a time, from the single forward sample. Entry and exit use hysteresis. Never emits "clear", never infers left/right.</td></tr>
+<tr><td><b>CueSink</b></td><td><code>present(alert, profile): Ack | Fault</code></td><td>Phone audio to the BT bone headset · temple haptics over UDP · phone vibration (non-directional)</td><td>Audio levels are clamped by the phone-side profile ceiling; haptic intensity is clamped on the board to <code>haptic_max</code> (ACK APPLIED_CLAMPED). A missing acknowledgement escalates to UNAVAILABLE. A lost headset route is announced explicitly, never silently rerouted to the phone speaker.</td></tr>
+<tr><td><b>HearingProfile</b></td><td><code>calibrate(sink): Profile</code> · <code>levels(cue): (gL, gR)</code></td><td>One per output device</td><td>Calibration is timestamped and re-run each session. A side outside the ceiling is marked unusable. The ceiling lives in the phone's audio path; the board only clamps haptic intensity.</td></tr>
 </tbody>
 </table>
 
 <h3>4.2 Runtime state machine</h3>
-<pre>STARTING ──(frames fresh ∧ ToF ok ∧ cue ack)──▶ READY
-READY ──(ToF invalid ∨ low light ∨ confidence low)──▶ DEGRADED   # announce once; only supported claims
-READY/DEGRADED ──(frame age &gt; 500 ms ∨ no heartbeat &gt; 500 ms from either board ∨ cue NACK ∨ phone battery critical)──▶ UNAVAILABLE
-UNAVAILABLE: play "system off" on any surviving cue output + phone speaker/vibration; suppress all obstacle cues; retry link
+<pre>STARTING ──(frames fresh ∧ ToF ok ∧ cue ack ∧ (HAPTIC_ONLY ∨ headset route confirmed))──▶ READY
+STARTING ──(links and outputs confirmed ∧ fresh UNKNOWN sample)──▶ DEGRADED   # no false startup timeout
+READY ──(ToF UNKNOWN ∨ range stale)──▶ DEGRADED   # stop metric warning repeats, announce limitation
+READY/DEGRADED ──(frame age &gt; 500 ms ∨ no heartbeat &gt; 500 ms from either board ∨ repeated cue failure ∨ (audio enabled ∧ headset route lost) ∨ phone battery critical)──▶ UNAVAILABLE
+UNAVAILABLE: announce "system off" on surviving outputs — headset audio if the route is alive, temple haptics if the cue board is alive, phone vibration; suppress all obstacle cues; retry link. Losing the headset route is itself announced, never silently handed to the phone speaker
 any ──(user pause)──▶ PAUSED   # explicit, spoken confirmation; never automatic</pre>
 <p class="small">The 500 ms frame-age and per-board heartbeat timeouts are <span class="tag t-p">PROPOSED</span>; heartbeat interval targets 100 ms. They leave time inside the untested ≤ 1 s fail-loud goal and must be tuned at Gate G7. A bank without telemetry cannot report low charge before its outputs die.</p>
 
-<h3>4.3 Wire contract (v0)</h3>
-<pre>ESP32-CAM → phone (UDP/TCP over hotspot; little-endian; versioned)
-  FRAME   {ver:u8, seq:u32, t_cap_us:u64, w:u16, h:u16, len:u32, jpeg[len]}
-  BEAT    {ver, seq, t_us, faults:u16}
-XIAO ESP32-C3 → phone
-  RANGE   {ver, seq, t_us, mm:u16[64], status:u8[64]}
-  BEAT    {ver, seq, t_us, faults:u16}
-Phone ↔ each board (clock estimation; the camera board accepts no cue commands)
-  PING    {t_phone_us}  →  PONG {t_phone_us, t_board_us}
-Phone → XIAO ESP32-C3
-  CUE     {ver, seq, t_issued_phone_us:u64, cue_id:u8, side:{L,R,BOTH},
-           gain_l_db:i8, gain_r_db:i8, haptic:{pattern:u8, l:u8, r:u8}, ttl_ms:u16}
-  PROFILE {ver, ceiling_db:i8, offsets_db[bands][2]}</pre>
-<p>There is no board-to-board bus: the phone is the only integrator. The phone estimates a separate clock offset for each board, timestamps receipt, and discards <code>FRAME</code> or <code>RANGE</code> whose offset-corrected capture time or receive age exceeds the freshness bound. The cue board enforces the gain ceiling independently. It compares <code>t_issued_phone_us + ttl_ms</code> against its offset-corrected current time, dropping a delayed <code>CUE</code> rather than resetting its lifetime on arrival. The C3's watchdog plays its system-off cue when phone PINGs stop while the board is powered; the phone uses its own speaker/vibration if a board disappears. Clock uncertainty, command expiry and both failure directions must be tested in Gates G6–G7. Power-bank battery percentage is not reported by either board unless external sensing is added; loss of its power is detected by missing heartbeats on the phone. <span class="tag t-d">DESIGN</span></p>
+<h3>4.3 Wire contract (v2)</h3>
+<pre>UDP over the phone hotspot · little-endian · header 8 B {magic 0x5444, ver=2, type, seq:u32} · receivers drop wrong magic/ver/type/length
+ESP32-CAM → phone
+  FRAME   {frame_id:u32, t_cap_us:u64, w:u16, h:u16, total_len:u32, offset:u32,
+           chunk_len:u16, chunk_idx:u16, chunk_count:u16, data}          # ≤ 1438 B, JPEG chunks
+  BEAT    {board, reset_reason, faults:u16, t_us:u64, rssi, temp, heap_kb}
+XIAO ESP32-C3 (cue board) → phone
+  RANGE   {t_us:u64, mm:u16, status:u8}                                   # 11 B body, 19 B total
+  ACK     {cue_seq:u32, status:u8, reserved:u8, t_board_us:u64}           # 14 B body, 22 B total
+  BEAT    {…}
+Phone ↔ each board   (clock estimation; the camera board accepts no cue commands)
+  PING    {t_phone_us}  →  PONG {t_phone_us, t_board_rx_us, t_board_tx_us}
+Phone → cue board
+  CUE     {t_issued_phone_us:u64, deadline_board_us:u64, cue_id:u8, side:u8,
+           haptic_pattern:u8, haptic_l:u8, haptic_r:u8, flags:u8, ttl_ms:u16}   # 24 B body, 32 B total; no gain fields
+  PROFILE {mode:u8, haptic_max:u8}                                        # 2 B body, 10 B total; haptic_max 1..255 (0 is BAD_CUE)
+RANGE status: 0 VALID · 1 NO_TARGET · 2 UNKNOWN   (raw VL53L4CD 0 = valid; invalid/error → UNKNOWN, never NO_TARGET)
+ACK status:  0 APPLIED · 1 EXPIRED · 2 APPLIED_CLAMPED (haptic_max lowered a requested intensity; side exclusion alone is not clamping)
+             · 3 NO_SYNC · 4 BAD_CUE (side &gt; 2, unknown haptic_pattern, PROFILE mode &gt; 2, or PROFILE haptic_max = 0) · 5 BUSY_DROPPED
+PROFILE mode: 0 STEREO · 1 SSD · 2 HAPTIC_ONLY — phone audio-route semantics only; the board is haptic-only regardless of mode
+PROFILE haptic_max: 1..255. Zero is rejected so the watchdog LSS, now the last local failure channel, can never be configured silent. 1 is a protocol floor, not a measured guarantee the wearer can feel it
+faults: bit2 reserved (v1 I²S fault removed; the board has no audio hardware)
+v1 → v2: audio gains left CUE/ACK entirely — levels are phone-side; RANGE shrank from a 64-zone grid to one sample</pre>
+<p>There is no board-to-board bus: the phone is the only integrator. The phone estimates a separate clock offset for each board, timestamps receipt, and discards <code>FRAME</code> or <code>RANGE</code> whose offset-corrected capture time or receive age exceeds the freshness bound. The cue board compares <code>deadline_board_us</code> against its offset-corrected current time, dropping a late <code>CUE</code> (ACK EXPIRED) rather than resetting its lifetime on arrival; <code>deadline_board_us = 0</code> means no sync (ACK NO_SYNC). One CUE drives both legs of one cue: the phone synthesises the sound for the headset while the board plays the haptic pattern and acknowledges. The C3's watchdog runs haptics only — LSS on both temples, capped at <code>haptic_max</code> — when phone PINGs stop while the board is powered; the phone announces a dead board explicitly on its own outputs. Clock uncertainty, command expiry and both failure directions must be tested in Gates G6–G7. Power-bank battery percentage is not reported by either board unless external sensing is added; loss of its power is detected by missing heartbeats on the phone. <span class="tag t-d">DESIGN</span></p>
 </section>
 
 <!-- ============ 5 HARDWARE ============ -->
@@ -323,15 +334,16 @@ Phone → XIAO ESP32-C3
 <rect x="312" y="34" width="76" height="16" rx="3" fill="#36479a"/>
 <circle cx="30" cy="97" r="11" fill="#7a4b12"/><circle cx="670" cy="97" r="11" fill="#7a4b12"/>
 <rect x="74" y="84" width="22" height="14" rx="3" fill="#9b1d36"/><rect x="604" y="84" width="22" height="14" rx="3" fill="#9b1d36"/>
-<line x1="350" y1="34" x2="350" y2="16" stroke="#566377"/><text x="358" y="20" font-size="11" fill="#16202e">ToF array, pitched level (corridor ahead)</text>
+<line x1="350" y1="34" x2="350" y2="16" stroke="#566377"/><text x="358" y="20" font-size="11" fill="#16202e">Modulino Distance ToF: one forward zone</text>
 <line x1="372" y1="65" x2="460" y2="40" stroke="#566377"/><text x="464" y="40" font-size="11" fill="#16202e">ESP32-CAM at bridge + recording LED</text>
-<line x1="30" y1="110" x2="30" y2="200" stroke="#566377"/><text x="8" y="214" font-size="11" fill="#16202e">L bone transducer</text>
-<line x1="670" y1="110" x2="670" y2="200" stroke="#566377"/><text x="692" y="214" font-size="11" fill="#16202e" text-anchor="end">R bone transducer</text>
-<line x1="85" y1="98" x2="150" y2="196" stroke="#566377"/><text x="150" y="208" font-size="11" fill="#16202e">L haptic (ERM)</text>
-<line x1="615" y1="98" x2="550" y2="196" stroke="#566377"/><text x="550" y="208" font-size="11" fill="#16202e" text-anchor="end">R haptic (ERM)</text>
-<text x="350" y="240" font-size="10.5" fill="#566377" text-anchor="middle">Only the camera and Mini ToF face forward; cue board, amps and drivers sit on a rear strap. Power bank stays in a pocket.</text>
+<line x1="30" y1="110" x2="30" y2="200" stroke="#566377"/><text x="8" y="214" font-size="11" fill="#16202e">L temple haptic</text>
+<line x1="670" y1="110" x2="670" y2="200" stroke="#566377"/><text x="692" y="214" font-size="11" fill="#16202e" text-anchor="end">R temple haptic</text>
+<line x1="85" y1="98" x2="150" y2="196" stroke="#566377"/><text x="150" y="208" font-size="11" fill="#16202e">C3 + drivers: rear strap</text>
+<line x1="615" y1="98" x2="550" y2="196" stroke="#566377"/><text x="550" y="208" font-size="11" fill="#16202e" text-anchor="end">cue audio: phone → BT bone headset</text>
+<text x="350" y="230" font-size="10.5" fill="#566377" text-anchor="middle">Only the camera and the single-zone ToF face forward; the C3 and drivers sit on a rear strap.</text>
+<text x="350" y="244" font-size="10.5" fill="#566377" text-anchor="middle">Cue audio plays from the phone; the power bank stays in a pocket.</text>
 </svg>
-<figcaption>Figure 5.1. Proposed compact headband layout, not finished eyeglasses. The single Mini ToF board is 12.7 × 25.4 mm [20]; no three-board ToF cluster. Weight is kept off the nose. Fit, cable routing and comfort remain untested.</figcaption>
+<figcaption>Figure 5.1. Proposed compact headband layout, not finished eyeglasses. The Modulino Distance board carries one VL53L4CD zone — 1200 mm at 90% detection indoors, 18° diagonal FOV [20][39]. It is a near-field demo sensor, not a navigation rangefinder. The only audio hardware is the finished bone-conduction headset, driven from the phone. Weight is kept off the nose. Fit, cable routing and comfort remain untested.</figcaption>
 </figure>
 
 <h3>5.1 Sensing options</h3>
@@ -339,22 +351,22 @@ Phone → XIAO ESP32-C3
 <thead><tr><th style="width:20%">Configuration</th><th style="width:37%">What it gives</th><th>Cost and risk</th><th style="width:10%">v0?</th></tr></thead>
 <tbody>
 <tr><td>Mono RGB only</td><td>Object classes and bearing (left/centre/right) from image position</td><td>No distance for arbitrary obstacles. Common detectors cover objects such as people, chairs and cars, but not branches or poles <span class="tag t-i">INFERENCE</span></td><td>Fallback</td></tr>
-<tr><td><b>Mono RGB + 8×8 ToF</b></td><td>Class-agnostic distance in a forward corridor, plus semantics from the camera. VL53L5CX module: 4 m, 63° diagonal FOV, 15 Hz at 8×8, Class 1 940 nm laser [20]</td><td>$25.95 [20]. Loads ~90 KB of firmware over I²C at every boot [20]. Behaviour in sunlight and against glass is unmeasured</td><td><b>Yes</b></td></tr>
-<tr><td>Dual RGB stereo</td><td>Dense depth after calibration</td><td>Needs synchronised exposure and stereo rectification. The ESP32-CAM carries one sensor and the C3 has no camera interface at all [13][59], so this needs two camera MCUs or a stereo module</td><td>No</td></tr>
+<tr><td><b>Mono RGB + single-zone ToF</b></td><td>Class-agnostic forward proximity, one distance at a time: "how far ahead", never "where left/right". VL53L4CD (Arduino Modulino Distance): 1200 mm at 90% detection indoors on white (≈550 mm in overcast daylight, ≈450 mm on gray), 18° diagonal FOV, up to 100 Hz, Class 1 940 nm laser [20][39]. Camera frames serve Describe and diagnostics only</td><td>SKU 992826 [40]: Houston website stock 2, $11.99 at the §12 snapshot. Glass, dark surfaces and strong sun remain unmeasured</td><td><b>Yes</b></td></tr>
+<tr><td>Dual RGB stereo</td><td>Dense depth after calibration</td><td>Needs synchronised exposure and stereo rectification. The ESP32-CAM carries one sensor and the C3 has no camera interface at all [13][59]; the second camera in the pair is a spare, not a stereo partner</td><td>No</td></tr>
 <tr><td>Mono + learned depth</td><td>Relative depth. Depth Anything V2-Small is Apache-2.0, while its larger variants are non-commercial [23]</td><td>No metric scale unless anchored to the ToF. Phone compute load</td><td>Stretch</td></tr>
 <tr><td>Stereo depth module (e.g. OAK-D Lite)</td><td>On-device depth</td><td>Expensive, multi-watt, harder on Android (secondary source only)</td><td>No</td></tr>
 <tr><td>Meta Ray-Ban via DAT</td><td>Glasses camera stream up to 720×1280 at 2–30 fps over Bluetooth [6][58]</td><td>No ToF or haptics. Latency undocumented. Requires owning the glasses. Gen 3 not listed [6]</td><td>Optional adapter</td></tr>
 </tbody>
 </table>
-<p><b>Why ToF instead of a second camera?</b> Head-level hazards such as branches, sign edges and open cabinet doors are rarely detector classes. The hazard decision must not depend on recognising the object, and a ToF array measures distance regardless of what the object is. The camera adds meaning ("person", "door") and sharper bearing. <span class="tag t-d">DESIGN</span></p>
+<p><b>Why one forward ToF zone instead of a grid or a second camera?</b> Head-level hazards such as branches, sign edges and open cabinet doors are rarely classes a detector knows, so the hazard decision must not depend on recognising the object, and ToF measures distance regardless of what the object is. The earlier revision's 8×8 grid is not locally purchasable under the Micro Center-only rule; the single zone keeps class-agnostic distance but gives up corridors, flanks and any left/right resolution — the hazard policy (§7.2) is a forward proximity band, and nothing from the camera is attached to the ToF return. <span class="tag t-d">DESIGN</span></p>
 
-<h3>5.2 Wearable board choice (two-board revision, 24 Oct 2026)</h3>
-<p>The XIAO ESP32-S3 Sense is not obtainable for this build, so the wearable splits into two boards that share no bus: a <b>cue board</b> (ToF over I²C, I²S stereo playback, two haptic outputs) and a separate <b>camera board</b> that only streams JPEG. Both join the phone's hotspot as independent clients (Chapter 4). <span class="tag t-d">DESIGN</span></p>
+<h3>5.2 Wearable board choice (two-board revision, 24 Oct 2026; Micro Center-only 24 Oct 2026)</h3>
+<p>The XIAO ESP32-S3 Sense is not obtainable for this build, so the wearable splits into two boards that share no bus: a <b>cue board</b> (single-zone ToF over I²C and two haptic outputs; no audio hardware) and a separate <b>camera board</b> that only streams JPEG. Both join the phone's hotspot as independent clients (Chapter 4). Both boards are on the §12.2 purchase list (required unless the team already has them). <span class="tag t-d">DESIGN</span></p>
 <table>
 <thead><tr><th style="width:20%">Board</th><th style="width:45%">Relevant facts</th><th>Verdict</th></tr></thead>
 <tbody>
-<tr><td><b>Seeed XIAO ESP32-C3 (3-pack)</b></td><td>RISC-V single core, 400 KB SRAM and 4 MB flash, Wi-Fi b/g/n + BLE 5, exactly one I²C and one SPI bus, 11 GPIO, 21×17.8 mm, no integrated camera [59]. Vendor-typical 75 mA with Wi-Fi active [59]</td><td><b>Selected: cue board.</b> Micro Center Houston SKU 069005; user reports the listing in stock, but no independently verified shelf count or price. One board used, two spares</td></tr>
-<tr><td><b>ESP32-CAM (classic ESP32)</b></td><td>The esp32-camera driver lists ESP32, S2 and S3 as supported SoCs [13]. Practical streaming needs PSRAM: the driver requires it for everything except JPEG at CIF or lower [13]</td><td><b>Selected: camera board.</b> Inland pair, Micro Center Houston SKU 221739; user reports stock. The actual module's PSRAM and sensor must pass Gate G0 before use</td></tr>
+<tr><td><b>Seeed XIAO ESP32-C3 (3-pack)</b></td><td>RISC-V single core, 400 KB SRAM, 4 MB flash, Wi-Fi b/g/n + BLE 5, one I²C and one SPI bus, 11 GPIO, 21×17.8 mm, no camera [59]. Vendor-typical Wi-Fi current 75 mA [59]</td><td><b>Selected cue board.</b> SKU 069005: Houston 3 packs, $15.59 per pack at §12 snapshot. One used, two spares</td></tr>
+<tr><td><b>ESP32-CAM (classic ESP32)</b></td><td>Espressif supports ESP32, S2 and S3; PSRAM is required except JPEG at CIF or lower [13]</td><td><b>Selected camera board.</b> SKU 221739: Houston 6 pairs, $17.99 per pair at §12 snapshot. One used, one spare, not stereo. Verify actual PSRAM and sensor at G0</td></tr>
 <tr><td>Seeed XIAO ESP32-S3 Sense</td><td>8 MB PSRAM, camera board (OV3660 or OV2640 since 2025-06-30), microphone, one DVP camera interface [12][14]</td><td><b>Not selected:</b> unavailable to this build. Documented single-board alternative for a later revision ($13.99 online when checked 24 Oct [14])</td></tr>
 <tr><td>Raspberry Pi Zero 2 W</td><td>Quad A53, CSI-2, H.264 1080p30 encode, Wi-Fi and BT 4.2, 5 V/2.5 A supply spec [53]</td><td>Overkill for a "dumb" frame. Power and boot time. Out of stock at Adafruit</td></tr>
 <tr><td>Raspberry Pi Pico 2 W</td><td>RP2350, 520 KB SRAM, no camera port [54]</td><td>Cannot carry the camera role</td></tr>
@@ -364,14 +376,15 @@ Phone → XIAO ESP32-C3
 
 <h3>5.3 Output hardware</h3>
 <ul>
-<li><b>Stereo bone conduction, played on the glasses.</b> Two MAX98357A I²S amplifiers share one I²S bus. Select left on one amp and right on the other: the default mixes both channels [36]. Each drives one 8 Ω / 1 W Adafruit 1674 transducer. Adafruit's own store was out of stock on 18 Oct, but <a href="https://www.digikey.com/en/products/detail/adafruit-industries-llc/1674/6827067">DigiKey lists the same item (1528-1948-ND)</a>; its displayed inventory is not a checkout-confirmed delivery date. Limit output below the transducer's 1 W continuous rating, and cover each skin-facing transducer and wire joint against sweat [36]. <span class="tag t-f">FACT</span> → <span class="tag t-d">DESIGN</span></li>
-<li><b>Haptics.</b> Two ERM disc motors, one per side, each driven by a DRV2605L. Both drivers have the same I²C address [36], so the selected TCA9548A mux isolates them on separate channels; the Mini ToF may use the upstream bus [59]. The Micro Center driver listing may differ in connector style from Adafruit's current STEMMA QT revision: inspect it and wire its header as supplied. If a DRV2605L fails at bring-up, the optional fallback in §12.2 drives each motor through a logic-level MOSFET with a flyback diode from a spare C3 PWM GPIO: simple pulses only, no driver waveforms, with the phone-side ceiling and cadence rules unchanged. <span class="tag t-d">DESIGN</span></li>
-<li><b>Fallback audio.</b> A commercial bone-conduction headset paired to the phone, such as Shokz OpenMove at a $79.95 list price (variants showed sold out) or OpenRun at $129.95 [37]. Classic Bluetooth adds latency (§6.2), so in this mode haptics carry the urgent cue.</li>
+<li><b>Cue audio: implemented headset path, integrated hardware unresolved.</b> The phone synthesises cues and supports Bluetooth headset playback with per-side ceilings and explicit route-failure handling; it never silently falls back to its speaker. The separate Shokz OpenRun is not approved for the intended build and its old listing redirects to support [41]. No suitable stocked discrete bone-conduction transducer was identified; the Humbird listing says “No longer carried”. No raw-transducer/amplifier replacement is selected. Classic Bluetooth latency [16] remains a bench-path consideration, not proof of final hardware. <span class="tag t-g">OPEN DESIGN GATE</span></li>
+<li><b>Haptics.</b> Two temple motors, one per side, each driven by a DRV2605L (§12.2: DRV2605L ×2, ERM motor ×2, TCA9548A mux ×1). Both drivers share I²C address 0x5A [36], so the TCA9548A mux isolates them on separate channels; the VL53L4CD keeps its own default address on the upstream bus [20]. In v0 both temples fire together for every forward hazard — the single zone has no lateral resolution — while per-side intensity remains available for calibration verification and future lateral sensing. The board clamps requested intensity to the profile's <code>haptic_max</code> (1–255) and reports APPLIED_CLAMPED when it lowered a value (§4.3). <span class="tag t-d">DESIGN</span></li>
 </ul>
 
 <h3>5.4 Power</h3>
-<p>The revision uses two Wi-Fi boards and a single compact front-facing Mini ToF board, not three 41 × 25 mm Modulino Distance boards. The <a href="https://www.sparkfun.com/sparkfun-qwiic-mini-tof-imager-vl53l5cx.html">Mini measures 12.7 × 25.4 mm</a>, retains the 8×8 grid and 4 m vendor range [20], and is the justified shipped exception to Houston-first sourcing. The ESP32-CAM and ToF face forward; the C3, amplifiers, haptic drivers and power distribution sit toward the back of a headband. The power bank stays in a pocket, feeding the C3 and a separate 5 V distribution branch for the camera, amps and a 3.3 V LM3671 peripheral regulator. All grounds needed for shared signals are common. The board-fit, thermal load and simultaneous output current are unmeasured; Gate G0 checks power and mounting before any wearable claim. <span class="tag t-d">DESIGN</span></p>
-<p class="small">GPIO budget: the C3 has one hardware I²C bus [59] for the Mini ToF and TCA9548A; the two DRV2605Ls sit on separate mux channels. The two amplifiers share three I²S signals. Fix the complete pin map, status-LED GPIO, two spare PWM GPIOs for the MOSFET haptic fallback and channel-select resistor values before soldering; do not power motors or amps from an unmeasured C3 3V3 output. <span class="tag t-g">GATE G0</span></p>
+<p>The C3 and Modulino use one USB-C feed; the ESP32-CAM gets a separate 5 V run from a pocket power bank. Common signal grounds are required. The listed Energizer bank supports simultaneous charging, but measured combined draw, brown-outs, thermal load and fit remain G0 checks. The LM3671 is sold out; TPS62827 is an unadopted 3.3 V rail candidate (3.4–5.5 V input), not the same pinout. An extra rail may be omitted only if G0 measurements support it. Integrated audio power requirements are unresolved.</p>
+<p class="small">GPIO budget: the C3 has one hardware I²C bus [59] for the Modulino Distance and the TCA9548A; the two DRV2605Ls sit on separate mux channels. No I²S pins are needed in v2. Fix the complete pin map and the status-LED GPIO before soldering; do not power the motors from an unmeasured C3 3V3 output. <span class="tag t-g">GATE G0</span></p>
+<p class="small">Rail assignment is a G0 decision: Modulino/mux logic from a verified C3 3V3 budget or a verified separate regulator; DRV2605L supply within vendor limits. Do not assume a regulator substitution or motor-drive redesign. The untested <code>DT_HAPTIC_MOSFET</code> flag has no selected shopping-list parts.</p>
+
 </section>
 
 <!-- ============ 6 LINKS ============ -->
@@ -382,7 +395,7 @@ Phone → XIAO ESP32-C3
 <table>
 <thead><tr><th style="width:17%">Link</th><th style="width:40%">Facts</th><th>Use in Determine</th></tr></thead>
 <tbody>
-<tr><td><b>Wi-Fi to the phone hotspot</b></td><td>Both wearable boards join the hotspot as stations: the ESP32-CAM streams JPEG and the C3 sends ToF grids and acknowledgements. esp32-camera recommends JPEG, because YUV and RGB strain PSRAM bandwidth when Wi-Fi is on [13]. Both boards and the phone share one hotspot channel's airtime</td><td><b>Primary.</b> QVGA–VGA JPEG at 10–15 fps target. Joining the phone's hotspot keeps the phone's cellular internet, which joining a glasses-hosted access point would not. <span class="tag t-i">INFERENCE</span> Effective throughput with two stations is unmeasured; Gate G1 measures it</td></tr>
+<tr><td><b>Wi-Fi to the phone hotspot</b></td><td>Both wearable boards join the hotspot as stations: the ESP32-CAM streams JPEG and the C3 sends ToF samples and acknowledgements. esp32-camera recommends JPEG, because YUV and RGB strain PSRAM bandwidth when Wi-Fi is on [13]. Both boards and the phone share one hotspot channel's airtime</td><td><b>Primary.</b> QVGA–VGA JPEG at 10–15 fps target. Joining the phone's hotspot keeps the phone's cellular internet, which joining a glasses-hosted access point would not. <span class="tag t-i">INFERENCE</span> Effective throughput with two stations is unmeasured; Gate G1 measures it</td></tr>
 <tr><td>USB-C UVC</td><td>Android supports UVC webcams through Camera2, but only if the device maker enables the external camera provider. AOSP says it "isn't designed" for high-speed streaming or AR, and its sample configuration bounds 640×480 at 30 fps [10]</td><td>Secondary, only after a per-phone check with a UVC camera. A user-space UVC library over the Android USB host API [11] is a further fallback</td></tr>
 <tr><td>BLE GATT</td><td>ESP32-to-ESP32 throughput is about 0.73 Mbit/s on the 1M PHY and about 1.4 Mbit/s on the 2M PHY. Phone throughput is lower and undocumented [15]</td><td>Provisioning, health, and possibly cues. Not video</td></tr>
 <tr><td>Meta DAT</td><td>The camera stream degrades resolution first, then frame rate, and does not drop below 15 fps. A2DP and HFP audio are mutually exclusive [6][7]</td><td>Alternative FrameSource for teams that own supported glasses</td></tr>
@@ -393,13 +406,13 @@ Phone → XIAO ESP32-C3
 <table>
 <thead><tr><th style="width:22%">Path</th><th style="width:42%">Latency facts</th><th>Role</th></tr></thead>
 <tbody>
-<tr><td>Phone → Classic BT headset (A2DP)</td><td>Typically 100–200 ms [16]</td><td>Fallback and spoken detail only</td></tr>
+<tr><td><b>Phone → Classic BT bone headset (A2DP)</b></td><td>Typically 100–200 ms [16]</td><td><b>Primary cue audio.</b> Spoken detail and cue identity; urgency rides the temple haptics, not this leg</td></tr>
 <tr><td>Phone → LE Audio unicast (LC3)</td><td>LC3 uses 10 ms frames. Best case is "just over 20 ms" end to end. Every receiver must support a 40 ms presentation delay, and hearing-aid live use stays at ≤ 20 ms [16]. Android has had LE Audio since Android 13 [19]</td><td>Roadmap: deliver cues to LE Audio hearing aids and earbuds</td></tr>
 <tr><td>Auracast broadcast</td><td>One-to-many, connectionless. The transmitter never knows who is listening [17]. Android support is limited to some devices (Pixel 8 and later, Galaxy S23 and later, some Xiaomi) [18]</td><td>Demo extra: judges listen on their own Auracast earbuds through an encrypted stream. Never the personal safety path</td></tr>
-<tr><td><b>Phone → cue board cue ID (UDP) → stored earcon</b></td><td>LAN hop plus I²S playback. Unmeasured</td><td><b>Primary urgent path.</b> True stereo, per-side gain applied on the cue board</td></tr>
+<tr><td><b>Phone → CUE (UDP) → temple haptics</b></td><td>LAN hop plus DRV2605L start. Unmeasured</td><td><b>Primary urgent path.</b> Haptic only in v2 — the board has no audio hardware</td></tr>
 </tbody>
 </table>
-<div class="callout"><b>Why the glasses play the earcons.</b> The "dumb glasses" principle is about where decisions are made, not about refusing to store a 2-second sound bank. The phone decides <i>which</i> cue to play and <i>how loud</i> each side is. The glasses play it, which removes 100–200 ms of A2DP latency and the cost of a headset. <span class="tag t-d">DESIGN</span></div>
+<div class="callout"><b>Why the phone plays the earcons.</b> The "dumb glasses" principle is about where decisions are made, not about where speakers live. Moving audio to the phone deletes the amplifiers, raw transducers, per-side gain plumbing and shipped parts from the bill of materials, keeps every new purchase in one store, and puts level control where Android already exposes accessibility volume and mono settings. The cost is A2DP latency on the audio leg [16]; the design pays it deliberately and carries urgency on the millisecond haptic leg instead. <span class="tag t-d">DESIGN</span></div>
 
 <h3>6.3 End-to-end latency budget</h3>
 <table>
@@ -407,12 +420,12 @@ Phone → XIAO ESP32-C3
 <tbody>
 <tr><td>Exposure + on-chip JPEG encode</td><td class="num">≤ 60 ms</td><td><span class="tag t-p">PROPOSED</span></td></tr>
 <tr><td>Wi-Fi transfer (~30 KB frame)</td><td class="num">≤ 40 ms</td><td>~1 MB/s effective throughput assumed for one station; the C3 shares the hotspot's airtime, so this is unmeasured for two producers. <span class="tag t-i">INFERENCE</span></td></tr>
-<tr><td>Decode + detector + fusion on phone</td><td class="num">≤ 80 ms</td><td>Benchmark the actual model on the actual phone</td></tr>
-<tr><td>Policy + cue dispatch + playback start</td><td class="num">≤ 40 ms</td><td>UDP on LAN. <span class="tag t-i">INFERENCE</span></td></tr>
-<tr class="total"><td>Capture-to-cue p95 target</td><td class="num">≤ 250 ms</td><td>Target kept from the single-board design; unmeasured with two Wi-Fi producers. The ToF path skips the camera stages and should be faster</td></tr>
+<tr><td>Band + policy on phone (ToF only)</td><td class="num">≤ 80 ms</td><td>Single-sample banding and policy; the camera is not in the hazard loop. Benchmark on the actual phone</td></tr>
+<tr><td>CUE dispatch + haptic start on the C3</td><td class="num">≤ 40 ms</td><td>UDP on LAN plus DRV2605L start. <span class="tag t-i">INFERENCE</span></td></tr>
+<tr class="total"><td>Range-sample-to-haptic p95 target</td><td class="num">≤ 250 ms</td><td>Unmeasured with two Wi-Fi producers. Audio reaches the headset a further 100–200 ms later (A2DP) [16]; report the two legs separately</td></tr>
 </tbody>
 </table>
-<p>At a walking speed of 1.4 m/s, every 100 ms of latency is about 14 cm of travel. <span class="tag t-i">INFERENCE</span> So 250 ms is about 35 cm before human reaction time is even counted. Warning distances in the hazard policy have to include both.</p>
+<p>At a walking speed of 1.4 m/s, every 100 ms of latency is about 14 cm of travel. <span class="tag t-i">INFERENCE</span> So 250 ms is about 35 cm before human reaction time is even counted — and the sensor itself stops reporting beyond roughly 1.2 m indoors [20]. That is why this is a staged near-field demo with a spotter, not a validated warning distance: the FAR band's upper edge equals the sensor's spec limit, and latency plus reaction time consume a large share of even that margin.</p>
 </section>
 
 <!-- ============ 7 PERCEPTION ============ -->
@@ -421,81 +434,79 @@ Phone → XIAO ESP32-C3
 <h2>Perception and hazard policy</h2>
 <h3>7.1 Pipeline</h3>
 <ol>
-<li><b>Ingest and freshness gate.</b> Two independent producers: the ESP32-CAM's frames and the cue board's ToF grids each carry their board's clock, a per-board offset estimated by PING/PONG, and the phone's receive timestamp. Drop any input whose offset-corrected capture time or receive age exceeds the freshness bound. Every stage records a timestamp, for Gate G6.</li>
-<li><b>Range corridor (class-agnostic).</b> Split the 8×8 ToF grid into a <i>corridor</i> (central columns, head-to-chest rows) and left and right flanks. Use the minimum valid distance per region. Invalid zones count as UNKNOWN.</li>
-<li><b>Semantics.</b> MediaPipe Object Detector in <code>LIVE_STREAM</code> mode with a category allowlist and a score threshold [21], running on the LiteRT runtime [22]. Classes are used for <i>labels</i> ("person", "door", "chair") and for bearing, never as the only trigger for a near-field hazard.</li>
-<li><b>Fusion.</b> Match detections to ToF regions by bearing. If a ToF return lies in the corridor and no detection matches, report it as a generic "obstacle".</li>
-<li><b>Proximity band.</b> FAR / MID / NEAR come from ToF distance when it is valid. Without ToF, use only <i>relative</i> cues such as bounding-box growth over time, and never speak metres.</li>
+<li><b>Ingest and freshness gate.</b> Two independent producers: the ESP32-CAM's frames and the cue board's ToF samples each carry their board's clock, a per-board offset estimated by PING/PONG, and the phone's receive timestamp. Drop any input whose offset-corrected capture time or receive age exceeds the freshness bound. Every stage records a timestamp, for Gate G6.</li>
+<li><b>Forward range (class-agnostic).</b> Only raw VL53L4CD status 0 yields VALID and a distance; every other raw status maps to UNKNOWN. This includes empty or out-of-range views: the sensor cannot distinguish them from a weak-signal target. The board and simulator never emit the protocol's NO_TARGET value. UNKNOWN means no supported distance, never far or clear; it enters announced DEGRADED and stops metric warning repeats. There are no zones, corridors, flanks or left/right range.</li>
+<li><b>Camera frames (not in the hazard loop).</b> Frames are reassembled and kept only for the optional Describe path and the judge screen's frame age. There is no on-phone object detector, so no label, class or bearing is produced, and one forward zone could not be tied to a particular object in the frame anyway.</li>
+<li><b>Proximity band.</b> FAR / MID / NEAR come from the single forward distance when it is valid; beyond 1200 mm nothing is reported, and that silence is not a clear path. Never speak metres without a valid sample.</li>
 <li><b>Policy.</b> Pick at most one alert, with persistence and hysteresis (below).</li>
 </ol>
 
 <h3>7.2 Hazard policy (v0 rules)</h3>
-<pre>inputs: corridor_min_mm, left_min_mm, right_min_mm (valid flags), detections, head_yaw_rate
-band(d): NEAR if d &lt; 1000; MID if d &lt; 2000; FAR if d &lt; 3000; else NONE      # PROPOSED mm
-enter alert:  same region ∧ band ≥ FAR for ≥ 3 consecutive ToF samples (~200 ms @15 Hz)
-exit alert:   band NONE for ≥ 5 samples, or region changes (re-enter with new cue)
-priority:     NEAR corridor &gt; NEAR flank &gt; MID corridor &gt; MID flank &gt; FAR corridor
+<pre>inputs: range {mm, status}, head_yaw_rate
+band(d): NEAR if d &lt; 500; MID if d ≤ 899; FAR if d ≤ 1200; else NONE      # PROPOSED mm, ≤ 1200 mm sensor spec; measured/tunable
+usable:  VALID gives a distance; UNKNOWN stops the current alert and feeds DEGRADED, never a distance or "clear"; NO_TARGET is a wire semantic not emitted by this board
+enter alert:  same band ≥ FAR for ≥ 3 consecutive VALID samples (~200 ms @15 Hz)
+exit alert:   band NONE (VALID beyond 1200 mm, or NO_TARGET) for ≥ 5 samples (re-enter with new cue)
 rate limit:   ≤ 1 alert onset / 700 ms; repeat cadence set by band (Chapter 8)
-suppress:     head_yaw_rate high (scanning) → hold FAR cues; NEAR always passes
-label:        matched detection class if confident, else "obstacle"
-never:        output CLEAR; speak distance without valid ToF; let description pre-empt NEAR</pre>
-<p>The bands are <span class="tag t-p">PROPOSED</span>. With 250 ms of system latency and about 1 s of human reaction at 1.4 m/s, a hazard reported at 1.0 m leaves very little margin. That is why the FAR and MID bands exist, and why the NEAR band is a last-moment warning, not the main mechanism. <span class="tag t-i">INFERENCE</span> White-cane mode MAY suppress low-zone returns that the cane already covers. The Ara wearable uses a similar mode [1].</p>
+suppress:     head_yaw_rate high (scanning) → hold FAR cues; NEAR and MID always pass
+label:        always the generic "obstacle" — no detection class, no side
+never:        output CLEAR; speak distance without a VALID sample; attach a camera detection to the return; infer left/right; let description pre-empt NEAR</pre>
+<p>The bands are <span class="tag t-p">PROPOSED</span>: FAR 900–1200 mm, MID 500–899 mm, NEAR under 500 mm, all measured and tunable at Gate G8. At 1.4 m/s, 250 ms of system latency plus about 1 s of human reaction consumes about 1.75 m of walking — more than the sensor's 1.2 m reach — so even FAR is a last-moment cue and this build supports a slow, staged near-field demo only. The 1.2 m figure is the vendor specification for a white indoor target [20]; it is not a validated useful warning distance, and gray or dark targets and bright sun shorten it (§5.1). <span class="tag t-i">INFERENCE</span> One forward zone has no elevation resolution, so there is no low-return filtering, head-versus-chest zoning or mounting mask: it reports one distance for whatever is in its cone, and the cane's ground coverage is not modelled.</p>
 
 <h3>7.3 Optional scene description (Describe loop)</h3>
 <p>The user asks with a long press or voice: "What's ahead?" — never automatically. If the user has opted into cloud description and the service is available, the phone redacts faces and sensitive detail before upload; imperfect redaction is a privacy risk, so upload happens only on the user's explicit choice. A small arm64 Lambda API on Graviton2 [65] holds the prompt — two sentences, surroundings first, no guesses about people — and a small vision-language model describes the image: SmolVLM via Hugging Face Optimum Neuron on one Inf2 instance [62][63]. Optimum Neuron lists SmolVLM, and Gemma3 as a second candidate, for image-text-to-text on Inf2 with vLLM support [62], but neither deployment is <b>tested by us</b>. Trainium2 is the documented alternative [60][61][64], and Bedrock Nova Lite is a fallback that does not guarantee the silicon [66]; new AWS accounts start with zero Inf/Trn quota, so accelerator access must be requested early [67]. If no description service is ready, the phone says description is unavailable; it does not improvise an untested local model. A returned answer is prefixed "may be wrong". MID or NEAR hazards interrupt it, and it is inactive while the system is UNAVAILABLE. Response time is unmeasured; the design plans for seconds, not milliseconds. <span class="tag t-d">DESIGN</span></p>
 <p class="small">Implementation: contract <code>cloud/API.md</code>; API <code>cloud/describe-api</code> (Lambda arm64, SAM); server <code>cloud/inference</code> (optimum-neuron from git main on the Neuron SDK 2.31 PyTorch 2.9 AMI, TP 2 on inf2.xlarge, 512 px single tile). Only the CPU development path has been run: SmolVLM-256M answered in p50 2.0 s on a laptop CPU. Inferentia2 compile time and latency are unmeasured until quota is granted. <span class="tag t-g">GATE</span></p>
 
 <h3>7.4 "Cannot see" list (spoken during onboarding)</h3>
-<p>Glass doors and windows · thin wires and ropes · drop-offs, curbs and stairs going down · objects outside the forward field of view · fast-moving vehicles · glare, darkness, rain and fog · anything beyond about 3 m.</p>
+<p>Glass doors and windows · thin wires and ropes · drop-offs, curbs and stairs going down · anything outside one narrow forward cone (about 18° diagonal [20]) · which side an obstacle is on · what the obstacle is · fast-moving vehicles · glare, darkness, rain, fog and bright sun · gray or dark surfaces at the edge of range · anything beyond about 1.2 m. Silence is not a clear path.</p>
 </section>
 
 <!-- ============ 8 CUE LANGUAGE ============ -->
 <section class="chapter">
 <div class="kicker">Chapter 8</div>
 <h2>The cue language</h2>
-<p>The requirement is a sound that is granular, easy to identify and level-aware. Determine treats the cue as a small grammar with four independent dimensions, so that no single dimension, and especially not loudness alone, has to carry everything. Brewster's guidelines warn against identification by register or intensity alone [24]. <span class="tag t-f">FACT</span> → <span class="tag t-d">DESIGN</span></p>
+<p>The requirement is a sound that is granular, easy to identify and level-aware. Determine treats the cue as a small grammar with four dimensions, so that no single dimension, and especially not loudness alone, has to carry everything. In v0 the "where" dimension is carried only by calibration and test cues: the single forward ToF zone cannot say left or right, so every hazard cue is a centred, both-sides cue. Brewster's guidelines warn against identification by register or intensity alone [24]. <span class="tag t-f">FACT</span> → <span class="tag t-d">DESIGN</span></p>
 <table>
 <thead><tr><th style="width:14%">Dimension</th><th style="width:30%">Encoded by</th><th style="width:35%">Values</th><th>Rationale</th></tr></thead>
 <tbody>
-<tr><td><b>What</b> (family)</td><td>Timbre + rhythm motif</td><td>Obstacle: short wood-block double; at NEAR, one sharper urgent note. Person: two-tone marimba. System: descending three-note. Ready: single soft tick, once</td><td>Brewster: timbre and rhythm are the strongest discriminators [24]</td></tr>
-<tr><td><b>Where</b> (side)</td><td>Calibrated side + matching haptic + optional spearcon</td><td>Left · Centre (both sides together, both motors) · Right</td><td>Redundant, so it survives single-sided deafness and the skull-crossing of bone-conducted sound [26][28]</td></tr>
-<tr><td><b>How close</b></td><td>Repetition rate (parking-sensor metaphor)</td><td>FAR 1 per s · MID 2.5 per s · NEAR 5 per s, one urgent note each</td><td>Matches the car-sensor mental model. Peaks at 5 notes per second (FAR 2, MID 5, NEAR 5), within about 6 per second [24]</td></tr>
-<tr><td><b>How urgent</b></td><td>Limited level step + haptic intensity</td><td>Base at calibrated sensation level. NEAR at +6 dB <i>within the ceiling</i></td><td>Level supports urgency but is never the only signal. Stays 10–20 dB above threshold [24]</td></tr>
+<tr><td><b>What</b> (family)</td><td>Timbre + rhythm motif</td><td>Obstacle: short wood-block double; at NEAR, one sharper urgent note. System: descending three-note. Ready: single soft tick, once. The person cue IDs (two-tone marimba) stay in the bank for phone sound semantics but nothing in v0 raises them from a ToF return</td><td>Brewster: timbre and rhythm are the strongest discriminators [24]</td></tr>
+<tr><td><b>Where</b> (side)</td><td>Centre only for hazards: both headset sides + both temples</td><td>Hazards: Centre. Left and Right survive only for calibration tones and the balance step</td><td>No lateral range exists to report. Redundancy is headset audio plus haptics, not left versus right [26][28]</td></tr>
+<tr><td><b>How close</b></td><td>Repetition rate (parking-sensor metaphor)</td><td>FAR 900–1200 mm: 1 per s · MID 500–899 mm: 2.5 per s · NEAR under 500 mm: 5 per s, one urgent note each</td><td>Matches the car-sensor mental model. Peaks at 5 notes per second (FAR 2, MID 5, NEAR 5), within about 6 per second [24]</td></tr>
+<tr><td><b>How urgent</b></td><td>Limited level step + haptic intensity</td><td>Base at calibrated sensation level. NEAR at +6 dB <i>within the phone-side ceiling</i></td><td>Level supports urgency but is never the only signal. Stays 10–20 dB above threshold [24]</td></tr>
 </tbody>
 </table>
 
 <h3>8.1 Timing grammar</h3>
 <pre>note ≥ 83 ms (motif notes)   gap between serial cues ≥ 100 ms   max 6 notes/s      [24]
-pitch range 300 Hz – 4 kHz  (inside Brewster 125 Hz–5 kHz and inside transducer response)
+pitch range 300 Hz – 4 kHz  (inside Brewster 125 Hz–5 kHz; recheck against the headset's real response)
 FAR:  ▮▮ ............ ▮▮ ............  (1/s, 2 notes/s)
 MID:  ▮▮ ... ▮▮ ... ▮▮ ...            (2.5/s, 5 notes/s)
-NEAR: ▮ ▮ ▮ ▮ ▮ + haptic buzz         (5/s, one urgent note per 200 ms, +6 dB within ceiling)
-SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phone vibration</pre>
+NEAR: ▮ ▮ ▮ ▮ ▮ + haptic buzz         (5/s, one urgent note per 200 ms, +6 dB within the phone-side ceiling)
+SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, on headset audio, temple LSS haptics and phone vibration</pre>
 <p class="small">Each period must hold its notes plus the 100 ms gap: MID 2 × 83 + 100 = 266 ms of a 400 ms period; NEAR 83 + 100 = 183 ms of a 200 ms period. A multi-note motif cannot fit at 5 per second.</p>
-<p class="small">The lower edge of the pitch range assumes the bone transducer's 300 Hz–19 kHz response [36]. Recheck it against whatever transducer is actually fitted.</p>
+<p class="small">The implemented phone cue bank is a software/bench path; the final integrated audio hardware and its frequency response remain unresolved. Recheck pitch and level against whichever output is actually approved and measured.</p>
 
 <h3>8.2 Spoken layer</h3>
-<p>Spearcons are sped-up words such as "left", "door" or "person". They are optional and follow the earcon, never replace it. They are on by default during training and become opt-in once the wearer is fluent. Clock-face phrasing ("11 o'clock, 2 metres") is used only when ToF is valid, following the study finding that precise phrasing was preferred [2][25]. <span class="tag t-d">DESIGN</span></p>
+<p>Spearcons are sped-up words such as "obstacle" or "near". They are optional and follow the earcon, never replace it. They are on by default during training and become opt-in once the wearer is fluent. Words never name a side, an object class or a distance the sensor cannot back: with one forward zone a spoken distance (for example "1 metre") is allowed only from a VALID sample, rounded coarsely, and never paired with a camera label. <span class="tag t-d">DESIGN</span></p>
 
 <h3>8.3 Haptic mapping</h3>
 <table>
 <thead><tr><th>Event</th><th>Left motor</th><th>Right motor</th></tr></thead>
 <tbody>
-<tr><td>Obstacle left / right</td><td>Pulse at band rate / off</td><td>Off / pulse at band rate</td></tr>
-<tr><td>Obstacle centre</td><td colspan="2">Both pulse together at band rate</td></tr>
-<tr><td>NEAR (any side)</td><td colspan="2">Strong 150 ms buzz on the hazard side(s), then band pulses</td></tr>
-<tr><td>System unavailable</td><td colspan="2">Long-short-short on both sides, plus phone vibration</td></tr>
+<tr><td>Obstacle FAR / MID</td><td colspan="2">Both pulse together at band rate (pulse 40 ms / 60 ms)</td></tr>
+<tr><td>Obstacle NEAR</td><td colspan="2">Strong 150 ms buzz on both temples, then band pulses</td></tr>
+<tr><td>System unavailable / board watchdog</td><td colspan="2">Long-short-short (LSS) on both sides; the watchdog does this alone, with no audio, plus phone vibration when the phone is alive</td></tr>
 </tbody>
 </table>
-<p>Haptics are the <i>primary</i> directional channel in single-sided-deafness mode, and a confirming channel otherwise. The BuzzClip result warns that weak, frequent vibration can be confused with cane-tip feedback [2], so intensity and cadence are user-tunable and validated in Gate G9. <span class="tag t-d">DESIGN</span></p>
+<p>The two motors exist for the calibration balance step and future lateral sensing; in v0 the single forward zone fires them together. Haptics are the <i>urgent</i> channel and the confirming channel for headset audio. The BuzzClip result warns that weak, frequent vibration can be confused with cane-tip feedback [2], so intensity and cadence are user-tunable (capped by <code>haptic_max</code>) and validated in Gate G9. <span class="tag t-d">DESIGN</span></p>
 
 <h3>8.4 Cue bank as data</h3>
-<pre>cue_bank.json  (shipped to glasses flash; phone references by cue_id)
-{ "obstacle_far":  {"wav":"ob2.wav", "period_ms":1000, "haptic":"pulse40"},
-  "obstacle_mid":  {"wav":"ob2.wav", "period_ms":400,  "haptic":"pulse60"},
-  "obstacle_near": {"wav":"ob1u.wav","period_ms":200,  "haptic":"buzz150","level_step_db":6},
-  "person_*":      {"wav":"pe2.wav", ...},
-  "system_off":    {"wav":"sys3d.wav","period_ms":5000,"haptic":"lss","both":true} }</pre>
+<pre>cue_bank  (synthesised on the phone; the same cue_id also rides each CUE packet to the cue board for haptics)
+{ "obstacle_far":  {"cue_id":1, "period_ms":1000, "haptic":"pulse40"},
+  "obstacle_mid":  {"cue_id":2, "period_ms":400,  "haptic":"pulse60"},
+  "obstacle_near": {"cue_id":3, "period_ms":200,  "haptic":"buzz150","level_step_db":6},
+  "person_*":      {"cue_ids":[4,5,6], "note":"kept for sound semantics; not raised from ToF in v0"},
+  "system_off":    {"cue_id":7, "period_ms":5000,"haptic":"lss","both":true} }</pre>
 </section>
 
 <!-- ============ 9 CALIBRATION ============ -->
@@ -517,31 +528,33 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <figcaption>Figure 9.1. Calibration flow, roughly 2–3 minutes and fully operable with TalkBack and screen-reader gestures.</figcaption>
 </figure>
 <ol>
-<li><b>Fit and device.</b> The app asks the wearer to seat the frame. It records which output device is in use (glasses transducers or a headset) and the wearer's self-reported weaker side. It warns about ambient noise if the phone microphone reads high.</li>
+<li><b>Fit and device.</b> The app asks the wearer to seat the headset and requires the Bluetooth bone-conduction route to be the active cue output; if it is not, calibration refuses to start rather than playing tones from the phone speaker. It records the output device and the wearer's self-reported weaker side. It warns about ambient noise if the phone microphone reads high.</li>
 <li><b>Per-side detection threshold.</b> An adaptive 2-down-1-up staircase, which converges near 70.7% correct [57], starts from a quiet level. The wearer answers "heard / not heard" by tapping. It runs in three bands that match the cue timbres (for example 500 Hz, 1 kHz and 2 kHz) and stops after 6–8 reversals. <span class="tag t-p">PROPOSED</span></li>
 <li><b>Presentation level.</b> Per band and side, the level is threshold plus a sensation level chosen by the wearer between 10 and 20 dB [24], clamped to the ceiling.</li>
 <li><b>Loudness balance.</b> Alternate the real "obstacle" cue left and right. The wearer nudges a balance control until both sides feel equally loud, which corrects for cue spectrum and for the bone crossing the skull. Repeat once to check consistency.</li>
-<li><b>Verify and choose a mode.</b> Play five random-side cues and have the wearer name the side.
+<li><b>Verify and choose a mode.</b> Play five random-side calibration cues and have the wearer name the side. Mode values are phone-side audio semantics (wire <code>mode</code>: 0 STEREO, 1 SSD, 2 HAPTIC_ONLY); the cue board is haptic-only in every mode.
 <ul>
 <li><b>Stereo mode:</b> at least 4 of 5 correct and no side at the ceiling.</li>
-<li><b>SSD mode:</b> one side cannot be detected at the ceiling, or side naming is at chance. Audio becomes identical on both sides (mono). Direction moves to haptics plus spearcons.</li>
-<li><b>Haptic-only mode:</b> for wearers who prefer it or cannot use the audio.</li>
+<li><b>SSD mode:</b> one side cannot be detected at the ceiling, or side naming is at chance. Audio becomes identical on both sides (mono). Hazard cues carry no direction in v0 anyway, so SSD costs nothing in the demo; any future lateral information would have to ride haptics and spearcons.</li>
+<li><b>Haptic-only mode:</b> for wearers who prefer it or cannot use audio. No headset is required and warning sounds are off; temple haptics carry warnings. Phone vibration and the explicit system-off alarm remain failure signals. Hearing calibration still requires a headset.</li>
 </ul></li>
 </ol>
+
+<p>If the headset disconnects or rejects a tone, calibration enters a failed state, discards its result and requires reconnection and a fresh session. An unplayed tone is never scored as unheard, and a failed or disconnected session cannot apply a profile.</p>
 
 <h3>9.1 Profile and safety rules</h3>
 <pre>HearingProfile {
   device_id, created_at, fit_note,
   mode: STEREO | SSD | HAPTIC_ONLY,
-  ceiling_db,                      # from device characterisation; glasses enforce independently
+  ceiling_db,                      # phone-side; enforced in the audio path, never on the board
   bands: [{hz, thr_db_L, thr_db_R, sl_db, offset_db_L, offset_db_R}],
-  haptic: {gain_L, gain_R, pattern_set},
+  haptic: {haptic_max, pattern_set},          # haptic_max is also sent to the board in PROFILE
   verified: {trials:5, correct:n}
 }</pre>
 <ul>
-<li><b>Ceiling first.</b> No calibration step, slider or urgency step can exceed <code>ceiling_db</code>. If the weak side would need more, it is marked unusable. The app does not push more energy into it. <span class="tag t-d">DESIGN</span></li>
+<li><b>Ceiling first.</b> No calibration step, slider or urgency step can exceed <code>ceiling_db</code> in the phone's audio path; the board separately caps haptic intensity at <code>haptic_max</code>, which the phone constrains to 1–255 — the haptic channel cannot be disabled because it is the last local channel left when the phone dies. If the weak side would need more, it is marked unusable. The app does not push more energy into it. The headset's own hardware volume remains outside the app's control, so the ceiling is relative to the volume set at calibration time. <span class="tag t-d">DESIGN</span></li>
 <li><b>Re-run every session</b>, because how the frame couples to the head changes each time it is worn. A 20-second quick check suffices if the previous profile is under 7 days old. <span class="tag t-p">PROPOSED</span></li>
-<li><b>Dose.</b> Track cumulative cue-on time. Cues are short and sparse by design. Until the transducers are measured on an artificial mastoid, Determine makes no claim of equivalence to the WHO and ITU air-conduction limits [4][5].</li>
+<li><b>Dose.</b> Track cumulative cue-on time. No final bone-conduction output has been selected or measured on an artificial mastoid; Determine cannot claim equivalence to WHO/ITU air-conduction limits [4][5].</li>
 <li><b>Professional care.</b> The app recommends an audiologist for anyone with known hearing loss and never displays results as audiometry.</li>
 <li><b>OS features stay reachable.</b> Android mono audio and balance settings remain available. Determine's profile works alongside them, not as a replacement.</li>
 </ul>
@@ -555,11 +568,12 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <table>
 <thead><tr><th style="width:25%">Hazard</th><th style="width:40%">Mitigation</th><th>Residual risk</th></tr></thead>
 <tbody>
-<tr><td>Missed obstacle (glass, wire, out of FOV)</td><td>"Cannot see" list. Secondary-aid positioning. Cane mode</td><td>Inherent. Disclosed</td></tr>
+<tr><td>Missed obstacle (glass, wire, off-axis or beyond ~1.2 m, outside one narrow cone)</td><td>"Cannot see" list. Secondary-aid positioning. Cane mode. Staged near-field demo only</td><td>Inherent. Disclosed. One forward zone cannot give side or classify the object</td></tr>
 <tr><td>False reassurance</td><td>No "clear" cue exists. UNAVAILABLE state. TTL on cues</td><td>Users may over-trust silence. Address it in training</td></tr>
 <tr><td>Over-alerting and fatigue</td><td>One alert at a time, rate limit, persistence and hysteresis</td><td>Tune against measured false-alert rate</td></tr>
 <tr><td>Masking environmental sound</td><td>Short sparse cues, open ears, cue-on duty tracked [52]</td><td>Measure in Gate G10</td></tr>
-<tr><td>Excess vibration or sound level</td><td>Ceiling enforced on both phone and glasses. Session timer</td><td>No bone-conduction dose standard available</td></tr>
+<tr><td>Excess vibration or sound level</td><td>Phone-side ceiling on audio; board <code>haptic_max</code> clamp on haptics. Session timer</td><td>No bone-conduction dose standard available; headset hardware volume is outside the app</td></tr>
+<tr><td>Cue audio silently lost (headset disconnect, multipoint steal, wrong route)</td><td>Route check before READY and continuously; loss is announced on haptics and phone vibration; audio never silently falls back to the phone speaker</td><td>A2DP leg adds 100–200 ms; haptics carry urgency during the gap</td></tr>
 <tr><td>Electrical and thermal</td><td>Pocket USB bank, no head-mounted Li-Po in v0, strain relief, temperature in heartbeat</td><td>Hackathon-grade wiring. Supervised use only</td></tr>
 <tr><td>Bystander privacy</td><td>Visible recording indicator, no retention, demo signage and consent</td><td>Camera on face may still worry bystanders</td></tr>
 <tr><td>Spoofed cue commands</td><td>v0 hotspot is WPA2 with a unique password. Roadmap: authenticated session key</td><td>LAN attacker during demo. Low impact, but logged</td></tr>
@@ -594,9 +608,9 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <table>
 <thead><tr><th style="width:18%">Role</th><th>Owns</th></tr></thead>
 <tbody>
-<tr><td>Firmware</td><td>ESP32-CAM JPEG stream; XIAO ESP32-C3 ToF, UDP protocol, I²S cue player, haptic driver, watchdog, heartbeat</td></tr>
-<tr><td>Android</td><td>FrameSource and RangeSource ingest, MediaPipe detector, fusion, HazardPolicy, latency logging</td></tr>
-<tr><td>Audio / UX</td><td>Cue bank, calibration flow, TalkBack-accessible UI, spearcons, judge diagnostics overlay</td></tr>
+<tr><td>Firmware</td><td>ESP32-CAM JPEG stream; XIAO ESP32-C3 single-zone ToF, v2 UDP protocol, haptic driver, haptic-only watchdog, heartbeat</td></tr>
+<tr><td>Android</td><td>FrameSource and RangeSource ingest, ToF banding, HazardPolicy, latency logging</td></tr>
+<tr><td>Audio / UX</td><td>Phone-side cue synthesis and headset routing (explicit failure), calibration flow, TalkBack-accessible UI, spearcons, judge diagnostics overlay</td></tr>
 <tr><td>Hardware / demo</td><td>Frame mounting, wiring, power, the staged course, test protocol, Describe loop (Lambda API, Neuron model), pitch and Devpost</td></tr>
 </tbody>
 </table>
@@ -605,9 +619,9 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <table>
 <thead><tr><th style="width:17%">Window</th><th style="width:43%">Milestone</th><th>Abort or branch</th></tr></thead>
 <tbody>
-<tr><td>Sat 8–12</td><td>Two-board bring-up: ESP32-CAM JPEG reaches the phone over the hotspot; C3 ToF grid streams; two-board power distribution checked; pin maps fixed; cue player plays a stored WAV on both sides</td><td>Camera module lacks PSRAM or has an unsupported sensor → drop to JPEG at CIF or lower, which needs no PSRAM [13], else Tier 0 (phone camera on headband) while debugging. Transducers missing → phone-to-headset fallback</td></tr>
-<tr><td>Sat 12–18</td><td>End-to-end loop: ToF corridor → policy → glasses cue. Detector labels added. Timestamps logged</td><td>Detector slow → ToF-only hazard with generic "obstacle" label</td></tr>
-<tr><td>Sat 18–24</td><td>Calibration flow, three modes, haptics, UNAVAILABLE handling</td><td>DRV2605L trouble → optional MOSFET PWM parts (§12.2)</td></tr>
+<tr><td>Sat 8–12</td><td>Two-board bring-up: camera JPEG and scalar RANGE reach the phone; power and pin map checked. Resolve the motor shortage, regulator choice and integrated audio before a full wearable claim</td><td>Unsupported camera → JPEG at CIF or below [13], else phone-camera bench path. A borrowed compatible headset can exercise existing audio software only; it is not approval of the rejected headset build. No speaker fallback</td></tr>
+<tr><td>Sat 12–18</td><td>End-to-end loop: ToF band → policy → phone audio + C3 haptic CUE. Timestamps logged</td><td>Camera not streaming → the hazard loop is unaffected; only Describe and frame diagnostics lose input</td></tr>
+<tr><td>Sat 18–24</td><td>Calibration flow on the headset, three modes, haptics, UNAVAILABLE handling</td><td>DRV2605L or mux trouble → re-seat the driver boards and re-check addresses; if haptics cannot be repaired, announce haptics unavailable (fault bits 3 or 4) and demo audio only, saying urgency then rides the audio alone. No substitute motor-drive parts are on the list</td></tr>
 <tr><td>Sun 0–8</td><td>Gates G6–G8 on the staged course. Tune bands and rates. Freeze features</td><td>No new features after 8 am</td></tr>
 <tr><td>Sun 8–12</td><td>Optional adapters: Describe loop end to end (only if accelerator quota was granted), Meta DAT through Mock Device Kit, Auracast demo broadcast (only on supported phones)</td><td>Skip if any core gate is failing</td></tr>
 <tr><td>Sun 12–17</td><td>Pitch rehearsal, Devpost, demo resets, spare batteries</td><td>—</td></tr>
@@ -616,9 +630,9 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 
 <h3>11.4 Three-minute judge demo</h3>
 <ol>
-<li><b>Hook (20 s):</b> the parking-sensor line, moved from the bumper to the brow. Hold up the two-board frame.</li>
-<li><b>Live course (75 s):</b> a sighted spotter walks the wearer past a head-height foam bar, a person, and a left-side then right-side obstacle. The judge diagnostics screen shows both streams' age, the 8×8 ToF grid, the chosen alert and measured latency.</li>
-<li><b>One-ear mode (30 s):</b> switch the profile to SSD mode live. Audio goes mono; the urgent cue stays audible and direction moves to haptics plus spearcons. Show the ceiling stopping a forced gain increase.</li>
+<li><b>Hook (20 s):</b> the parking-sensor line, moved from the bumper to the brow. Hold up the two-board frame and the headset.</li>
+<li><b>Live course (75 s):</b> a sighted spotter walks the wearer slowly toward a single large, light-coloured obstacle (a foam board or wall) head-on, then past a head-height foam bar. The judge diagnostics screen shows both streams' age, the single forward distance and its VALID / NO_TARGET / UNKNOWN status, the chosen band and measured latency. The demo never claims a side and never labels the ToF return with a camera object.</li>
+<li><b>One-ear mode (30 s):</b> switch the profile to SSD mode live. Headset audio goes mono; the temple haptics keep firing for every hazard. Show the phone-side ceiling stopping a forced level increase.</li>
 <li><b>Pull the plug (20 s):</b> unplug the camera board. The system-off cue plays within the measured bound; reconnect and wait for READY. No "clear" is ever heard.</li>
 <li><b>Ask (20 s):</b> after recovery, long-press "What's ahead?" If the Describe loop is ready, a redacted frame returns a two-sentence answer prefixed "may be wrong". If accelerator access failed, skip the answer and keep showing the offline warning loop.</li>
 <li><b>Close (15 s):</b> the logged p50/p95 latency, the miss and false-alert table, what it cannot see, and what comes next.</li>
@@ -649,62 +663,58 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <!-- ============ 12 SOURCING ============ -->
 <section class="chapter">
 <div class="kicker">Chapter 12</div>
-<h2>Sourcing in Houston and bill of materials</h2>
-<h3>12.1 Verified Houston-area stores</h3>
+<h2>Micro Center-only sourcing and bill of materials</h2>
+<h3>12.1 Where everything new is bought</h3>
+<p><b>One store.</b> Every new purchase is a Micro Center item. Nothing ships from another retailer, no part comes from an electronics surplus shop or a big-box store, and no part waits on a courier. <span class="tag t-d">DESIGN</span></p>
 <table>
-<thead><tr><th style="width:22%">Store</th><th style="width:28%">Address</th><th style="width:25%">Hours / phone</th><th>What to look for</th></tr></thead>
+<thead><tr><th style="width:22%">Store</th><th style="width:28%">Address</th><th style="width:25%">Hours / phone</th><th>Use</th></tr></thead>
 <tbody>
-<tr><td><b>Micro Center Houston</b></td><td>5305 S Rice Ave, Houston, TX 77081</td><td>Mon–Sat 10–9, Sun 11–6 · (713) 940-8500 [38]</td><td>Selected C3, ESP32-CAM, amps, haptic drivers, motors, mux, regulator and FTDI programmer; exact SKUs in §12.2. User reports the listings in stock; shelf counts and reservations were not independently observed</td></tr>
-<tr><td><b>Electronic Parts Outlet (EPO)</b></td><td>3753-B Fondren Rd, Houston, TX 77063</td><td>Mon–Fri 9–6, Sat 9–5, Sun closed · (713) 784-0140 [39]</td><td>Says it stocks Arduino, SparkFun, Raspberry Pi, Pololu and Adafruit lines. Call about specific parts</td></tr>
-<tr><td><b>Ace Electronics</b></td><td>3210 Antoine Dr, Houston, TX 77092</td><td>Mon–Fri 8–5 only · 713-688-8114 [40]</td><td>Vibration motors, wire, protoboard, heat shrink, MOSFETs</td></tr>
-<tr><td>Best Buy Galleria</td><td>5133 Richmond Ave, Houston, TX 77056</td><td>(713) 552-1512 [41]</td><td>Commercial bone-conduction headset (fallback audio). Check stock online first</td></tr>
-<tr><td><b>Micro Center Austin</b></td><td>12707 N Mopac Expy, Austin, TX 78727</td><td>Opens 10 am Saturday [38]</td><td>Emergency top-up during HackTX (hacking starts at 8 am)</td></tr>
+<tr><td><b>Micro Center Houston</b></td><td>5305 S Rice Ave, Houston, TX 77081</td><td>Mon–Sat 10–9, Sun 11–6 · (713) 940-8500 [38]</td><td>Stock snapshot below; shortages and audio block a complete shopping trip. Recheck before driving</td></tr>
+<tr><td><b>Micro Center Austin</b></td><td>12707 N Mopac Expy, Austin, TX 78727</td><td>Opens 10 am Saturday [38]</td><td>Top-up during HackTX (hacking starts at 8 am)</td></tr>
 </tbody>
 </table>
-<p class="small" style="widows:2;orphans:2">No electronics supplier in Galveston was verified. The user reports the Houston-listed parts in stock; this document has no independent reservation or checkout evidence. Micro Center automated pages blocked inventory reads. EPO lists general components, not per-part stock. The VL53L5CX Mini and raw bone transducers have no verified Houston walk-in source: shipped orders are exceptions, and an “in stock” label alone does not prove a delivery date.</p>
+<p class="small"><b>Snapshot: 24 Oct 2026, ~1:40 PM CDT, real Zen browser, Houston selected.</b> Counts and prices below are website observations, not reservations or receipts; they may change and exclude tax. Earlier automated HTTP 403 failures no longer describe this audit. No purchase was made. Nothing is already owned unless confirmed.</p>
 
-<h3>12.2 Complete purchase list, compact two-board prototype</h3>
+<h3>12.2 Complete purchase list</h3>
+<p><b>Not purchase-ready:</b> two motors are required but only one is listed; the LM3671 is sold out; integrated bone-conduction audio has no approved component. Buy only confirmed required items not already owned. Candidate substitutions below are not adopted replacements.</p>
 <table>
 <thead><tr><th style="width:45%">Part and role</th><th class="num" style="width:12%">Buy</th><th>Source, status and constraint</th></tr></thead>
 <tbody>
-<tr><td>XIAO ESP32-C3 cue board, 3-pack (one used, two spare)</td><td class="num">1 pack</td><td><a href="https://www.microcenter.com/product/713924/seeed-studio-xiao-esp32-c3-(3-pack)">Micro Center Houston SKU 069005</a>; user-reported in stock</td></tr>
-<tr><td>Inland ESP32-CAM camera modules, pair (one used, one spare)</td><td class="num">1 pair</td><td><a href="https://www.microcenter.com/product/632692/inland-esp32-cam-wifi-bluetooth-camera-modules-pair">Micro Center SKU 221739</a>; user-reported in stock. Check the actual sensor, PSRAM and 5 V pinout at G0 [13]</td></tr>
-<tr><td>VL53L5CX Qwiic Mini 8×8 ToF, front-facing</td><td class="num">1</td><td><a href="https://www.sparkfun.com/sparkfun-qwiic-mini-tof-imager-vl53l5cx.html">SparkFun SEN-19013</a>, $25.95 when checked 18 Oct; shipped exception. 12.7 × 25.4 mm, not three bulky Modulino boards [20]</td></tr>
-<tr><td>MAX98357A mono I²S amp, one left and one right</td><td class="num">2</td><td><a href="https://www.microcenter.com/product/613583/adafruit-industries-max98357a-i2s-3w-class-d-amplifier-breakout">Micro Center SKU 007112</a>; user-reported in stock. Set separate channel-selection voltages [36]</td></tr>
-<tr><td>Adafruit 1674 bone-conduction transducer, 8 Ω / 1 W</td><td class="num">2</td><td><a href="https://www.digikey.com/en/products/detail/adafruit-industries-llc/1674/6827067">DigiKey 1528-1948-ND</a>; shipped exception unless exact local parts are confirmed. Adafruit direct was out of stock; limit amp output and insulate for skin contact [36]</td></tr>
-<tr><td>DRV2605L haptic motor driver</td><td class="num">2</td><td><a href="https://www.microcenter.com/product/613668/adafruit-industries-drv2605l-haptic-motor-controller">Micro Center SKU 008607</a>; user-reported in stock. Inspect connector style before choosing leads</td></tr>
-<tr><td>ERM vibration disc motor</td><td class="num">2</td><td><a href="https://www.microcenter.com/product/454448/adafruit-industries-vibrating-mini-motor-disc">Micro Center SKU 850917</a>; user-reported in stock</td></tr>
-<tr><td>TCA9548A I²C multiplexer for the two haptic drivers</td><td class="num">1</td><td><a href="https://www.microcenter.com/product/637441/adafruit-industries-tca9548a-i2c-multiplexer">Micro Center SKU 278499</a>; user-reported in stock</td></tr>
-<tr><td>LM3671 3.3 V / 600 mA buck regulator for peripheral rail</td><td class="num">1</td><td><a href="https://www.microcenter.com/product/613713/adafruit-industries-lm3671-33v-buck-converter-breakout-33v-output-600ma-max">Micro Center SKU 009191</a>; user-reported in stock. Verify measured current under 600 mA</td></tr>
-<tr><td>FTDI USB-to-UART adapter for ESP32-CAM programming</td><td class="num">1</td><td><a href="https://www.microcenter.com/product/656323/inland-ftdi-adapter-usb-controller">Micro Center SKU 489252</a>; user-reported in stock. Use 3.3 V UART logic; obtain its matching computer-side USB cable</td></tr>
-<tr><td>Qwiic-to-bare-wire 4-pin cable for the Mini ToF</td><td class="num">1</td><td><a href="https://www.sparkfun.com/flexible-qwiic-cable-breadboard-jumper-4-pin.html">SparkFun PRT-17912</a>; ship with the Mini, or obtain a compatible local harness</td></tr>
-<tr><td>5 V USB power bank with at least two simultaneous outputs</td><td class="num">1</td><td>Local general electronics retailer; verify measured combined draw and both ports in use. Battery stays in pocket</td></tr>
-<tr><td>USB-C data/power cable for C3; computer-side FTDI USB cable; insulated USB-to-5 V/GND breakout for camera, amps and regulator</td><td class="num">1 each</td><td>Buy locally, matching the actual FTDI connector and power-bank output; keep two separately powered branches and common signal ground</td></tr>
-<tr><td>Jumper wires, 0.1-inch headers, hookup wire, perfboard, solder, heat-shrink and strain relief</td><td class="num">1 small set each</td><td>Micro Center or <a href="https://epohouston.com/electronic-components/">Electronic Parts Outlet</a>; no item-level stock proof. Include the ESP32-CAM flash jumper</td></tr>
-<tr><td>Resistor assortment and recording indicator LED</td><td class="num">1 set + 1 LED</td><td>Local electronics store. Amp channel selection and LED current limiting require resistors; confirm a usable indicator GPIO at G0</td></tr>
-<tr><td>Headband or glasses frame, camera/ToF mounts, transducer/motor mounts, Velcro or tape, skin-safe insulation</td><td class="num">1 set</td><td>Local hardware or eyewear store. Only camera and Mini ToF face forward; insulate skin-facing transducer joints</td></tr>
-<tr><td>Android phone for hotspot, offline perception and app</td><td class="num">1</td><td>User-owned if compatible. Soldering iron and multimeter: one each if not already owned</td></tr>
-<tr><td>Optional haptic fallback: logic-level N-MOSFET, flyback diode and gate resistor, one set per motor</td><td class="num">2 sets</td><td><a href="https://ace4parts.com/">Ace Electronics</a> [40] or EPO; buy only as the DRV2605L fallback. The MOSFET must switch fully from 3.3 V gate drive; reserve two PWM-capable C3 GPIOs at G0</td></tr>
+<tr><td>Arduino Modulino Distance (VL53L4CD), one forward zone</td><td class="num">1</td><td><a href="https://www.microcenter.com/product/707372/arduino-modulino-distance">992826</a> [40]: <b>2 in stock, $11.99</b>. Solderable pins/jumpers, no Qwiic harness. Sensor spec [39]</td></tr>
+<tr><td>XIAO ESP32-C3 3-pack (one used, two spare)</td><td class="num">1 pack</td><td><a href="https://www.microcenter.com/product/713924/seeed-studio-xiao-esp32-c3-(3-pack)">069005</a>: <b>3 packs, $15.59 each</b></td></tr>
+<tr><td>ESP32-CAM pair (one used, one spare, not stereo)</td><td class="num">1 pair</td><td><a href="https://www.microcenter.com/product/632692/inland-esp32-cam-wifi-bluetooth-camera-modules-pair">221739</a>: <b>6 pairs, $17.99 each</b>. Check actual sensor, PSRAM and pinout at G0</td></tr>
+<tr><td>DRV2605L haptic drivers</td><td class="num">2</td><td><a href="https://www.microcenter.com/product/613668/adafruit-industries-drv2605l-haptic-motor-controller">008607</a>: <b>4, $7.99 each</b></td></tr>
+<tr><td>ERM vibration disc motors</td><td class="num">2</td><td><a href="https://www.microcenter.com/product/454448/adafruit-industries-vibrating-mini-motor-disc">850917</a>: <b>1, $1.99 — short one</b></td></tr>
+<tr><td>TCA9548A mux</td><td class="num">1</td><td><a href="https://www.microcenter.com/product/637441/adafruit-industries-tca9548a-i2c-multiplexer">278499</a>: <b>2, $10.99 each</b></td></tr>
+<tr><td>LM3671 peripheral regulator, if G0 shows it necessary</td><td class="num">1 if needed</td><td><a href="https://www.microcenter.com/product/613713/adafruit-industries-lm3671-33v-buck-converter-breakout-33v-output-600ma-max">009191</a>: <b>sold out</b> ($4.95 listed). TPS62827 candidate below, not an assumed substitution</td></tr>
+<tr><td>FTDI programmer</td><td class="num">1</td><td><a href="https://www.microcenter.com/product/656323/inland-ftdi-adapter-usb-controller">489252</a>: <b>2, $7.99 each</b>. Verify 3.3 V UART logic and USB connector before wiring</td></tr>
+<tr><td>Power bank: Energizer 10,000 mAh, USB-C + dual USB-A</td><td class="num">1</td><td><a href="https://www.microcenter.com/product/699842">911677</a>: <b>6, $19.99</b>. Lists simultaneous charging up to 3 devices; combined draw untested</td></tr>
+<tr><td>C3 USB-C cable; FTDI Mini/Micro-B combination cable; cut 5 V power lead</td><td class="num">1 each</td><td><a href="https://www.microcenter.com/product/658450">481952</a>: 1/$10.99; <a href="https://www.microcenter.com/product/442280">684290</a>: 1/$14.07; <a href="https://www.microcenter.com/product/486571">422618</a>: 5/$2.99. Match connectors; insulate cut lead</td></tr>
+<tr><td>M/F and F/F jumpers; headers; 22 AWG wire</td><td class="num">1 pack/spool each</td><td><a href="https://www.microcenter.com/product/421643">787911</a>: 2/$14.99; <a href="https://www.microcenter.com/product/454418">847194</a>: 4/$7.99; <a href="https://www.microcenter.com/product/426789">999805</a>: 6/$5.00; <a href="https://www.microcenter.com/product/689140">798124</a>: 5/$5.99. Include flash jumper</td></tr>
+<tr><td>Perfboard; solder; heat-shrink</td><td class="num">1 pack each</td><td><a href="https://www.microcenter.com/product/486585">422790</a>: 1/$4.99; <a href="https://www.microcenter.com/product/658063">472068</a>: 1/$5.99; <a href="https://www.microcenter.com/product/689124">797464</a>: 4/$4.99</td></tr>
+<tr><td>Resistor assortment; red recording LEDs</td><td class="num">1 pack each</td><td><a href="https://www.microcenter.com/product/618897">078410</a>: 8/$7.99; <a href="https://www.microcenter.com/product/689158">797175</a>: 3/$7.99. Confirm LED GPIO/current limiting</td></tr>
+<tr><td>Possible safety-glasses frame; Velcro; mounting tape; cable ties</td><td class="num">1 each</td><td><a href="https://www.microcenter.com/product/616517">045609</a>: 1/$3.49; <a href="https://www.microcenter.com/product/657212">448159</a>: 4/$14.99; <a href="https://www.microcenter.com/product/681576">713578</a>: 1/$9.99; <a href="https://www.microcenter.com/product/657186">447631</a>: 25+/$2.99. Dedicated mounts not verified; fabrication and fit checks required</td></tr>
+<tr><td>Weller 60 W iron; Klein MM325 meter; Android phone, only if needed</td><td class="num">1 each if not owned</td><td><a href="https://www.microcenter.com/product/680476">705236</a>: 1/$32.99; <a href="https://www.microcenter.com/product/687718">777540</a>: 2/$34.99. Optional <a href="https://www.microcenter.com/product/708991">Moto G06 014555</a>: 2/$99.99; app/hotspot compatibility untested</td></tr>
+<tr><td>Integrated bone-conduction output</td><td class="num">Unresolved</td><td><b>No approved part.</b> OpenRun [41] redirects to support and is not approved; <a href="https://www.microcenter.com/product/675121/humbird-bone-conduction-speaker">Humbird</a> says “No longer carried”. Searches did not identify a suitable stocked discrete transducer; this is not proof none exists</td></tr>
 </tbody>
 </table>
-<p class="small"><b>No grand total:</b> prices, local pickup receipts, overnight checkout dates, shipping, tax, power draw and mount fit are not all confirmed. An online “in stock” listing is not a delivery guarantee. The two essential shipped exceptions are the Mini ToF and raw bone transducers; no verified in-person Houston equivalents preserve their functions.</p>
+<p class="small"><b>Candidates only:</b> <a href="https://www.microcenter.com/product/635842">TPS62827 262121</a>: 1/$7.99, 3.3 V/2 A, 3.4–5.5 V input; verify pinout/load. <a href="https://www.microcenter.com/product/707368">Modulino Vibro 992891</a>: 4/$11.99; different module/interface, needs redesign verification. Neither is a drop-in promise. No complete-build total while motor/audio decisions remain open.</p>
 <h3>12.3 Tiers</h3>
 <table>
 <thead><tr><th style="width:17%">Tier</th><th style="width:45%">Contents</th><th style="width:15%">Cost status</th><th style="width:23%">Use</th></tr></thead>
 <tbody>
-<tr><td>Tier 0: phone-only</td><td>Android phone on a headband using its own camera, plus available headphones and phone vibration. Same app, using the PhoneCamera FrameSource</td><td>Unquoted</td><td>Software proof; not the glasses</td></tr>
-<tr><td>Tier 1: minimum frame</td><td>C3 cue board + ESP32-CAM + ToF + 2 motors (MOSFET drive) + supplies + frame + power. Audio from phone to existing headphones</td><td>Unquoted</td><td>Camera and haptic demo</td></tr>
-<tr><td><b>Tier 2: recommended</b></td><td>Complete table above: two boards, one compact 8×8 Mini ToF, stereo bone cues played on the cue board, haptics and pocket power</td><td>Unquoted</td><td>Full staged demo; two shipped exceptions</td></tr>
-<tr><td>Fallback audio</td><td>Replace DIY transducers and amps with a bone-conduction headset</td><td>Price at purchase</td><td>Haptics carry urgency</td></tr>
+<tr><td>Tier 0: phone-only bench</td><td>Owned Android phone and its camera. Existing headset audio can be exercised on compatible bench equipment, not approved integrated hardware</td><td>Unquoted</td><td>Software proof, not completed glasses</td></tr>
+<tr><td>Tier 1: intended haptics + camera</td><td>C3, two drivers/motors, mux, camera, Modulino, power and frame</td><td>Blocked</td><td>Resolve second motor and any required regulator; no cue audio</td></tr>
+<tr><td>Tier 2: integrated audio + haptics</td><td>Tier 1 plus an approved, verified integrated bone-conduction output. No part selected</td><td>Blocked</td><td>Not a purchase-ready build; no shipped fallback</td></tr>
 </tbody>
 </table>
-<p class="small">Other listed products (24 Oct 2026): Ray-Ban Meta Gen 3 from $449 [42], Envision Ally Solos $699 [43], OrCam MyEye 3 Pro $4,250 [44], NOA $4,990 [46], .lumen €9,999 [47]. They do different jobs. Determine's two-board total is unquoted, so no like-for-like cost-of-entry comparison is claimed.</p>
+<p class="small">Other listed products (24 Oct 2026): Ray-Ban Meta Gen 3 from $449 [42], Envision Ally Solos $699 [43], OrCam MyEye 3 Pro $4,250 [44], NOA $4,990 [46], .lumen €9,999 [47]. They do different jobs. Determine's total is unquoted, so no like-for-like cost-of-entry comparison is claimed.</p>
 
-<h3>12.4 Houston-first purchase and size gates</h3>
+<h3>12.4 Purchase and fit gates</h3>
 <ol>
-<li><b>Collect locally:</b> reserve the user-reported in-stock Micro Center Houston SKUs in §12.2, then check the ESP32-CAM PSRAM/sensor, driver connector revisions and the actual FTDI port. Buy generic wiring and mounts from Micro Center or EPO. The user report is not a receipt or a measured shelf count.</li>
-<li><b>Two shipped exceptions:</b> order one SparkFun VL53L5CX Mini plus its Qwiic harness, and two Adafruit 1674 transducers from DigiKey unless the exact items are found locally. Confirm delivery dates at checkout; choose expedited service if required.</li>
-<li><b>Before wiring:</b> mock up a single forward camera and ToF on a headband, with control boards on the rear strap and battery in a pocket. If balance, fit or simultaneous power fails Gate G0, do not claim a wearable build. A single locally sold Modulino Distance board would be a larger, 1.2 m single-zone near-field demo only, not an equivalent 8×8 fallback.</li>
+<li><b>Recheck the snapshot:</b> only buy required §12.2 items not already owned. Resolve the second motor, regulator requirement and integrated audio before calling this a complete-build shopping list. No courier fallback; if the Modulino is unavailable, stop and re-plan.</li>
+<li><b>Audio design gate:</b> the separate OpenRun is not approved. Stocked headsets do not establish integrated transducer availability. Select and verify output, mounting, safe drive/ceiling and latency before an audio-wearable claim. Existing Bluetooth software remains a bench path, with explicit route failure and no speaker fallback.</li>
+<li><b>Before wiring:</b> mock up a single forward camera and ToF on a headband, with the C3 and haptic drivers on the rear strap and the battery in a pocket. If balance, fit or simultaneous power fails Gate G0, do not claim a wearable build. The Modulino is a 1.2 m single-zone near-field demo sensor only; it is not a grid, a stereo pair or a lateral-range sensor.</li>
 </ol>
 </section>
 
@@ -715,18 +725,18 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <table>
 <thead><tr><th style="width:8%">Gate</th><th style="width:38%">Test</th><th>Pass criterion (<span class="tag t-p">PROPOSED</span> unless stated)</th></tr></thead>
 <tbody>
-<tr><td>G0</td><td>Bring-up on two boards: ESP32-CAM JPEG frames and cue-board ToF at 15 Hz, with both pin maps and the two-board power distribution fixed. Record the camera module's actual PSRAM and sensor</td><td>10 minutes, no resets, no corrupt JPEGs, no brown-outs when both radios transmit</td></tr>
-<tr><td>G1</td><td>Both Wi-Fi producers stream to the team's phone over one hotspot simultaneously</td><td>≥ 10 fps QVGA/VGA JPEG sustained 10 min with the ToF stream active. Per-board frame and range loss plus staleness logged</td></tr>
+<tr><td>G0</td><td>Bring-up on two boards: ESP32-CAM JPEG frames and the C3 reading the Modulino Distance at 15 Hz, with the pin map and both power runs fixed. Record the camera module's actual PSRAM and sensor</td><td>10 minutes, no resets, no corrupt JPEGs, no brown-outs when both radios transmit</td></tr>
+<tr><td>G1</td><td>Both Wi-Fi producers stream to the team's phone over one hotspot simultaneously</td><td>≥ 10 fps QVGA/VGA JPEG sustained 10 min with the RANGE stream active. Per-board frame and range loss plus staleness logged</td></tr>
 <tr><td>G2</td><td>USB UVC on the team's phone (optional path)</td><td>Enumerates via Camera2 or a user-space library. Otherwise mark it unsupported</td></tr>
-<tr><td>G3</td><td>Cue path: phone command → glasses earcon, both sides</td><td>True L/R separation confirmed. p95 command-to-sound measured</td></tr>
-<tr><td>G4</td><td>Gain ceiling enforced on the glasses</td><td>A forged CUE above the ceiling is clamped</td></tr>
+<tr><td>G3</td><td>Cue path: phone synthesises a cue, the headset plays it, the C3 fires haptics from the same CUE</td><td>Headset route confirmed active; audio-leg and haptic-leg p95 measured separately; unplugging or pausing the headset yields an announced fault, never phone-speaker audio</td></tr>
+<tr><td>G4</td><td>Output ceilings: audio ceiling on the phone; <code>haptic_max</code> on the board</td><td>Audio can never be driven past the ceiling by a slider or urgency step. A CUE requesting more haptic than <code>haptic_max</code> is lowered and ACKed APPLIED_CLAMPED. PROFILE <code>haptic_max</code> = 0 is rejected as BAD_CUE (1–255 only), so the watchdog LSS always has a non-zero level. Minimum 1 is a protocol rule, not a measured guarantee the wearer can feel it — perceptibility is checked in G9</td></tr>
 <tr><td>G5</td><td>Calibration repeatability</td><td>Two runs within ±3 dB per side, same fit</td></tr>
-<tr><td>G6</td><td>End-to-end latency on the course</td><td>p50/p95/max over ≥ 100 events. Target p95 ≤ 250 ms (report the actual value either way)</td></tr>
-<tr><td>G7</td><td>Fault injection: unplug or power down either board, kill app, Wi-Fi off, low battery</td><td>Unavailable cue ≤ 1 s. No stale cue after the fault</td></tr>
-<tr><td>G8</td><td>Detection on the staged course: head-height bar, person, left and right obstacles, 10 repeats each</td><td>Miss and false-alert table published. No "works" claim without it</td></tr>
-<tr><td>G9</td><td>Cue identification after 5 minutes of training</td><td>About 90% correct family and side, in ambient noise (the number is arbitrary and needs a pilot)</td></tr>
+<tr><td>G6</td><td>End-to-end latency on the course</td><td>p50/p95/max over ≥ 100 events, range-sample-to-haptic and range-sample-to-headset-audio reported separately. Target haptic p95 ≤ 250 ms (report the actual value either way)</td></tr>
+<tr><td>G7</td><td>Fault injection: unplug or power down either board, kill app, Wi-Fi off, headset off or stolen, low battery</td><td>Unavailable announced ≤ 1 s on a surviving output (headset audio, temple haptics or phone vibration). Phone dead: the board's haptic-only LSS watchdog, which makes no sound. No stale cue after the fault</td></tr>
+<tr><td>G8</td><td>Single-zone ranging on the staged course: head-on approach to a white board, a gray board and a dark cloth, from 1.5 m inward, 10 repeats each, indoors with bright-window and glass cases. Log VALID / NO_TARGET / UNKNOWN rates and the distance at first VALID</td><td>Table of first-VALID distance and miss/false-alert rate per target. FAR 900–1200, MID 500–899 and NEAR &lt; 500 mm are tuned from it; the 1.2 m spec is not claimed as useful warning distance unless the table supports it. No lateral or object-class claim is tested because none is made</td></tr>
+<tr><td>G9</td><td>Cue identification after 5 minutes of training; haptic perceptibility at <code>haptic_max</code> = 1</td><td>About 90% correct family and band, in ambient noise (the number is arbitrary and needs a pilot). Report whether the minimum haptic level is felt</td></tr>
 <tr><td>G10</td><td>Masking check: localise real sounds with cues on versus off</td><td>Report the difference. Reduce cue duty if it is large [52]</td></tr>
-<tr><td>G11</td><td>Thermal and battery over 30 minutes</td><td>Frame touch temperature comfortable. Runtime measured</td></tr>
+<tr><td>G11</td><td>Thermal and battery over 30 minutes, headset and headband together</td><td>Touch temperature comfortable. Runtime measured</td></tr>
 </tbody>
 </table>
 <h3>13.1 Failure catalogue</h3>
@@ -738,12 +748,13 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <tr><td>PSRAM contention corrupts frames under Wi-Fi [13]</td><td>JPEG decode errors</td><td>Lower resolution or frame rate. Use JPEG only</td></tr>
 <tr><td>Hotspot drops or the phone roams to another network</td><td>Heartbeat timeout on both boards</td><td>UNAVAILABLE, then auto-rejoin. Pin the SSID</td></tr>
 <tr><td>One board drops off the hotspot while the other stays up</td><td>That board's BEAT times out</td><td>Fail loud: UNAVAILABLE, never a half-working "all clear". Auto-rejoin</td></tr>
-<tr><td>Clock-offset estimate drifts; a stale frame or grid arrives</td><td>Freshness gate (offset-corrected age + receive age)</td><td>Discard the input, re-estimate from PING/PONG. Persistent staleness → UNAVAILABLE</td></tr>
-<tr><td>ToF null zones in sunlight or on glass</td><td>Status flags</td><td>DEGRADED announcement. Camera-only labels</td></tr>
-<tr><td>Detector misses an unusual obstacle</td><td>G8 log</td><td>The ToF corridor still triggers "obstacle"</td></tr>
-<tr><td>A2DP latency in fallback audio [16]</td><td>G3 measurement</td><td>Haptics carry urgency. Audio carries labels</td></tr>
-<tr><td>Headset multipoint switches to another device</td><td>Audio route change callback</td><td>Alert on phone. Disable multipoint for the demo</td></tr>
-<tr><td>Wearer cannot lateralise bone cues</td><td>Calibration verify step</td><td>SSD mode: mono audio, haptic and spoken direction</td></tr>
+<tr><td>Clock-offset estimate drifts; a stale frame or RANGE sample arrives</td><td>Freshness gate (offset-corrected age + receive age)</td><td>Discard the input, re-estimate from PING/PONG. Persistent staleness → UNAVAILABLE</td></tr>
+<tr><td>No usable ToF return: empty/out-of-range view, sunlight, glass or dark surface</td><td>RANGE status 2 UNKNOWN</td><td>Announce DEGRADED, stop metric warning repeats, never call it far or clear. A fresh valid return re-enters through normal persistence</td></tr>
+<tr><td>Unusual or unlabelled obstacle in the cone</td><td>G8 log</td><td>No effect on the hazard loop: it uses no object detector. The ToF band triggers "obstacle" if the object is in the cone</td></tr>
+<tr><td>A2DP latency on the headset audio leg [16]</td><td>G3 measurement</td><td>Haptics carry urgency. Audio carries identity</td></tr>
+<tr><td>Headset disconnects, or multipoint switches it to another device</td><td>Audio route change callback</td><td>Announce explicitly on haptics and phone vibration; never fall back to the phone speaker. Disable multipoint for the demo</td></tr>
+<tr><td>Phone app killed, crashed or Wi-Fi off</td><td>Board: no PING for 800 ms (or none within 5 s of boot)</td><td>Phone-owned audio is gone with it, so the only announcement is the board's temple LSS haptic every 5 s at <code>haptic_max</code> (≥ 1), fault bit 7. This is a haptic-only last channel, not an audible alarm</td></tr>
+<tr><td>Wearer cannot lateralise bone cues</td><td>Calibration verify step</td><td>SSD mode: mono audio. Hazard cues never carried a side, so haptics keep confirming every hazard</td></tr>
 <tr><td>Brown-out when both boards transmit at once</td><td>Reset reason in heartbeat</td><td>Bulk capacitance, short separate power runs, power bank with adequate output</td></tr>
 </tbody>
 </table>
@@ -760,7 +771,7 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <tr><td>Hearing-aid output</td><td>Send cues directly to LE Audio hearing aids and earbuds (unicast, LC3), so wearers who already use hearing aids need no extra transducer [16][19]</td><td>Device support plus measured latency</td></tr>
 <tr><td>Auracast</td><td>Encrypted broadcast so an O&amp;M instructor or companion can monitor cues in training [17][18]</td><td>Supported phones only. Never the safety path</td></tr>
 <tr><td>Meta DAT</td><td>Production DAT adapter on supported Ray-Ban and Oakley Meta models, with bone and haptic output kept on a separate accessory [6][7]</td><td>Measured stream latency (undocumented by Meta)</td></tr>
-<tr><td>Sensing</td><td>Synchronised stereo or ESP32-P4 with high-speed USB. A downward-pitched sensor for drop-off <i>research</i></td><td>Per-class recall data with O&amp;M review</td></tr>
+<tr><td>Sensing</td><td>A multi-zone ToF if one becomes available from the same store, enabling tested lateral claims; synchronised stereo or ESP32-P4 with high-speed USB. A downward-pitched sensor for drop-off <i>research</i></td><td>Per-class recall data with O&amp;M review</td></tr>
 <tr><td>Hardware</td><td>Custom flex PCB in the temple arms, integrated battery with protection, IP rating</td><td>Electrical, battery and RF compliance testing</td></tr>
 <tr><td>Single-board wearable</td><td>Re-combine camera and cues on one SoC when a camera-capable board (e.g. XIAO ESP32-S3 Sense [14]) is reliably obtainable; removes the second radio and the per-board clock alignment</td><td>Availability plus a G0-equivalent two-function bring-up</td></tr>
 <tr><td>iOS</td><td>Wi-Fi FrameSource. Apple documents UVC external cameras for iPad [56], so treat iPhone USB cameras as unsupported until tested</td><td>Parity of gates G1–G7</td></tr>
@@ -778,11 +789,11 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <thead><tr><th style="width:9%">ADR</th><th style="width:27%">Decision</th><th style="width:34%">Alternatives rejected</th><th>Revisit when</th></tr></thead>
 <tbody>
 <tr><td>001</td><td>Phone is the only decision-maker</td><td>On-glasses inference (cost, heat, battery). Cloud inference (latency, offline failure)</td><td>A frame SoC can run the policy at similar cost and power</td></tr>
-<tr><td>002</td><td>Mono RGB + 8×8 ToF for v0</td><td>Dual RGB stereo (sync and calibration). Ultrasonic (wide beam, weak bearing)</td><td>Synchronised stereo is affordable and measured outdoors</td></tr>
+<tr><td>002</td><td>Mono RGB (frames for Describe and diagnostics only) + one forward ToF zone for v0, replacing the unobtainable 8×8 grid (24 Oct 2026)</td><td>8×8 grid (not purchasable under the Micro Center-only rule). Dual RGB stereo (sync and calibration; the second ESP32-CAM is a spare). Ultrasonic (wide beam, weak bearing)</td><td>A Micro Center-listed multi-zone ToF becomes available, or a lateral-range claim is needed and tested</td></tr>
 <tr><td>003</td><td>Wi-Fi hotspot transport for frames</td><td>BLE video (bandwidth). USB UVC by default (support varies by phone maker)</td><td>Gate G2 passes on the target phone fleet</td></tr>
-<tr><td>004</td><td>Urgent cues played on the glasses from stored earcons</td><td>A2DP streaming (100–200 ms). Phone speaker (no direction, public)</td><td>LE Audio unicast is widely available</td></tr>
-<tr><td>005</td><td>Direction is always redundant; no panning-only cues</td><td>HRTF spatial audio alone (4 of 13 struggled [2]; SSD cannot use it)</td><td>Never for SSD mode</td></tr>
-<tr><td>006</td><td>Calibration matches perceived level per session, with a hard ceiling enforced twice</td><td>Fixed balance slider. Unlimited boost of the weak side</td><td>A transducer dose standard exists</td></tr>
+<tr><td>004</td><td>Cue audio synthesised on the phone and played on a finished bone-conduction headset; the glasses fire haptics only (24 Oct 2026, replaces on-board I²S audio)</td><td>On-board stereo amplifiers and raw transducers (shipped parts, skin-contact wiring). Phone speaker (public, and silent fallback is forbidden)</td><td>LE Audio unicast is widely available, or a Micro Center-listed raw transducer path is justified by a latency measurement</td></tr>
+<tr><td>005</td><td>Hazard cues carry no direction in v0; urgency is redundant across headset audio and haptics; no panning-only cues</td><td>Inferring a side from one zone. HRTF spatial audio alone (4 of 13 struggled [2]; SSD cannot use it)</td><td>A lateral-capable sensor is built and gated</td></tr>
+<tr><td>006</td><td>Calibration matches perceived level per session, with a hard ceiling enforced on the phone audio path and a separate <code>haptic_max</code> clamp (1–255) on the board</td><td>Fixed balance slider. Unlimited boost of the weak side. <code>haptic_max</code> = 0 (would silence the last local failure channel)</td><td>A transducer dose standard exists</td></tr>
 <tr><td>007</td><td>No "clear" cue; silence means no report from a healthy system</td><td>Periodic "all clear" reassurance</td><td>Never</td></tr>
 <tr><td>008</td><td>Cloud and generative description out of the hazard loop</td><td>LLM-driven navigation (22.2% wrong answers [30])</td><td>Never for hazard cues</td></tr>
 <tr><td>009</td><td>Meta DAT is a FrameSource adapter, not a dependency</td><td>DAT-only build (cost, no haptics or bone output)</td><td>The team owns supported glasses</td></tr>
@@ -796,7 +807,7 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <section class="chapter">
 <div class="kicker">Chapter 16</div>
 <h2>Source register</h2>
-<p class="small">Retrieved 24 Oct 2026, except [13], [20], [36], [59] and the AWS entries re-read for the 24 Oct two-board revision, and [62] plus the Annapurna collaboration entries [68]–[76] read 24 Oct 2026. Only the SparkFun ToF and Adafruit bone transducer price/stock were rechecked among the older-priced parts. Vendor pages state vendor claims. Product prices drift.</p>
+<p class="small">Retrieved 24 Oct 2026, except [13], [36], [59] and the AWS entries re-read for the 24 Oct two-board revision, [62] plus the Annapurna collaboration entries [68]–[76] read 24 Oct 2026, and the Modulino/VL53L4CD/Shokz/Micro Center entries [20], [37], [39]–[41] read or searched 24 Oct 2026. Micro Center product pages returned HTTP 403 to automated reads, so [40] and [41] are catalog links, not verified prices or stock. Vendor pages state vendor claims. Product prices drift.</p>
 <ol class="sources">
 <li>Lighthouse Guild, "The White Cane and Beyond" (2024). https://lighthouseguild.org/news/the-white-cane-and-beyond/</li>
 <li>Pittet et al., secondary ETA evaluation with BVI participants, <i>Scientific Reports</i> (2026). https://pmc.ncbi.nlm.nih.gov/articles/PMC12909938/</li>
@@ -817,9 +828,9 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <li>Bluetooth SIG, How to build an Auracast transmitter (rev. 16 Sep 2026). https://www.bluetooth.com/wp-content/uploads/2024/05/2403_How_To_Auracast_Transmitter.pdf</li>
 <li>Google, LE Audio and Auracast support on Android (2025). https://blog.google/products-and-platforms/platforms/android/le-audio-auracast-support/</li>
 <li>Android Developers, BLE Audio overview. https://developer.android.com/develop/connectivity/bluetooth/ble-audio/overview</li>
-<li>SparkFun, Qwiic Mini ToF Imager VL53L5CX. https://www.sparkfun.com/sparkfun-qwiic-mini-tof-imager-vl53l5cx.html</li>
-<li>Google AI Edge, MediaPipe Object Detector for Android. https://ai.google.dev/edge/mediapipe/solutions/vision/object_detector/android</li>
-<li>Google AI Edge, LiteRT for Android. https://ai.google.dev/edge/litert/android</li>
+<li>STMicroelectronics, VL53L4CD datasheet (DS13812): 1200 mm at 90% detection indoors on a white target, 18° diagonal FOV, up to 100 Hz. https://www.st.com/resource/en/datasheet/vl53l4cd.pdf</li>
+<li>Google AI Edge, MediaPipe Object Detector for Android (listed for the earlier revision; no object detector is used in this build). https://ai.google.dev/edge/mediapipe/solutions/vision/object_detector/android</li>
+<li>Google AI Edge, LiteRT for Android (listed for the earlier revision; not used in this build). https://ai.google.dev/edge/litert/android</li>
 <li>Depth Anything V2 (licences per model size). https://github.com/DepthAnything/Depth-Anything-V2</li>
 <li>Brewster, Wright &amp; Edwards, earcon design guidelines (1995). https://www.dcs.gla.ac.uk/~stephen/papers/HCI95.pdf</li>
 <li>Walker et al., spearcons (2013). https://pubmed.ncbi.nlm.nih.gov/23516800/</li>
@@ -833,12 +844,12 @@ SYSTEM OFF: ▮ ▯ ▯ descending, repeated every 5 s until resolved, plus phon
 <li>About Amazon, inside Annapurna Labs. https://www.aboutamazon.com/news/aws/take-a-look-inside-the-lab-where-aws-makes-custom-chips</li>
 <li>AWS, Inferentia. https://aws.amazon.com/ai/machine-learning/inferentia/</li>
 <li>AWS, Neuron SDK. https://aws.amazon.com/ai/machine-learning/neuron/</li>
-<li>Adafruit products: DRV2605L https://www.adafruit.com/product/2305 · motor disc https://www.adafruit.com/product/1201 · MAX98357A https://www.adafruit.com/product/3006 · bone transducer https://www.adafruit.com/product/1674</li>
-<li>Shokz, OpenMove https://shokz.com/products/openmove · OpenRun https://shokz.com/products/openrun</li>
+<li>Adafruit DRV2605L haptic motor driver (I²C address 0x5A). https://www.adafruit.com/product/2305</li>
+<li>Shokz, OpenRun. https://shokz.com/products/openrun</li>
 <li>Micro Center, store locations and hours. https://microcenter.zendesk.com/hc/en-us/articles/24790484266007-Micro-Center-Store-Locations-and-Addresses</li>
-<li>Electronic Parts Outlet. https://epohouston.com/</li>
-<li>Ace Electronics. https://ace4parts.com/</li>
-<li>Best Buy Galleria store page. https://stores.bestbuy.com/tx/houston/5133-richmond-ave-291.html</li>
+<li>Arduino, Modulino Distance (VL53L4CD) documentation, datasheet and pinout. https://docs.arduino.cc/hardware/modulino-distance/</li>
+<li>Micro Center, Arduino Modulino Distance catalog listing (SKU 992826; not stock- or price-verified). https://www.microcenter.com/product/707372/arduino-modulino-distance</li>
+<li>Micro Center, Shokz OpenRun wireless Bluetooth bone-conduction headphones, black, catalog listing (not stock- or price-verified). https://www.microcenter.com/product/679007/shokz-openrun-wireless-bluetooth-bone-conduction-headphones-black</li>
 <li>Meta store, Ray-Ban Meta. https://www.meta.com/ai-glasses/ray-ban-meta/</li>
 <li>Envision, Ally Solos shop. https://shop.letsenvision.com/products/ally-solos-glasses</li>
 <li>OrCam MyEye 3 Pro (reseller price). https://www.getorcam.com/product-page/myeye-3-pro</li>

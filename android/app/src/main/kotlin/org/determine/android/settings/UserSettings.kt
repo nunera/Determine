@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.determine.android.describe.DescribeEndpoint
-import org.determine.core.CueOutput
+import org.determine.core.hearing.MIN_HAPTIC_MAX
 import org.determine.core.FrameSourceKind
 
 /**
@@ -17,8 +17,8 @@ import org.determine.core.FrameSourceKind
  *  - Spearcons default ON (Arch §8.2: on by default during training, opt-in once the wearer is fluent).
  *  - Describe (Arch §7.3) is an explicit opt-in, default OFF; it is only ever used on a user long-press and is
  *    never read by the hazard loop. The API key is kept in EncryptedSharedPreferences.
- *  - Frame source and cue output fallbacks (Arch §11.4 demo branches) default to the proposed glasses; changing
- *    either restarts the engine session.
+ *  - The phone-camera frame source (Arch §11.4 demo branch) defaults to the camera board; changing it restarts
+ *    the engine session. The board haptic cap persists (1..255, never off).
  */
 class UserSettings(context: Context) {
     private val app = context.applicationContext
@@ -52,8 +52,9 @@ class UserSettings(context: Context) {
     private val _frameSource = MutableStateFlow(enumPref(KEY_FRAME_SOURCE, FrameSourceKind.CAM_BOARD))
     val frameSource: StateFlow<FrameSourceKind> = _frameSource.asStateFlow()
 
-    private val _cueOutput = MutableStateFlow(enumPref(KEY_CUE_OUTPUT, CueOutput.GLASSES))
-    val cueOutput: StateFlow<CueOutput> = _cueOutput.asStateFlow()
+    /** Board haptic cap sent in PROFILE (1..255). Never 0: the temples are the failure channel that survives phone loss. */
+    private val _hapticMax = MutableStateFlow(prefs.getInt(KEY_HAPTIC_MAX, 255).coerceIn(MIN_HAPTIC_MAX, 255))
+    val hapticMax: StateFlow<Int> = _hapticMax.asStateFlow()
 
     fun setSpearcons(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SPEARCONS, enabled).apply()
@@ -89,9 +90,10 @@ class UserSettings(context: Context) {
         _frameSource.value = source
     }
 
-    fun setCueOutput(output: CueOutput) {
-        prefs.edit().putString(KEY_CUE_OUTPUT, output.name).apply()
-        _cueOutput.value = output
+    fun setHapticMax(value: Int) {
+        val v = value.coerceIn(MIN_HAPTIC_MAX, 255)
+        prefs.edit().putInt(KEY_HAPTIC_MAX, v).apply()
+        _hapticMax.value = v
     }
 
     private inline fun <reified E : Enum<E>> enumPref(key: String, default: E): E =
@@ -103,6 +105,6 @@ class UserSettings(context: Context) {
         const val KEY_DESCRIBE_URL = "describe_url"
         const val KEY_DESCRIBE_KEY = "describe_key"
         const val KEY_FRAME_SOURCE = "frame_source"
-        const val KEY_CUE_OUTPUT = "cue_output"
+        const val KEY_HAPTIC_MAX = "haptic_max"
     }
 }

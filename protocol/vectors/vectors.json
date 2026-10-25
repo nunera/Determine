@@ -12,7 +12,7 @@
    "temp_c": 41,
    "heap_kb": 212
   },
-  "hex": "445401010100000002018100cb04fb711f010000c329d400"
+  "hex": "445402010100000002018100cb04fb711f010000c329d400"
  },
  {
   "name": "beat_cam_unknown_temp",
@@ -27,149 +27,40 @@
    "temp_c": 127,
    "heap_kb": 0
   },
-  "hex": "44540101ffffffff010f00020500000000000000a67f0000"
+  "hex": "44540201ffffffff010f00020500000000000000a67f0000"
  },
  {
-  "name": "range",
+  "name": "range_valid",
   "type": "RANGE",
   "seq": 42,
   "fields": {
    "t_us": 987654321,
-   "mm": [
-    0,
-    37,
-    74,
-    111,
-    148,
-    185,
-    222,
-    259,
-    296,
-    333,
-    1234,
-    407,
-    444,
-    481,
-    518,
-    555,
-    592,
-    629,
-    666,
-    703,
-    740,
-    777,
-    814,
-    851,
-    888,
-    925,
-    962,
-    999,
-    1036,
-    1073,
-    1110,
-    1147,
-    1184,
-    1221,
-    1258,
-    1295,
-    1332,
-    1369,
-    1406,
-    1443,
-    1480,
-    1517,
-    1554,
-    1591,
-    1628,
-    1665,
-    1702,
-    1739,
-    1776,
-    1813,
-    1850,
-    1887,
-    1924,
-    1961,
-    1998,
-    2035,
-    2072,
-    2109,
-    2146,
-    2183,
-    2220,
-    2257,
-    2294,
-    2331
-   ],
-   "status": [
-    255,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    255,
-    5,
-    5,
-    4,
-    5,
-    5,
-    5,
-    255,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    255,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    255,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    255,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    255,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    255,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    255,
-    5,
-    5,
-    5,
-    5,
-    5,
-    5,
-    255
-   ],
-   "res": 64
+   "mm": 1187,
+   "status": 0
   },
-  "hex": "445401022a000000b168de3a0000000040000000000025004a006f009400b900de00030128014d01d2049701bc01e10106022b02500275029a02bf02e40209032e03530378039d03c203e7030c04310456047b04a004c504ea040f05340559057e05a305c805ed05120637065c068106a606cb06f00615073a075f078407a907ce07f30718083d0862088708ac08d108f6081b09ff050505050505ff050504050505ff050505050505ff050505050505ff050505050505ff050505050505ff050505050505ff050505050505ff050505050505ff"
+  "hex": "445402022a000000b168de3a00000000a30400"
+ },
+ {
+  "name": "range_no_target",
+  "type": "RANGE",
+  "seq": 43,
+  "fields": {
+   "t_us": 987654322,
+   "mm": 0,
+   "status": 1
+  },
+  "hex": "445402022b000000b268de3a00000000000001"
+ },
+ {
+  "name": "range_unknown",
+  "type": "RANGE",
+  "seq": 44,
+  "fields": {
+   "t_us": 987654323,
+   "mm": 0,
+   "status": 2
+  },
+  "hex": "445402022c000000b368de3a00000000000002"
  },
  {
   "name": "frame_chunk",
@@ -186,7 +77,7 @@
    "chunk_count": 3,
    "data": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
   },
-  "hex": "4454010307000000030000003d1ea106000000004001f000540b000078050000000201000300000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+  "hex": "4454020307000000030000003d1ea106000000004001f000540b000078050000000201000300000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
  },
  {
   "name": "frame_empty_chunk",
@@ -203,7 +94,7 @@
    "chunk_count": 1,
    "data": ""
   },
-  "hex": "44540103080000000400000001000000000000008002e0010000000000000000000000000100"
+  "hex": "44540203080000000400000001000000000000008002e0010000000000000000000000000100"
  },
  {
   "name": "ping",
@@ -212,7 +103,7 @@
   "fields": {
    "t_phone_us": 18000000000000000
   },
-  "hex": "44540110090000000000f595e7f23f00"
+  "hex": "44540210090000000000f595e7f23f00"
  },
  {
   "name": "pong",
@@ -223,26 +114,24 @@
    "t_board_rx_us": 5000001,
    "t_board_tx_us": 5000150
   },
-  "hex": "445401110a0000000000f595e7f23f00414b4c0000000000d64b4c0000000000"
+  "hex": "445402110a0000000000f595e7f23f00414b4c0000000000d64b4c0000000000"
  },
  {
-  "name": "cue_near_left",
+  "name": "cue_near_both",
   "type": "CUE",
   "seq": 11,
   "fields": {
    "t_issued_phone_us": 1700000000,
    "deadline_board_us": 9000150000,
    "cue_id": 3,
-   "side": 0,
-   "gain_l_db": -12,
-   "gain_r_db": -128,
+   "side": 2,
    "haptic_pattern": 3,
    "haptic_l": 200,
-   "haptic_r": 0,
-   "flags": 1,
+   "haptic_r": 200,
+   "flags": 0,
    "ttl_ms": 150
   },
-  "hex": "445401200b00000000f1536500000000f0637318020000000300f48003c800019600"
+  "hex": "445402200b00000000f1536500000000f063731802000000030203c8c8009600"
  },
  {
   "name": "cue_no_sync",
@@ -253,38 +142,82 @@
    "deadline_board_us": 0,
    "cue_id": 7,
    "side": 2,
-   "gain_l_db": 0,
-   "gain_r_db": -1,
    "haptic_pattern": 4,
    "haptic_l": 255,
    "haptic_r": 255,
    "flags": 0,
    "ttl_ms": 65535
   },
-  "hex": "445401200c00000001000000000000000000000000000000070200ff04ffff00ffff"
+  "hex": "445402200c00000001000000000000000000000000000000070204ffff00ffff"
  },
  {
-  "name": "ack_clamped",
+  "name": "cue_ready_left",
+  "type": "CUE",
+  "seq": 13,
+  "fields": {
+   "t_issued_phone_us": 1700000001,
+   "deadline_board_us": 9000100000,
+   "cue_id": 0,
+   "side": 0,
+   "haptic_pattern": 1,
+   "haptic_l": 180,
+   "haptic_r": 0,
+   "flags": 1,
+   "ttl_ms": 150
+  },
+  "hex": "445402200d00000001f1536500000000a0a0721802000000000001b400019600"
+ },
+ {
+  "name": "ack_applied",
   "type": "ACK",
-  "seq": 11,
+  "seq": 14,
   "fields": {
    "cue_seq": 11,
-   "status": 2,
-   "applied_gain_l_db": -10,
-   "applied_gain_r_db": -128,
+   "status": 0,
    "t_board_us": 9000100000
   },
-  "hex": "445401210b0000000b0000000200f680a0a0721802000000"
+  "hex": "445402210e0000000b0000000000a0a0721802000000"
+ },
+ {
+  "name": "ack_applied_clamped",
+  "type": "ACK",
+  "seq": 15,
+  "fields": {
+   "cue_seq": 12,
+   "status": 2,
+   "t_board_us": 9000100001
+  },
+  "hex": "445402210f0000000c0000000200a1a0721802000000"
+ },
+ {
+  "name": "ack_expired",
+  "type": "ACK",
+  "seq": 16,
+  "fields": {
+   "cue_seq": 13,
+   "status": 1,
+   "t_board_us": 9000100002
+  },
+  "hex": "44540221100000000d0000000100a2a0721802000000"
  },
  {
   "name": "profile_ssd",
   "type": "PROFILE",
-  "seq": 13,
+  "seq": 17,
   "fields": {
-   "ceiling_db": -14,
    "mode": 1,
    "haptic_max": 180
   },
-  "hex": "445401220d000000f201b400"
+  "hex": "445402221100000001b4"
+ },
+ {
+  "name": "profile_haptic_only",
+  "type": "PROFILE",
+  "seq": 18,
+  "fields": {
+   "mode": 2,
+   "haptic_max": 255
+  },
+  "hex": "445402221200000002ff"
  }
 ]

@@ -1,0 +1,465 @@
+#if canImport(SwiftUI)
+import AVFoundation
+import DetermineEngine
+import DetermineLink
+import Foundation
+import SwiftUI
+import UIKit
+
+/// State of the Read text action shown on Main.
+enum ReadTextState: Equatable {
+    case idle
+    case reading
+    /// What was spoken (or why nothing was read).
+    case done(String)
+}
+
+/// Main-actor view model: persisted settings, the live session's published state, and the session lifecycle.
+///
+/// The engine itself lives in `SessionHost` on its own queue; this type only receives value snapshots from it.
+/// A session never survives leaving the foreground and is never restarted implicitly (fail loud, restart by hand).
+@MainActor
+final class AppModel: ObservableObject {
+    // MARK: Persisted settings
+
+    /// Warning sounds: off (haptic only) by default; headset and speaker are explicit choices.
+    @Published private(set) var soundOutput: SoundOutput
+    /// Headphone layout used when sounds are on (`.stereo` or `.ssd`); ignored while sounds are off.
+    @Published private(set) var audioLayout: HearingMode
+    @Published private(set) var hapticMax: Int
+    @Published private(set) var spearcons: Bool
+    @Published private(set) var frameSource: FrameSourceKind
+    @Published private(set) var describeEnabled: Bool
+    /// Engine tuning (bands, timing, link, EXPERIMENTAL approach and exploration). Persisted, applied live.
+    @Published private(set) var tuning: Tuning
+    /// Why the last tuning change was not applied.
+    @Published private(set) var tuningMessage: String?
+
+    // MARK: Live session
+
+    @Published private(set) var running = false
+    /// Between `stop` and the old socket actually closing; Start is refused (two sockets on :47000 split packets).
+    @Published private(set) var stopping = false
+    @Published private(set) var state: SystemState = .starting
+    @Published private(set) var reason = ""
+    @Published private(set) var currentAlert: HazardAlert?
+    @Published private(set) var diagnostics: Diagnostics?
+    @Published private(set) var range: RangeSnapshot?
+    @Published private(set) var link = LinkInfo()
+    @Published private(set) var camera: PhoneCameraStatus?
+    @Published private(set) var liveProfile: HearingProfile?
+    @Published private(set) var sound = SoundStats()
+    /// Why the last session ended without the user pressing Stop (foreground loss), shown on Main until restart.
+    @Published private(set) var stopNotice: String?
+    /// Camera permission feedback from the Settings → Camera choice.
+    @Published private(set) var cameraMessage: String?
+    @Published private(set) var describeMessage: String?
+    @Published private(set) var phoneAddresses: [LocalAddress] = []
+    @Published private(set) var reader: ReadTextState = .idle
+
+    /// Chart history and event log for the Judge screen (kept out of this object so Main does not redraw at 10 Hz).
+    let trace = DebugTrace()
+
+    private let defaults: UserDefaults
+    private let alerts: IosPhoneAlerts
+    private var host: SessionHost?
+    /// Events from an earlier session are dropped: each session has its own generation.
+    private var generation = 0
+    private var restartAfterStop = false
+    private var lastAddressRefresh = Date.distantPast
+    private var lastBand: Band = .none
+    private var lastLinkWeak = false
+    private var readToken = 0
+
+    private enum Key {
+        static let soundOutput = "determine.soundOutput"
+        static let audioLayout = "determine.audioLayout"
+        static let hapticMax = "determine.hapticMax"
+        static let spearcons = "determine.spearcons"
+        static let frameSource = "determine.frameSource"
+        static let describeEnabled = "determine.describeEnabled"
+        static let tuningPrefix = "determine.tuning."
+    }
+
+    /// Every `Tuning` field with its persistence key. A value that fails validation on load is dropped as a whole.
+    private static let tuningInts: [(String, WritableKeyPath<Tuning, Int>)] = [
+        ("nearMm", \.nearMm), ("midMm", \.midMm), ("farMm", \.farMm),
+        ("bandEnterMs", \.bandEnterMs), ("bandExitMs", \.bandExitMs), ("bandHysteresisMm", \.bandHysteresisMm),
+        ("farPeriodMs", \.farPeriodMs), ("midPeriodMs", \.midPeriodMs), ("nearPeriodMs", \.nearPeriodMs),
+        ("announceHoldMs", \.announceHoldMs), ("announceRepeatMs", \.announceRepeatMs),
+        ("weakLinkRssiDbm", \.weakLinkRssiDbm), ("weakLinkHoldMs", \.weakLinkHoldMs), ("weakLinkRepeatMs", \.weakLinkRepeatMs),
+        ("approachWindowMs", \.approachWindowMs), ("approachTtcMs", \.approachTtcMs),
+        ("approachMinSpeedMmPerS", \.approachMinSpeedMmPerS),
+        ("explorePeriodMs", \.explorePeriodMs), ("exploreMaxMm", \.exploreMaxMm), ("exploreMinIntensity", \.exploreMinIntensity),
+    ]
+    private static let tuningBools: [(String, WritableKeyPath<Tuning, Bool>)] = [
+        ("approachEnabled", \.approachEnabled), ("exploreEnabled", \.exploreEnabled),
+    ]
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        self.alerts = IosPhoneAlerts()
+        self.soundOutput = defaults.string(forKey: Key.soundOutput).flatMap(SoundOutput.init(rawValue:)) ?? .off
+        self.audioLayout = defaults.object(forKey: Key.audioLayout) as? Int == HearingMode.ssd.rawValue ? .ssd : .stereo
+        self.hapticMax = min(max(defaults.object(forKey: Key.hapticMax) as? Int ?? 255, MIN_HAPTIC_MAX), 255)
+        self.spearcons = defaults.object(forKey: Key.spearcons) as? Bool ?? true
+        self.frameSource = (defaults.string(forKey: Key.frameSource) == "phoneCamera") ? .phoneCamera : .camBoard
+        self.describeEnabled = defaults.object(forKey: Key.describeEnabled) as? Bool ?? false
+        self.tuning = Self.loadTuning(defaults)
+        // The pre-0.3 single "output mode" setting is replaced by the sound output + layout above.
+        defaults.removeObject(forKey: "determine.outputMode")
+        refreshAddresses()
+    }
+
+    private static func loadTuning(_ defaults: UserDefaults) -> Tuning {
+        var t = Tuning()
+        for (name, path) in tuningInts {
+            if let v = defaults.object(forKey: Key.tuningPrefix + name) as? Int { t[keyPath: path] = v }
+        }
+        for (name, path) in tuningBools {
+            if let v = defaults.object(forKey: Key.tuningPrefix + name) as? Bool { t[keyPath: path] = v }
+        }
+        do {
+            try t.validate()
+            return t
+        } catch {
+            return Tuning()
+        }
+    }
+
+    private func persistTuning() {
+        for (name, path) in Self.tuningInts { defaults.set(tuning[keyPath: path], forKey: Key.tuningPrefix + name) }
+        for (name, path) in Self.tuningBools { defaults.set(tuning[keyPath: path], forKey: Key.tuningPrefix + name) }
+    }
+
+    // MARK: Derived
+
+    var paused: Bool { running && state == .paused }
+
+    /// Engine mode: HAPTIC_ONLY exactly when no warning sound output is chosen.
+    var mode: HearingMode { soundOutput == .off ? .hapticOnly : audioLayout }
+
+    /// Warning sounds are on, so the engine needs the chosen audio route (the cue board is never the audio path).
+    var soundsOn: Bool { soundOutput != .off }
+
+    private var hazardActive: Bool { (currentAlert?.band ?? Band.none) >= .mid }
+
+    // MARK: Session lifecycle
+
+    func start() {
+        guard !running, !stopping else { return }
+        generation += 1
+        let gen = generation
+        running = true
+        state = .starting
+        reason = "starting"
+        currentAlert = nil
+        diagnostics = nil
+        range = nil
+        link = LinkInfo()
+        camera = nil
+        liveProfile = nil
+        sound = SoundStats()
+        stopNotice = nil
+        describeMessage = nil
+        tuningMessage = nil
+        reader = .idle
+        lastBand = .none
+        lastLinkWeak = false
+        trace.reset()
+        trace.log("Session started")
+        trace.recordState(.starting, reason: "", atUs: EngineClock.nowUs())
+        refreshAddresses()
+        UIApplication.shared.isIdleTimerDisabled = true
+        let host = SessionHost(
+            options: HostOptions(
+                spearcons: spearcons, frameSource: frameSource, mode: mode, soundOutput: soundOutput,
+                hapticMax: hapticMax, tuning: tuning
+            ),
+            alerts: alerts
+        ) { [weak self] event in
+            // FIFO onto the main queue; `Task` hops are not ordered.
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.apply(event, generation: gen) } }
+        }
+        self.host = host
+        host.start()
+    }
+
+    /// Stops the session (PINGs end, so the board watchdog fires). `notice` explains an involuntary stop.
+    func stop(notice: String? = nil) {
+        guard running, let host else { return }
+        running = false
+        stopping = true
+        generation += 1
+        self.host = nil
+        reason = ""
+        currentAlert = nil
+        stopNotice = notice
+        readToken += 1
+        reader = .idle
+        alerts.stopReading()
+        trace.log(notice == nil ? "Session stopped" : "Session stopped: app left the foreground")
+        UIApplication.shared.isIdleTimerDisabled = false
+        host.stop { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.stopping = false
+                if self.restartAfterStop {
+                    self.restartAfterStop = false
+                    self.start()
+                }
+            }
+        }
+    }
+
+    /// Scene entered the background: iOS will suspend the process, so the hazard loop cannot be trusted to run.
+    /// Say so and stop (PINGs end, the board watchdog fires). Returning never resumes by itself. `.inactive`
+    /// (permission sheets, Control Center, call banners) does not come here: the process keeps running.
+    func sceneEnteredBackground() {
+        guard running else { return }
+        alerts.systemOff()
+        stop(notice: "Determine stopped because the app went to the background. Warnings are off. Open the app and tap Start Determine to resume.")
+    }
+
+    func setPaused(_ paused: Bool) {
+        host?.setPaused(paused)
+    }
+
+    // MARK: Settings
+
+    func setSoundOutput(_ output: SoundOutput) {
+        guard output != soundOutput else { return }
+        soundOutput = output
+        defaults.set(output.rawValue, forKey: Key.soundOutput)
+        host?.setSoundOutput(output, mode: mode)
+    }
+
+    func setAudioLayout(_ layout: HearingMode) {
+        guard layout == .stereo || layout == .ssd, layout != audioLayout else { return }
+        audioLayout = layout
+        defaults.set(layout.rawValue, forKey: Key.audioLayout)
+        host?.setSoundOutput(soundOutput, mode: mode)
+    }
+
+    func setHapticMax(_ strength: Int) {
+        let clamped = min(max(strength, MIN_HAPTIC_MAX), 255)
+        hapticMax = clamped
+        defaults.set(clamped, forKey: Key.hapticMax)
+        host?.setHapticMax(clamped)
+    }
+
+    func setSpearcons(_ enabled: Bool) {
+        spearcons = enabled
+        defaults.set(enabled, forKey: Key.spearcons)
+        host?.setSpearcons(enabled)
+    }
+
+    func setDescribeEnabled(_ enabled: Bool) {
+        describeEnabled = enabled
+        defaults.set(enabled, forKey: Key.describeEnabled)
+        if !enabled { describeMessage = nil }
+    }
+
+    // MARK: Tuning
+
+    /// Smallest gap kept between two band thresholds, mm.
+    static let bandGapMm = 50
+
+    /// Applies `edit` to a copy of the tuning, validates it, persists it and sends it to the live engine.
+    /// A value the engine would refuse is not applied and the reason is shown.
+    func updateTuning(_ edit: (inout Tuning) -> Void) {
+        var next = tuning
+        edit(&next)
+        guard next != tuning else { return }
+        do {
+            try next.validate()
+        } catch {
+            tuningMessage = "Not applied: \(error)"
+            return
+        }
+        tuningMessage = nil
+        tuning = next
+        persistTuning()
+        host?.setTuning(next)
+    }
+
+    func setTuningValue(_ path: WritableKeyPath<Tuning, Int>, _ value: Int) {
+        updateTuning { $0[keyPath: path] = value }
+    }
+
+    func setTuningFlag(_ path: WritableKeyPath<Tuning, Bool>, _ value: Bool) {
+        updateTuning { $0[keyPath: path] = value }
+    }
+
+    /// Band thresholds keep 0 < near < mid < far ≤ 8000 with `bandGapMm` between them: a slider cannot cross its
+    /// neighbour.
+    func setNear(_ mm: Int) {
+        updateTuning { $0.nearMm = min(mm, $0.midMm - Self.bandGapMm) }
+    }
+
+    func setMid(_ mm: Int) {
+        updateTuning { $0.midMm = min(max(mm, $0.nearMm + Self.bandGapMm), $0.farMm - Self.bandGapMm) }
+    }
+
+    func setFar(_ mm: Int) {
+        updateTuning { $0.farMm = max(mm, $0.midMm + Self.bandGapMm) }
+    }
+
+    func resetTuning() {
+        updateTuning { $0 = Tuning() }
+    }
+
+    /// Camera board vs iPhone camera. Changing it restarts a running session. The iPhone camera needs permission,
+    /// asked here; if it is denied the choice is not applied and the reason stays visible.
+    func selectFrameSource(_ source: FrameSourceKind) async {
+        guard source != frameSource else { return }
+        if source == .phoneCamera {
+            let status = await PhoneCameraSource.requestPermission()
+            if let problem = PhoneCameraSource.permissionDescription(status) {
+                cameraMessage = "iPhone camera not selected: \(problem)."
+                return
+            }
+        }
+        cameraMessage = nil
+        frameSource = source
+        defaults.set(source == .phoneCamera ? "phoneCamera" : "camBoard", forKey: Key.frameSource)
+        if running {
+            restartAfterStop = true
+            stop()
+        }
+    }
+
+    // MARK: Debug
+
+    func sendTestBuzz(pattern: Int, intensity: Int) {
+        host?.sendTestHaptic(pattern: pattern, intensity: min(max(intensity, MIN_HAPTIC_MAX), 255))
+    }
+
+    // MARK: Read text
+
+    /// Read text: OCR of the newest camera frame, spoken with a "may be wrong" prefix. Display-only: never read by
+    /// hazard logic. Not started while a MID/NEAR warning is active or the system is off; a second tap while it is
+    /// reading stops it.
+    func readText() {
+        guard running, let host else { return }
+        if reader == .reading {
+            readToken += 1
+            alerts.stopReading()
+            reader = .idle
+            return
+        }
+        guard state != .unavailable, !hazardActive else {
+            reader = .done("Not reading: a warning is active or the system is off.")
+            return
+        }
+        readToken += 1
+        let token = readToken
+        let gen = generation
+        reader = .reading
+        host.readText { [weak self] result in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.finishReading(result, token: token, generation: gen) } }
+        }
+    }
+
+    private func finishReading(_ result: ReadTextResult, token: Int, generation gen: Int) {
+        guard token == readToken, gen == generation, running else { return }
+        guard state != .unavailable, !hazardActive else {
+            reader = .idle
+            return
+        }
+        let spoken: String
+        switch result {
+        case let .text(text): spoken = "Text, may be wrong: \(text)"
+        case .noText: spoken = "No text found"
+        case .noFreshFrame: spoken = "No fresh camera image"
+        case .failed: spoken = "Text reading failed"
+        }
+        if case let .failed(why) = result { trace.log("Read text failed: \(why)") }
+        reader = .done(spoken)
+        alerts.speakReading(spoken)
+    }
+
+    /// MID/NEAR alerts and system off cut a reading in progress. Only the reading is stopped: a hazard word or
+    /// "System off" that replaced it is never cut.
+    private func interruptReadingIfNeeded() {
+        guard reader != .idle else { return }
+        guard state == .unavailable || hazardActive else { return }
+        readToken += 1
+        alerts.stopReading()
+        reader = .idle
+    }
+
+    // MARK: Describe (fail closed)
+
+    /// There is no face redaction or upload path on iOS: every request refuses, nothing is captured or sent.
+    func requestDescription() {
+        describeMessage = "Description unavailable: this iPhone build cannot blur faces or upload, so no camera frame was sent."
+    }
+
+    // MARK: Published events
+
+    func refreshAddresses() {
+        phoneAddresses = LocalAddresses.ipv4()
+        lastAddressRefresh = Date()
+    }
+
+    private func apply(_ event: HostEvent, generation gen: Int) {
+        guard gen == generation, running else { return }
+        switch event {
+        case let .state(s, reason: r):
+            let changed = s != state
+            state = s
+            reason = r
+            if changed {
+                trace.recordState(s, reason: r, atUs: EngineClock.nowUs())
+            }
+            if changed, s != .starting {
+                UIAccessibility.post(notification: .announcement, argument: "Status: \(StateText.title(s))")
+            }
+            interruptReadingIfNeeded()
+        case let .alert(a):
+            currentAlert = a
+            let band = a?.band ?? Band.none
+            if band != lastBand {
+                lastBand = band
+                if let a, band != .none {
+                    trace.log("Alert: \(describeAlert(a))")
+                } else {
+                    trace.log("Alert: none")
+                }
+            }
+            interruptReadingIfNeeded()
+        case let .diagnostics(d):
+            diagnostics = d
+            trace.addDiagnostics(d)
+            if d.linkWeak != lastLinkWeak {
+                lastLinkWeak = d.linkWeak
+                let dbm = d.cue.rssiDbm.map { " (\($0) dBm)" } ?? ""
+                trace.log(d.linkWeak ? "Link weak\(dbm)" : "Link recovered\(dbm)")
+            }
+        case let .slow(range: r, ranges: batch, link: l, camera: c, profile: p, sound: snd):
+            if let r { range = r }
+            link = l
+            camera = c
+            liveProfile = p
+            sound = snd
+            trace.addRanges(batch)
+            if Date().timeIntervalSince(lastAddressRefresh) > 2 { refreshAddresses() }
+        case let .tuningRejected(why):
+            tuningMessage = "Engine refused the tuning: \(why)"
+        case let .testBuzz(pattern: p, intensity: i, sent: sent):
+            let name = Self.hapticName(p)
+            trace.log(sent ? "Test buzz \(name) at \(i): sent" : "Test buzz \(name) at \(i): NOT sent (no clock sync or cue board not heard)")
+        }
+    }
+
+    /// PROTOCOL.md haptic pattern ids a test buzz can use.
+    static let testPatterns: [(id: Int, name: String)] = [
+        (Haptic.pulse40, "PULSE40"), (Haptic.pulse60, "PULSE60"), (Haptic.buzz150, "BUZZ150"), (Haptic.lss, "LSS"),
+    ]
+
+    static func hapticName(_ id: Int) -> String {
+        testPatterns.first { $0.id == id }?.name ?? "pattern \(id)"
+    }
+}
+#endif

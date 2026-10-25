@@ -57,20 +57,18 @@ class WireTest {
 
     private fun Map<String, Any?>.l(k: String) = (this[k] as Long)
     private fun Map<String, Any?>.i(k: String) = l(k).toInt()
-    @Suppress("UNCHECKED_CAST")
-    private fun Map<String, Any?>.ints(k: String) = (this[k] as List<Long>).map { it.toInt() }.toIntArray()
 
     private fun expected(type: String, f: Map<String, Any?>): Packet = when (type) {
         "BEAT" -> Beat(f.i("board"), f.i("reset_reason"), f.i("faults"), f.l("t_us"), f.i("rssi_dbm"), f.i("temp_c"), f.i("heap_kb"))
-        "RANGE" -> RangePkt(f.l("t_us"), f.ints("mm"), f.ints("status"), f.i("res"))
+        "RANGE" -> RangePkt(f.l("t_us"), f.i("mm"), f.i("status"))
         "FRAME" -> FramePkt(f.l("frame_id"), f.l("t_cap_us"), f.i("w"), f.i("h"), f.l("total_len"), f.l("offset"),
             f.i("chunk_idx"), f.i("chunk_count"), (f["data"] as String).hexToBytes())
         "PING" -> Ping(f.l("t_phone_us"))
         "PONG" -> Pong(f.l("t_phone_us"), f.l("t_board_rx_us"), f.l("t_board_tx_us"))
-        "CUE" -> CuePkt(f.l("t_issued_phone_us"), f.l("deadline_board_us"), f.i("cue_id"), f.i("side"), f.i("gain_l_db"),
-            f.i("gain_r_db"), f.i("haptic_pattern"), f.i("haptic_l"), f.i("haptic_r"), f.i("flags"), f.i("ttl_ms"))
-        "ACK" -> Ack(f.l("cue_seq"), f.i("status"), f.i("applied_gain_l_db"), f.i("applied_gain_r_db"), f.l("t_board_us"))
-        "PROFILE" -> ProfilePkt(f.i("ceiling_db"), f.i("mode"), f.i("haptic_max"))
+        "CUE" -> CuePkt(f.l("t_issued_phone_us"), f.l("deadline_board_us"), f.i("cue_id"), f.i("side"),
+            f.i("haptic_pattern"), f.i("haptic_l"), f.i("haptic_r"), f.i("flags"), f.i("ttl_ms"))
+        "ACK" -> Ack(f.l("cue_seq"), f.i("status"), f.l("t_board_us"))
+        "PROFILE" -> ProfilePkt(f.i("mode"), f.i("haptic_max"))
         else -> error("unknown vector type $type")
     }
 
@@ -99,7 +97,7 @@ class WireTest {
         val beat = vectorBytes("beat_cue")
         assertThrows<WireException> { Wire.decode(beat.copyOf(7)) }
         assertThrows<WireException> { Wire.decode(beat.copyOf().also { it[0] = 0x45 }) }  // magic
-        assertThrows<WireException> { Wire.decode(beat.copyOf().also { it[2] = 2 }) }     // version
+        assertThrows<WireException> { Wire.decode(beat.copyOf().also { it[2] = 1 }) }     // v1 is no longer accepted
         assertThrows<WireException> { Wire.decode(beat.copyOf().also { it[3] = 0x7F }) }  // unknown type
         assertThrows<WireException> { Wire.decode(beat.copyOf(beat.size - 1)) }           // short body
         assertThrows<WireException> { Wire.decode(beat.copyOf(beat.size + 1)) }           // long body
@@ -127,8 +125,8 @@ class WireTest {
     fun `sender board attribution`() {
         assertEquals(BoardId.CUE, Wire.senderBoard(vectorBytes("beat_cue")))
         assertEquals(BoardId.CAM, Wire.senderBoard(vectorBytes("beat_cam_unknown_temp")))
-        assertEquals(BoardId.CUE, Wire.senderBoard(vectorBytes("range")))
-        assertEquals(BoardId.CUE, Wire.senderBoard(vectorBytes("ack_clamped")))
+        assertEquals(BoardId.CUE, Wire.senderBoard(vectorBytes("range_valid")))
+        assertEquals(BoardId.CUE, Wire.senderBoard(vectorBytes("ack_applied_clamped")))
         assertEquals(BoardId.CAM, Wire.senderBoard(vectorBytes("frame_chunk")))
         assertNull(Wire.senderBoard(vectorBytes("pong")))
         assertNull(Wire.senderBoard(byteArrayOf(1, 2, 3)))
@@ -141,5 +139,20 @@ class WireTest {
         assertEquals(p, d.packet)
         assertEquals(0xFFFFFFFFL, d.seq)
         assertArrayEquals(Wire.encode(p, 0xFFFFFFFFL), Wire.encode(d.packet, d.seq))
+    }
+
+    @Test
+    fun `v2 packet sizes and canonical range statuses`() {
+        assertEquals(2, VERSION)
+        assertEquals(19, Wire.encode(RangePkt(1, 800, RangeStatus.VALID), 0).size)
+        assertEquals(32, Wire.encode(CuePkt(1, 2, CueId.OBSTACLE_NEAR, Side.BOTH, Haptic.BUZZ150, 200, 200, 1, 150), 0).size)
+        assertEquals(22, Wire.encode(Ack(1, AckStatus.APPLIED, 2), 0).size)
+        assertEquals(10, Wire.encode(ProfilePkt(0, 180), 0).size)
+        assertEquals(setOf(0, 1, 2), setOf(RangeStatus.VALID, RangeStatus.NO_TARGET, RangeStatus.UNKNOWN))
+        // mm is a u16 on the wire.
+        val big = Wire.decode(Wire.encode(RangePkt(1, 65_535, RangeStatus.VALID), 0)).packet as RangePkt
+        assertEquals(65_535, big.mm)
+        // Old v1-sized bodies (grid RANGE, 26-byte CUE) can never be mistaken for v2.
+        assertThrows<WireException> { Wire.decode(ByteArray(8 + 204).also { Wire.encode(RangePkt(0, 0, 0), 0).copyInto(it, 0, 0, 8) }) }
     }
 }

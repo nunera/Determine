@@ -2,155 +2,165 @@ package org.determine.core.policy
 
 import org.determine.core.Alert
 import org.determine.core.Band
-import org.determine.core.Detection
-import org.determine.core.Region
-import org.determine.core.range.RangeReading
-import org.determine.core.range.RegionRange
-
-/** One region's input to the policy. [known] = false means UNKNOWN (never treated as nothing-there). */
-data class RegionObservation(val band: Band, val distanceMm: Int?, val known: Boolean)
+import org.determine.core.Tuning
+import org.determine.core.range.ForwardRange
 
 data class PolicyConfig(
-    val nearMm: Int = 1000,
-    val midMm: Int = 2000,
-    val farMm: Int = 3000,
-    val enterSamples: Int = 3,
-    val exitSamples: Int = 5,
+    /** Rate limit: at most one onset (silence → warning) per interval. */
     val minOnsetIntervalUs: Long = 700_000,
-    val detectionScoreThreshold: Float = 0.5f,
-    /** Relative (no-ToF) path: box area must grow by this factor within [growthWindowUs]. */
-    val growthFactor: Float = 1.3f,
-    val growthWindowUs: Long = 1_500_000,
-    val growthMinAgeUs: Long = 400_000,
-    val growthMinArea: Float = 0.02f,
 )
 
 /**
- * Arch §7.2 hazard policy v0. Picks at most one alert, with persistence and hysteresis:
- *  - band(d): NEAR < 1000, MID < 2000, FAR < 3000 mm, else NONE;
- *  - enter: same region with band ≥ FAR for ≥ 3 consecutive samples;
- *  - exit: band NONE for ≥ 5 samples, or region change (re-enter with a new onset);
- *  - priority: NEAR corridor > NEAR flank > MID corridor > MID flank > FAR corridor (FAR flank never alerts);
- *  - rate limit: ≤ 1 onset per 700 ms;
+ * Arch §7.2 hazard policy, forward-zone edition. The distance comes only from the forward ToF measurement —
+ * never from camera detections, and no left/right is ever inferred (the sensor cannot lateralize):
+ *  - band(d): NEAR < nearMm, MID < midMm, FAR ≤ farMm, else NONE (no report), thresholds from [Tuning];
+ *  - time-based smoothing on the board time of the RANGE samples: a band (or a more urgent one) is entered once
+ *    the readings have consistently indicated it for [Tuning.bandEnterMs]; leaving it (towards less urgent, or to
+ *    nothing to report from VALID-beyond-far / NO_TARGET) takes [Tuning.bandExitMs] of consistent evidence AND a
+ *    distance beyond the band's upper bound by [Tuning.bandHysteresisMm];
+ *  - rate limit: ≤ 1 onset per [PolicyConfig.minOnsetIntervalUs];
  *  - head scanning holds FAR cues only; NEAR/MID always pass;
- *  - label = matched detection (by bearing) if score ≥ threshold, else "obstacle";
- *  - never CLEAR: the output is an alert or null (= nothing to report). UNKNOWN samples do not count toward exit.
+ *  - EXPERIMENTAL approach escalation ([Tuning.approachEnabled]): a fast closing speed with a short
+ *    time-to-contact raises the reported band by one (NONE within farMm → FAR);
+ *  - never CLEAR: the output is an alert or null (= nothing to report). An UNKNOWN sample means the measurement
+ *    no longer exists: the active alert is dropped at once (no stale band keeps repeating) and nothing is
+ *    claimed in its place — not far, not clear. When VALID readings resume it re-enters through the normal
+ *    enter/onset rules.
  */
-class HazardPolicy(val config: PolicyConfig = PolicyConfig()) {
-    private var active: Alert? = null
-    private var candRegion: Region? = null
-    private var candCount = 0
-    private var noneCount = 0
-    private var lastOnsetUs = Long.MIN_VALUE / 2
-    private var scanningHeld = false
+class HazardPolicy(tuning: Tuning = Tuning(), val config: PolicyConfig = PolicyConfig()) {
+    var tuning: Tuning = tuning
+        set(value) { field = value; if (!value.approachEnabled) approachCondition = false }
 
-    /** True once per onset (consumed by [takeOnset]); the cue scheduler interrupts and the spearcon fires. */
+    /** Smoothed band (before approach escalation, scan hold and onset gating). */
+    private var active = Band.NONE
+    private var runDirection = 0 // +1 = readings indicate a more urgent band, −1 = less urgent, 0 = none
+    private var runBand = Band.NONE
+    private var runStartUs = 0L
+    private var lastSampleUs = Long.MIN_VALUE
+    private var lastMm: Int? = null
+
+    private var shown = Band.NONE
+    private var lastOnsetUs = Long.MIN_VALUE / 2
     private var onsetPending = false
 
+    private val samples = ArrayDeque<Pair<Long, Int>>()
+    private var closingSpeed: Double? = null
+    private var approachCondition = false
+
+    /** Least-squares closing speed (positive = getting closer) over the approach window; null with < 3 VALID samples. */
+    val closingSpeedMmPerS: Double? get() = closingSpeed
+
+    /** True while approach escalation is enabled and the closing speed / time-to-contact criteria hold. */
+    val approachActive: Boolean get() = tuning.approachEnabled && approachCondition
+
     fun band(mm: Int): Band = when {
-        mm < config.nearMm -> Band.NEAR
-        mm < config.midMm -> Band.MID
-        mm < config.farMm -> Band.FAR
+        mm < tuning.nearMm -> Band.NEAR
+        mm < tuning.midMm -> Band.MID
+        mm <= tuning.farMm -> Band.FAR
         else -> Band.NONE
     }
 
-    fun observe(reading: RangeReading): Map<Region, RegionObservation> = Region.entries.associateWith { r ->
-        when (val rr = reading.of(r)) {
-            is RegionRange.Target -> {
-                val b = band(rr.minMm)
-                RegionObservation(b, if (b == Band.NONE) null else rr.minMm, true)
-            }
-            RegionRange.NothingSeen -> RegionObservation(Band.NONE, null, true)
-            RegionRange.Unknown -> RegionObservation(Band.NONE, null, false)
-        }
+    private fun upperMm(b: Band): Int = when (b) {
+        Band.NEAR -> tuning.nearMm
+        Band.MID -> tuning.midMm
+        Band.FAR -> tuning.farMm
+        Band.NONE -> Int.MAX_VALUE
     }
 
-    private data class Candidate(val region: Region, val band: Band, val distanceMm: Int?)
-
-    private fun candidate(obs: Map<Region, RegionObservation>): Candidate? {
-        fun flank(b: Band): Candidate? = listOf(Region.LEFT, Region.RIGHT)
-            .mapNotNull { r -> obs[r]?.takeIf { it.band == b }?.let { Candidate(r, b, it.distanceMm) } }
-            .minByOrNull { it.distanceMm ?: Int.MAX_VALUE }
-        fun center(b: Band): Candidate? = obs[Region.CENTER]?.takeIf { it.band == b }?.let { Candidate(Region.CENTER, b, it.distanceMm) }
-        return center(Band.NEAR) ?: flank(Band.NEAR) ?: center(Band.MID) ?: flank(Band.MID) ?: center(Band.FAR)
-    }
+    private fun lessUrgent(b: Band): Band = Band.entries[b.ordinal - 1]
 
     /**
-     * One sample (a fresh ToF grid, or a relative-cue sample when ToF is unusable).
+     * One sample (a fresh forward ToF measurement) taken at [tUs] (board time, microseconds).
      * @return the alert to present now, or null for nothing to report.
      */
-    fun step(obs: Map<Region, RegionObservation>, detections: List<Detection>, scanning: Boolean, nowUs: Long): Alert? {
-        val c = candidate(obs)
-        if (c == null) {
-            val anyUnknown = obs.values.any { !it.known }
-            candRegion = null
-            candCount = 0
-            // Unknown is never clear: an UNKNOWN sample neither confirms nor clears the active alert.
-            if (!anyUnknown && active != null && ++noneCount >= config.exitSamples) active = null
-            return output(scanning)
+    fun step(reading: ForwardRange, scanning: Boolean, tUs: Long): Alert? {
+        if (tUs < lastSampleUs) dropMeasurement() // the board clock restarted: nothing from before applies
+        lastSampleUs = tUs
+        if (reading == ForwardRange.Unknown) {
+            // Unknown is never clear and never a distance: stop presenting the last band, say nothing instead.
+            dropMeasurement()
+            shown = Band.NONE
+            return null
         }
-        if (c.region == candRegion) candCount++ else { candRegion = c.region; candCount = 1 }
-        val cur = active
-        if (cur != null) {
-            if (c.region == cur.region) {
-                noneCount = 0
-                active = Alert(c.region, c.band, label(c.region, detections), c.distanceMm)
-                return output(scanning)
+        val mm = (reading as? ForwardRange.Target)?.mm
+        lastMm = mm
+        trackSpeed(mm, tUs)
+        advance(targetBand(mm), tUs)
+        return present(scanning, tUs)
+    }
+
+    /** The band the sample indicates given the active one: moving out of a band must clear its hysteresis margin. */
+    private fun targetBand(mm: Int?): Band {
+        val raw = if (mm == null) Band.NONE else band(mm)
+        if (raw >= active) return raw
+        var t = active
+        while (t > raw && (mm == null || mm > upperMm(t) + tuning.bandHysteresisMm)) t = lessUrgent(t)
+        return t
+    }
+
+    /** Run-based smoothing: a band change needs consistent evidence in one direction for enter/exit time. */
+    private fun advance(target: Band, tUs: Long) {
+        if (target == active) { runDirection = 0; return }
+        val dir = if (target > active) 1 else -1
+        if (dir != runDirection) { runDirection = dir; runBand = target; runStartUs = tUs }
+        else runBand = if (dir > 0) minOf(runBand, target) else maxOf(runBand, target)
+        val needMs = if (dir > 0) tuning.bandEnterMs else tuning.bandExitMs
+        if (tUs - runStartUs >= needMs * 1000L) { active = runBand; runDirection = 0 }
+    }
+
+    private fun trackSpeed(mm: Int?, tUs: Long) {
+        if (mm == null) { samples.clear(); closingSpeed = null; approachCondition = false; return }
+        samples.addLast(tUs to mm)
+        val windowUs = tuning.approachWindowMs * 1000L
+        while (samples.isNotEmpty() && tUs - samples.first().first > windowUs) samples.removeFirst()
+        closingSpeed = leastSquaresClosing()
+        val v = closingSpeed
+        approachCondition = v != null && v >= tuning.approachMinSpeedMmPerS && mm * 1000.0 / v < tuning.approachTtcMs
+    }
+
+    private fun leastSquaresClosing(): Double? {
+        val n = samples.size
+        if (n < 3) return null
+        val t0 = samples.first().first
+        var sx = 0.0; var sy = 0.0; var sxx = 0.0; var sxy = 0.0
+        for ((t, mm) in samples) {
+            val x = (t - t0) / 1e6 // seconds
+            sx += x; sy += mm; sxx += x * x; sxy += x * mm
+        }
+        val den = n * sxx - sx * sx
+        if (den <= 0.0) return null
+        return -(n * sxy - sx * sy) / den
+    }
+
+    /** Approach escalation, scan hold and onset gating: what the wearer is actually told. */
+    private fun present(scanning: Boolean, tUs: Long): Alert? {
+        var b = active
+        if (approachActive) {
+            b = when (b) {
+                Band.NONE -> if ((lastMm ?: Int.MAX_VALUE) <= tuning.farMm) Band.FAR else Band.NONE
+                Band.FAR -> Band.MID
+                Band.MID, Band.NEAR -> Band.NEAR
             }
-            active = null // region change: exit, re-enter with a new onset
         }
-        val heldForScan = scanning && c.band == Band.FAR
-        if (candCount >= config.enterSamples && nowUs - lastOnsetUs >= config.minOnsetIntervalUs && !heldForScan) {
-            active = Alert(c.region, c.band, label(c.region, detections), c.distanceMm)
-            noneCount = 0
-            lastOnsetUs = nowUs
-            onsetPending = true
+        if (scanning && b == Band.FAR) b = Band.NONE
+        if (b != Band.NONE && shown == Band.NONE) {
+            if (tUs - lastOnsetUs < config.minOnsetIntervalUs) b = Band.NONE
+            else { lastOnsetUs = tUs; onsetPending = true }
         }
-        return output(scanning)
+        shown = b
+        return if (b == Band.NONE) null else Alert(b, lastMm?.takeIf { it <= tuning.farMm })
     }
 
-    private fun output(scanning: Boolean): Alert? {
-        val a = active ?: return null
-        scanningHeld = scanning && a.band == Band.FAR
-        return if (scanningHeld) null else a
-    }
-
+    /** True once per onset (consumed by [takeOnset]); the cue scheduler interrupts and the spearcon fires. */
     fun takeOnset(): Boolean = onsetPending.also { onsetPending = false }
 
+    private fun dropMeasurement() {
+        active = Band.NONE; runDirection = 0; runBand = Band.NONE; lastMm = null
+        samples.clear(); closingSpeed = null; approachCondition = false
+    }
+
     fun reset() {
-        active = null; candRegion = null; candCount = 0; noneCount = 0; onsetPending = false
-    }
-
-    /** Bearing of a detection: normalised x → L/C/R using the same thirds split as the default corridor. */
-    fun regionOf(d: Detection): Region = when {
-        d.centerX < 1f / 3f -> Region.LEFT
-        d.centerX > 2f / 3f -> Region.RIGHT
-        else -> Region.CENTER
-    }
-
-    fun label(region: Region, detections: List<Detection>): String =
-        detections.filter { it.score >= config.detectionScoreThreshold && regionOf(it) == region }
-            .maxByOrNull { it.score }?.label?.lowercase() ?: "obstacle"
-
-    // ---- Relative cues without ToF (Arch §7.1: bounding-box growth over time, never metres) ----
-    private val history = HashMap<Region, ArrayDeque<Pair<Long, Float>>>()
-
-    /**
-     * Builds observations from detections alone: a confident detection whose box grew by ≥ [PolicyConfig.growthFactor]
-     * within the window is reported as FAR in its region with no distance. Everything else is NONE (known): the
-     * camera saw nothing approaching, which is "nothing to report", never "clear".
-     */
-    fun relativeObservations(detections: List<Detection>, captureUs: Long): Map<Region, RegionObservation> {
-        val byRegion = detections.filter { it.score >= config.detectionScoreThreshold }.groupBy { regionOf(it) }
-        return Region.entries.associateWith { r ->
-            val h = history.getOrPut(r) { ArrayDeque() }
-            while (h.isNotEmpty() && captureUs - h.first().first > config.growthWindowUs) h.removeFirst()
-            val area = byRegion[r]?.maxOf { it.area } ?: 0f
-            val baseline = h.filter { captureUs - it.first >= config.growthMinAgeUs && it.second > 0f }.minOfOrNull { it.second }
-            h.addLast(captureUs to area)
-            val growing = area >= config.growthMinArea && baseline != null && baseline > 0f &&
-                area >= baseline * config.growthFactor
-            RegionObservation(if (growing) Band.FAR else Band.NONE, null, true)
-        }
+        dropMeasurement()
+        shown = Band.NONE; onsetPending = false
     }
 }

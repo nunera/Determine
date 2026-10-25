@@ -41,7 +41,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.core.content.ContextCompat
-import org.determine.core.CueOutput
+import androidx.compose.material3.Slider
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
+import org.determine.core.hearing.MIN_HAPTIC_MAX
+import kotlin.math.roundToInt
 import org.determine.core.FrameSourceKind
 
 @Composable
@@ -57,7 +61,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     val describeUrl by settings.describeUrl.collectAsStateWithLifecycle()
     val keySet by settings.describeKeySet.collectAsStateWithLifecycle()
     val frameSource by settings.frameSource.collectAsStateWithLifecycle()
-    val cueOutput by settings.cueOutput.collectAsStateWithLifecycle()
+    val hapticMax by settings.hapticMax.collectAsStateWithLifecycle()
+    val headset by DetermineRuntime.headset.collectAsStateWithLifecycle()
     var urlDraft by remember(describeUrl) { mutableStateOf(describeUrl) }
     var keyDraft by remember { mutableStateOf("") }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -96,6 +101,49 @@ fun SettingsScreen(onBack: () -> Unit) {
             Text("Start Determine to change the output mode.", style = MaterialTheme.typography.bodyMedium)
         }
 
+        SectionHeading("Headset audio")
+        Text(
+            "Every warning sound plays on your Bluetooth bone-conduction headset. If it is not connected, Determine " +
+                "reports system off and stays silent on the phone speaker. With warning sounds off (haptic only) no " +
+                "headset is needed; calibration tones always need it.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        InfoLine(
+            "Headset",
+            when {
+                !running -> "stopped"
+                profile?.mode == HearingMode.HAPTIC_ONLY -> "not required: warning sounds are off"
+                headset?.routeReady == true -> "ready: ${headset?.name ?: "connected"}"
+                headset?.present == true -> "found, audio route not ready"
+                else -> "NOT CONNECTED"
+            },
+        )
+
+        SectionHeading("Temple vibration strength")
+        var strength by remember(hapticMax) { mutableStateOf(hapticMax.toFloat()) }
+        val strengthText = "$hapticMax of 255"
+        Text(
+            "Strongest vibration the glasses temples may use for warnings. It cannot be turned off: if the phone " +
+                "connection is lost the temples are the only alert left. The weakest setting ($MIN_HAPTIC_MAX) is not a " +
+                "tested guarantee that you will feel it, so pick a strength you can feel reliably.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text("Strength: $strengthText", style = MaterialTheme.typography.titleMedium)
+        Slider(
+            value = strength,
+            onValueChange = { strength = it },
+            onValueChangeFinished = {
+                val v = strength.roundToInt().coerceIn(MIN_HAPTIC_MAX, 255)
+                settings.setHapticMax(v)
+                DetermineRuntime.setHapticMax(v)
+            },
+            valueRange = MIN_HAPTIC_MAX.toFloat()..255f,
+            modifier = Modifier.fillMaxWidth().semantics {
+                contentDescription = "Temple vibration strength"
+                stateDescription = strengthText
+            },
+        )
+
         SectionHeading("Describe (what's ahead)")
         Text(
             "Only when you long-press \"What's ahead?\": the phone blurs faces in one camera frame, sends it to the " +
@@ -132,7 +180,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             keyDraft = ""
         })
 
-        SectionHeading("Fallbacks (software demo, not the proposed glasses)")
+        SectionHeading("Camera fallback (software demo, not the proposed glasses)")
         ChoiceGroup(
             title = "Camera",
             options = listOf(
@@ -146,16 +194,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 } else settings.setFrameSource(choice)
             },
         )
-        ChoiceGroup(
-            title = "Warning sounds",
-            options = listOf(
-                CueOutput.GLASSES to "Glasses bone transducers",
-                CueOutput.PHONE_AUDIO to "Phone audio to headphones",
-            ),
-            selected = cueOutput,
-            onSelect = settings::setCueOutput,
-        )
-        Text("Changing a fallback restarts Determine. The distance sensor on the cue board is still required.",
+        Text("Changing the camera restarts Determine. The forward distance sensor on the cue board is always required.",
             style = MaterialTheme.typography.bodyMedium)
 
         SectionHeading("Hotspot and boards")

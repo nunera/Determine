@@ -1,6 +1,10 @@
-// Determine wire protocol v1 — C structs for both boards. Spec: protocol/PROTOCOL.md.
+// Determine wire protocol v2 — C structs for both boards. Spec: protocol/PROTOCOL.md.
 // Both ESP32 targets (and the host used for native tests) are little-endian, so packed
 // structs map 1:1 onto the wire. Never add fields without bumping DT_VERSION.
+//
+// v2: the cue board is haptic-only. RANGE is ONE forward VL53L4CD reading (no grid, no
+// resolution, no mounting transform); CUE carries no audio gains; ACK reports no applied
+// gains; PROFILE is mode + haptic_max. All audio is synthesised by the phone.
 #pragma once
 
 #include <stdbool.h>
@@ -21,18 +25,16 @@
 #endif
 
 #define DT_MAGIC 0x5444u
-#define DT_VERSION 1u
+#define DT_VERSION 2u
 
 #define DT_PORT_PHONE 47000
 #define DT_PORT_CUE 47001
 #define DT_PORT_CAM 47002
+/* PROFILE.haptic_max minimum: with no board audio the temple haptics are the last local failure
+ * channel (watchdog LSS), so 0 is never a valid ceiling — the board rejects it with ACK BAD_CUE. */
+#define DT_HAPTIC_MAX_MIN 1u
 
 #define DT_MAX_CHUNK 1400
-#define DT_ZONES 64
-#define DT_STATUS_NO_TARGET 255
-#define DT_GAIN_MUTE (-128)
-#define DT_FW_HARD_CEILING_DB (-10) /* PROPOSED until transducers are characterised */
-#define DT_WATCHDOG_GAIN_DB (-20)
 
 enum dt_type {
   DT_BEAT = 0x01,
@@ -47,12 +49,21 @@ enum dt_type {
 
 enum dt_board { DT_BOARD_CAM = 1, DT_BOARD_CUE = 2 };
 enum dt_side { DT_SIDE_L = 0, DT_SIDE_R = 1, DT_SIDE_BOTH = 2 };
+/* Phone audio-profile semantics only: the board is always haptic-only (protocol v2). */
 enum dt_mode { DT_MODE_STEREO = 0, DT_MODE_SSD = 1, DT_MODE_HAPTIC_ONLY = 2 };
 
+/* Canonical RANGE status. The VL53L4CD board maps raw 0 -> VALID, all other statuses
+ * -> UNKNOWN, including no return. It cannot positively establish NO_TARGET. */
+enum dt_range_status {
+  DT_RANGE_VALID = 0,
+  DT_RANGE_NO_TARGET = 1,
+  DT_RANGE_UNKNOWN = 2,
+};
+
 enum dt_ack_status {
-  DT_ACK_PLAYED = 0,
+  DT_ACK_APPLIED = 0,
   DT_ACK_EXPIRED = 1,
-  DT_ACK_PLAYED_CLAMPED = 2,
+  DT_ACK_APPLIED_CLAMPED = 2,
   DT_ACK_NO_SYNC = 3,
   DT_ACK_BAD_CUE = 4,
   DT_ACK_BUSY_DROPPED = 5,
@@ -61,7 +72,7 @@ enum dt_ack_status {
 enum dt_fault {
   DT_FAULT_SENSOR_INIT = 1u << 0,
   DT_FAULT_SENSOR_READ = 1u << 1,
-  DT_FAULT_I2S = 1u << 2,
+  /* bit 2 reserved: was I2S_ERR; the board makes no sound in v2 and must send 0 */
   DT_FAULT_HAPTIC_L = 1u << 3,
   DT_FAULT_HAPTIC_R = 1u << 4,
   DT_FAULT_BROWNOUT = 1u << 5,
@@ -116,14 +127,12 @@ typedef struct DT_PACKED {
   uint16_t heap_kb;
 } dt_beat_t;
 
+/* One forward ToF reading (single-zone VL53L4CD). mm is 0 unless status is DT_RANGE_VALID. */
 typedef struct DT_PACKED {
   dt_header_t h;
   uint64_t t_us;
-  uint8_t res;
-  uint8_t reserved0;
-  uint16_t reserved1;
-  uint16_t mm[DT_ZONES];
-  uint8_t status[DT_ZONES];
+  uint16_t mm;
+  uint8_t status; /* enum dt_range_status */
 } dt_range_t;
 
 typedef struct DT_PACKED {
@@ -152,14 +161,14 @@ typedef struct DT_PACKED {
   uint64_t t_board_tx_us;
 } dt_pong_t;
 
+/* Haptic command; the phone owns all audio. ttl_ms is advisory: the phone already folded it
+ * into deadline_board_us. haptic_l/haptic_r are clamped to the profile's haptic_max. */
 typedef struct DT_PACKED {
   dt_header_t h;
   uint64_t t_issued_phone_us;
   uint64_t deadline_board_us;
   uint8_t cue_id;
   uint8_t side;
-  int8_t gain_l_db;
-  int8_t gain_r_db;
   uint8_t haptic_pattern;
   uint8_t haptic_l;
   uint8_t haptic_r;
@@ -170,30 +179,26 @@ typedef struct DT_PACKED {
 typedef struct DT_PACKED {
   dt_header_t h;
   uint32_t cue_seq;
-  uint8_t status;
+  uint8_t status; /* enum dt_ack_status */
   uint8_t reserved;
-  int8_t applied_gain_l_db;
-  int8_t applied_gain_r_db;
   uint64_t t_board_us;
 } dt_ack_t;
 
 typedef struct DT_PACKED {
   dt_header_t h;
-  int8_t ceiling_db;
-  uint8_t mode;
-  uint8_t haptic_max;
-  uint8_t reserved;
+  uint8_t mode;       /* enum dt_mode; phone semantics only, the board is haptic-only */
+  uint8_t haptic_max; /* ceiling the board clamps CUE haptic_l/haptic_r to */
 } dt_profile_t;
 
 DT_STATIC_ASSERT(sizeof(dt_header_t) == 8, "header");
 DT_STATIC_ASSERT(sizeof(dt_beat_t) == 24, "beat");
-DT_STATIC_ASSERT(sizeof(dt_range_t) == 212, "range");
+DT_STATIC_ASSERT(sizeof(dt_range_t) == 19, "range");
 DT_STATIC_ASSERT(sizeof(dt_frame_hdr_t) == 38, "frame header");
 DT_STATIC_ASSERT(sizeof(dt_ping_t) == 16, "ping");
 DT_STATIC_ASSERT(sizeof(dt_pong_t) == 32, "pong");
-DT_STATIC_ASSERT(sizeof(dt_cue_t) == 34, "cue");
-DT_STATIC_ASSERT(sizeof(dt_ack_t) == 24, "ack");
-DT_STATIC_ASSERT(sizeof(dt_profile_t) == 12, "profile");
+DT_STATIC_ASSERT(sizeof(dt_cue_t) == 32, "cue");
+DT_STATIC_ASSERT(sizeof(dt_ack_t) == 22, "ack");
+DT_STATIC_ASSERT(sizeof(dt_profile_t) == 10, "profile");
 
 static inline void dt_header_init(dt_header_t *h, uint8_t type, uint32_t seq) {
   h->magic = DT_MAGIC;
@@ -226,16 +231,20 @@ static inline uint8_t dt_validate(const uint8_t *buf, size_t len) {
   }
 }
 
-/* Gain the board actually applies: never above min(profile ceiling, firmware hard cap). */
-static inline int8_t dt_clamp_gain(int8_t requested_db, int8_t profile_ceiling_db) {
-  int8_t cap = profile_ceiling_db < DT_FW_HARD_CEILING_DB ? profile_ceiling_db : (int8_t)DT_FW_HARD_CEILING_DB;
-  if (requested_db == DT_GAIN_MUTE) return DT_GAIN_MUTE;
-  return requested_db > cap ? cap : requested_db;
+/* Haptic intensity the board actually applies: never above the profile ceiling. */
+static inline uint8_t dt_clamp_haptic(uint8_t requested, uint8_t haptic_max) {
+  return requested > haptic_max ? haptic_max : requested;
 }
 
-/* A CUE may play only with clock sync and before its deadline (board clock). */
+/* A CUE may fire only with clock sync and before its deadline (board clock). */
 static inline uint8_t dt_cue_time_check(const dt_cue_t *c, uint64_t now_board_us) {
   if (c->deadline_board_us == 0) return DT_ACK_NO_SYNC;
   if (now_board_us > c->deadline_board_us) return DT_ACK_EXPIRED;
-  return DT_ACK_PLAYED;
+  return DT_ACK_APPLIED;
+}
+
+/* A PROFILE is applicable only with a known mode and haptic_max in 1..255; otherwise ACK BAD_CUE
+ * and the previous profile stays in force. */
+static inline bool dt_profile_valid(const dt_profile_t *p) {
+  return p->mode <= DT_MODE_HAPTIC_ONLY && p->haptic_max >= DT_HAPTIC_MAX_MIN;
 }

@@ -12,6 +12,7 @@ import org.determine.core.wire.Ping
 import org.determine.core.wire.Pong
 import org.determine.core.wire.ProfilePkt
 import org.determine.core.wire.RangePkt
+import org.determine.core.wire.RangeStatus
 import org.determine.core.wire.Wire
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -22,21 +23,25 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
-/** A phone-side cue player for PHONE_AUDIO; [status] null = the player throws. */
-class TestSink(var status: Int? = AckStatus.PLAYED) : LocalCueSink {
+/** What a headset sink returns when the phone → bone-conduction route is lost (not an ACK status). */
+const val PHONE_ROUTE_FAILED = -1
+
+/** A phone-side cue player standing in for the headset route; [status] null = the player throws. */
+class TestSink(var status: Int? = AckStatus.APPLIED) : LocalCueSink {
     val plays = mutableListOf<Pair<Long, CueCommand>>()
+
     override fun play(cmd: CueCommand, nowPhoneUs: Long): Int {
         plays += nowPhoneUs to cmd
         return status ?: throw IllegalStateException("audio output gone")
     }
 
-    fun audible() = plays.filter { it.second.gainLDb != -128 || it.second.gainRDb != -128 || it.second.hapticL > 0 || it.second.hapticR > 0 }
+    fun audible() = plays.filter { it.second.gainLDb != GAIN_MUTE || it.second.gainRDb != GAIN_MUTE }
 }
 
-/** Boards (optional camera board, cue board) + phone camera, all in virtual time, for the fallback modes. */
+/** Boards (optional camera board, cue board) + phone camera, all in virtual time, for the Tier 0 phone-camera mode. */
 class FallbackRig(
     config: EngineConfig,
-    val sink: TestSink? = null,
+    val sink: TestSink = TestSink(),
     var camBoard: Boolean = false,
     var phoneFrames: Boolean = true,
 ) {
@@ -44,8 +49,8 @@ class FallbackRig(
     private val camOffset = 7_000_000L - now
     private val cueOffset = 3_000_000L - now
     var cueAlive = true
-    var grid = IntArray(64)
-    var status = IntArray(64) { 255 }
+    var mm = 0
+    var status = RangeStatus.NO_TARGET
 
     val states = mutableListOf<Triple<SystemState, String, Long>>()
     val alertsOut = mutableListOf<Alert?>()
@@ -91,8 +96,8 @@ class FallbackRig(
             val off = if (b == BoardId.CAM) camOffset else cueOffset
             when (val p = d.packet) {
                 is Ping -> { pings[b] = pings.getValue(b) + 1; if (alive) deliver(b, Pong(p.tPhoneUs, p.tPhoneUs + off + 500, now + off + 500)) }
-                is CuePkt -> { boardCues += p; if (alive) deliver(b, Ack(d.seq, AckStatus.PLAYED, p.gainLDb, p.gainRDb, now + off)) }
-                is ProfilePkt -> { profiles += p; if (alive) deliver(b, Ack(d.seq, AckStatus.PLAYED, 0, 0, now + off)) }
+                is CuePkt -> { boardCues += p; if (alive) deliver(b, Ack(d.seq, AckStatus.APPLIED, now + off)) }
+                is ProfilePkt -> { profiles += p; if (alive) deliver(b, Ack(d.seq, AckStatus.APPLIED, now + off)) }
                 else -> Unit
             }
         }
@@ -106,7 +111,7 @@ class FallbackRig(
         }
         if (now >= nextRange) {
             nextRange = now + 66_667
-            if (cueAlive) deliver(BoardId.CUE, RangePkt(now + cueOffset - 20_000, grid.copyOf(), status.copyOf()))
+            if (cueAlive) deliver(BoardId.CUE, RangePkt(now + cueOffset - 20_000, mm, status))
         }
         if (phoneFrames && now >= nextPhoneFrame) {
             nextPhoneFrame = now + 33_333
@@ -119,15 +124,14 @@ class FallbackRig(
 
     fun run(us: Long) { val end = now + us; while (now < end) step() }
 
-    fun obstacle(mm: Int?) {
-        status = IntArray(64) { 255 }; grid = IntArray(64)
-        if (mm != null) { val z = 2 * 8 + 3; grid[z] = mm; status[z] = 5 }
+    fun obstacle(distanceMm: Int?) {
+        if (distanceMm != null) { mm = distanceMm; status = RangeStatus.VALID } else { mm = 0; status = RangeStatus.NO_TARGET }
     }
 
     fun ready(): FallbackRig { run(1_000_000); assertEquals(SystemState.READY, engine.state, states.toString()); return this }
 }
 
-private fun silentEngine(config: EngineConfig, sink: LocalCueSink? = null) = Engine(
+private fun silentEngine(config: EngineConfig, sink: LocalCueSink = TestSink()) = Engine(
     config, { _, _ -> },
     object : PhoneAlerts {
         override fun speak(text: String) {}; override fun vibrate(pattern: LongArray) {}; override fun systemOff() {}
@@ -140,10 +144,7 @@ private fun silentEngine(config: EngineConfig, sink: LocalCueSink? = null) = Eng
 )
 
 class FallbackTest {
-    private val tier0 = EngineConfig(frameSource = FrameSourceKind.PHONE_CAMERA)
-    private val phoneAudio = EngineConfig(cueOutput = CueOutput.PHONE_AUDIO, initialProfile = HearingProfile.uncalibrated(-30))
-
-    // ------------------------------------------------------------------ Tier 0: phone camera
+    private val tier0 = EngineConfig(frameSource = FrameSourceKind.PHONE_CAMERA, initialProfile = HearingProfile.uncalibrated(-30))
 
     @Test
     fun `tier 0 reaches ready without a camera board and fails loud when phone frames stop`() {
@@ -156,7 +157,6 @@ class FallbackTest {
         assertTrue(f.frameId > 0)
         val d = r.engine.diagnostics(r.now)
         assertEquals(FrameSourceKind.PHONE_CAMERA, d.frameSource)
-        assertEquals(CueOutput.GLASSES, d.cueOutput)
         assertNull(d.cam.beatAgeMs)
 
         r.phoneFrames = false
@@ -169,7 +169,8 @@ class FallbackTest {
         assertEquals("frame_stale", reason)
         assertTrue(at - lastCapture in 500_001..510_000, "${at - lastCapture}")
         assertEquals(1, r.systemOffs)
-        assertTrue(r.boardCues.any { it.cueId == CueId.SYSTEM_OFF })
+        assertTrue(r.boardCues.any { it.cueId == CueId.SYSTEM_OFF }, "board haptics announce the failure")
+        assertTrue(r.sink.plays.any { it.second.cueId == CueId.SYSTEM_OFF }, "so does the headset")
 
         r.phoneFrames = true
         r.run(200_000)
@@ -219,109 +220,34 @@ class FallbackTest {
     }
 
     @Test
-    fun `detections are gated on the phone capture time`() {
-        val e = silentEngine(tier0)
-        val det = listOf(Detection("person", 0.9f, 0.4f, 0.3f, 0.6f, 0.9f))
-        e.onDetections(1, 1_000_000, det, 1_500_000)  // exactly 500 ms: accepted
-        assertEquals(0L, e.diagnostics(1_500_000).staleDropped)
-        e.onDetections(2, 1_000_000, det, 1_500_001)
-        assertEquals(1L, e.diagnostics(1_500_001).staleDropped)
-    }
-
-    // ------------------------------------------------------------------ phone audio output
-
-    @Test
-    fun `phone audio needs a sink`() {
-        assertThrows(IllegalArgumentException::class.java) { silentEngine(EngineConfig(cueOutput = CueOutput.PHONE_AUDIO)) }
+    fun `the camera never contributes a distance or a person label - frames carry no range`() {
+        // Hazard distance has exactly one source: the forward ToF RANGE packet. A phone camera frame, however
+        // fresh, produces no alert on its own.
+        val r = FallbackRig(tier0).ready()
+        r.run(1_000_000)
+        assertTrue(r.alertsOut.isEmpty() || r.alertsOut.all { it == null })
+        assertTrue(r.sink.audible().all { it.second.cueId == CueId.READY })
+        r.obstacle(300)
+        r.run(500_000)
+        val a = r.alertsOut.last()!!
+        assertEquals(Band.NEAR, a.band)
+        assertEquals(300, a.distanceMm)
     }
 
     @Test
-    fun `phone audio routes every cue to the sink within the ceiling and never sends PROFILE or CUE`() {
-        val sink = TestSink()
-        val r = FallbackRig(phoneAudio, sink, camBoard = true, phoneFrames = false).ready()
-        val probe = sink.plays.first().second
-        assertEquals(-128, probe.gainLDb); assertEquals(-128, probe.gainRDb); assertEquals(0, probe.hapticL + probe.hapticR)
-        assertEquals(1, sink.audible().count { it.second.cueId == CueId.READY })
-
-        r.obstacle(800)
+    fun `tier 0 sends every warning to the headset sink within the ceiling and to the board as haptics`() {
+        val r = FallbackRig(tier0).ready()
+        r.obstacle(400)
         val t0 = r.now
         r.run(1_000_000)
-        val obstacle = sink.plays.filter { it.first >= t0 && it.second.cueId in CueId.OBSTACLE_FAR..CueId.PERSON_NEAR }
-        assertTrue(obstacle.size >= 3, "NEAR at 5/s: ${obstacle.size}")
-        assertTrue(sink.plays.all { (_, c) -> listOf(c.gainLDb, c.gainRDb).all { it == -128 || it <= -30 } })
-
-        r.engine.sendCalibrationCue(CueCommand(CueId.CAL_TONE_1K, 0, 0, -128, 0, 0, 0, 1, 1000), r.now)
-        assertEquals(-30, sink.plays.last().second.gainLDb)
-
-        assertTrue(r.profiles.isEmpty())
-        assertTrue(r.boardCues.isEmpty())
+        val sounds = r.sink.plays.filter { it.first >= t0 && it.second.cueId == CueId.OBSTACLE_NEAR }
+        assertTrue(sounds.size >= 3, "NEAR at 5/s: ${sounds.size}")
+        assertTrue(r.sink.plays.all { (_, c) -> listOf(c.gainLDb, c.gainRDb).all { it == GAIN_MUTE || it <= -30 } })
+        assertTrue(r.boardCues.count { it.cueId == CueId.OBSTACLE_NEAR } >= 3)
+        assertTrue(r.profiles.isNotEmpty())
         assertTrue(r.pings.getValue(BoardId.CUE) > 0, "cue board still pinged: clock sync for RANGE")
         val d = r.engine.diagnostics(r.now)
-        assertEquals(CueOutput.PHONE_AUDIO, d.cueOutput)
         assertEquals(0L, d.missedAcks)
-        assertTrue(d.acks >= obstacle.size)
-    }
-
-    @Test
-    fun `phone audio sink failures escalate to unavailable with system off on the sink and recover`() {
-        val sink = TestSink()
-        val r = FallbackRig(phoneAudio, sink, camBoard = true, phoneFrames = false).ready()
-        r.obstacle(800)
-        r.run(300_000)
-        sink.status = -1
-        val tFail = r.now
-        r.run(1_500_000)
-        assertEquals(SystemState.UNAVAILABLE to "cue_ack_missing", r.states.last().first to r.states.last().second)
-        assertTrue(r.states.last().third - tFail < 1_000_000)
-        assertEquals(1, r.systemOffs)
-        assertTrue(sink.plays.any { it.first >= tFail && it.second.cueId == CueId.SYSTEM_OFF })
-        assertNull(r.alertsOut.last())
-        assertTrue(r.boardCues.isEmpty())
-
-        sink.status = AckStatus.PLAYED
-        r.run(1_500_000)
-        assertEquals(SystemState.READY, r.engine.state)
-        assertTrue(r.spoken.contains("system ready"))
-    }
-
-    @Test
-    fun `a throwing sink is a missing ack, busy is not a failure`() {
-        val sink = TestSink()
-        val r = FallbackRig(phoneAudio, sink, camBoard = true, phoneFrames = false).ready()
-        r.obstacle(800)
-        sink.status = AckStatus.BUSY_DROPPED
-        r.run(1_000_000)
-        assertEquals(SystemState.READY, r.engine.state)
-        assertTrue(r.engine.diagnostics(r.now).nacks > 0)
-        sink.status = null
-        r.run(1_000_000)
-        assertEquals(SystemState.UNAVAILABLE, r.engine.state)
-        assertEquals("cue_ack_missing", r.states.last().second)
-        assertTrue(r.engine.diagnostics(r.now).missedAcks >= 3)
-    }
-
-    @Test
-    fun `phone audio is not ready until the sink plays and still needs the cue board`() {
-        val broken = TestSink(status = AckStatus.BAD_CUE)
-        val r = FallbackRig(phoneAudio, broken, camBoard = true, phoneFrames = false)
-        r.run(2_000_000)
-        assertEquals(SystemState.STARTING, r.engine.state)
-        assertTrue(broken.audible().isEmpty(), "only muted probes before READY")
-        assertTrue(broken.plays.size in 2..3, "probe at the 1 s PROFILE cadence: ${broken.plays.size}")
-
-        val ok = FallbackRig(phoneAudio, TestSink(), camBoard = true, phoneFrames = false).ready()
-        ok.cueAlive = false
-        ok.run(700_000)
-        assertEquals(SystemState.UNAVAILABLE to "cue_beat_missing", ok.states.last().first to ok.states.last().second)
-    }
-
-    @Test
-    fun `tier 0 with phone audio needs only the cue board`() {
-        val sink = TestSink()
-        val r = FallbackRig(tier0.copy(cueOutput = CueOutput.PHONE_AUDIO), sink).ready()
-        assertTrue(r.profiles.isEmpty() && r.boardCues.isEmpty())
-        assertEquals(0, r.pings.getValue(BoardId.CAM))
         assertNotNull(r.engine.latestJpeg())
-        assertEquals(1, sink.audible().count { it.second.cueId == CueId.READY })
     }
 }

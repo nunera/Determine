@@ -1,23 +1,29 @@
-"""Named, deterministic scenarios for sim_boards.py and e2e.py.
+"""Named, deterministic scenarios for sim_boards.py and e2e.py (protocol v2, near-field).
 
 Scenario time t (s) starts when the simulator starts. Every scenario begins with LEAD_S of
 lead-in so the phone can learn both boards and sync clocks before anything happens.
-Hazard bands for reference (Arch §7.2, PROPOSED): NEAR < 1 m, MID < 2 m, FAR < 3 m.
-Geometry notes: the sensor is at 1.6 m; per-axis FOV ≈ 46.8° (63° diagonal), so at 1.7 m an
-object 0.75 m to the side sits in the outermost column only (flank), and at 3 m it is still
-outside the central four columns.
+
+Hazard bands (PROTOCOL.md "Hazard bands", measured/tunable, conservative for the VL53L4CD's
+~1.2 m envelope): NEAR < 500 mm, MID 500–899 mm, FAR 900–1200 mm, beyond 1200 mm → no obstacle
+claim (NO_TARGET when the sensor sees nothing within range), NO all-clear ever. The single forward zone (~18° FOV) cannot lateralize, so obstacle
+cues are always centred (side BOTH); there is deliberately no left/right scenario.
 """
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass, field
 from typing import Callable
 
+from dtwire import dw
 from netem import CLEAN, NetProfile
-from scene import STATUS_GLASS, Box, region_zones
+from scene import Box
 
 LEAD_S = 3.0
-WALK_MPS = 1.4  # Arch §6.3
+APPROACH_MPS = 0.5  # staged near-field demo approach speed: keeps FAR/MID/NEAR each wide enough to cue
+BAND_FAR_MM = 1200
+BAND_MID_MM = 900
+BAND_NEAR_MM = 500
 
 
 @dataclass
@@ -27,7 +33,7 @@ class Scenario:
     duration_s: float
     seed: int
     objects_fn: Callable[[float], list[Box]] = lambda t: []
-    invalid_fn: Callable[[float, random.Random], dict[int, int]] = lambda t, rng: {}
+    invalid_fn: Callable[[float, random.Random], int | None] = lambda t, rng: None
     cue_dropouts: list[tuple[float, float]] = field(default_factory=list)
     cam_dropouts: list[tuple[float, float]] = field(default_factory=list)
     net: NetProfile = CLEAN
@@ -36,7 +42,8 @@ class Scenario:
     def objects(self, t: float) -> list[Box]:
         return self.objects_fn(t)
 
-    def invalid_zones(self, t: float, rng: random.Random) -> dict[int, int]:
+    def invalid_status(self, t: float, rng: random.Random) -> int | None:
+        """Wire status override for the whole reading (glass/saturation → UNKNOWN), else None."""
         return self.invalid_fn(t, rng)
 
     def cue_down(self, t: float) -> bool:
@@ -53,51 +60,35 @@ def _lerp_dist(t: float, t0: float, d0: float, d1: float, speed: float) -> float
     return max(d1, d0 - (t - t0) * speed) if d1 < d0 else min(d1, d0 + (t - t0) * speed)
 
 
+def _band_marks(d0: float, speed: float) -> dict[str, float]:
+    """Instants at which the closing object crosses 1200/900/500 mm (band entry points)."""
+    return {"far_at": LEAD_S + (d0 - BAND_FAR_MM / 1000) / speed,
+            "mid_at": LEAD_S + (d0 - BAND_MID_MM / 1000) / speed,
+            "near_at": LEAD_S + (d0 - BAND_NEAR_MM / 1000) / speed}
+
+
 def _head_bar(x: float) -> Box:
     # A head-height bar/sign: 1.2 m wide, 1.40–1.80 m above the floor (sensor at 1.6 m).
     return Box(x_m=x, y_m=0.0, z_bottom_m=1.40, z_top_m=1.80, width_m=1.2, depth_m=0.05, kind="bar")
 
 
 def approach_centre(seed: int = 1, net: NetProfile = CLEAN, name: str = "approach_centre") -> Scenario:
-    d0, d1 = 3.5, 0.5
-    t_end_motion = LEAD_S + (d0 - d1) / WALK_MPS
+    d0, d1, speed = 1.8, 0.35, APPROACH_MPS  # starts beyond the 1.2 m envelope: silent until FAR
+    t_end_motion = LEAD_S + (d0 - d1) / speed
     hold_end = t_end_motion + 2.0
 
     def objs(t: float) -> list[Box]:
         if t >= hold_end:
-            return []  # wearer stops and turns away: bar leaves the field of view
-        return [_head_bar(_lerp_dist(t, LEAD_S, d0, d1, WALK_MPS))]
+            return []  # wearer stops and turns away: bar leaves the beam
+        return [_head_bar(_lerp_dist(t, LEAD_S, d0, d1, speed))]
 
-    marks = {"motion_start": LEAD_S, "motion_end": t_end_motion, "hold_end": hold_end,
-             "far_at": LEAD_S + (d0 - 3.0) / WALK_MPS, "mid_at": LEAD_S + (d0 - 2.0) / WALK_MPS,
-             "near_at": LEAD_S + (d0 - 1.0) / WALK_MPS}
-    return Scenario(name, "head-height bar, centre, 3.5 m → 0.5 m at 1.4 m/s, hold 2 s, then gone",
+    marks = {"motion_start": LEAD_S, "motion_end": t_end_motion, "hold_end": hold_end, **_band_marks(d0, speed)}
+    return Scenario(name, "head-height bar, straight ahead, 1.8 m → 0.35 m at 0.5 m/s, hold 2 s, then gone",
                     hold_end + 2.0, seed, objs, net=net, marks=marks)
 
 
-def left_then_right(seed: int = 1) -> Scenario:
-    speed, d0, d1 = 1.0, 3.2, 1.7
-    l0, l_gone = LEAD_S, LEAD_S + 3.5
-    r0 = l_gone + 2.0
-    r_gone = r0 + 3.5
-
-    def pole(y: float, x: float) -> Box:
-        return Box(x_m=x, y_m=y, z_bottom_m=0.0, z_top_m=2.0, width_m=0.25, depth_m=0.25, kind="pole")
-
-    def objs(t: float) -> list[Box]:
-        if l0 <= t < l_gone:
-            return [pole(-0.75, _lerp_dist(t, l0, d0, d1, speed))]
-        if r0 <= t < r_gone:
-            return [pole(+0.75, _lerp_dist(t, r0, d0, d1, speed))]
-        return []
-
-    return Scenario("left_then_right", "pole on the LEFT flank 3.2 → 1.7 m, gone, then on the RIGHT flank",
-                    r_gone + 2.0, seed, objs,
-                    marks={"left_start": l0, "left_end": l_gone, "right_start": r0, "right_end": r_gone})
-
-
 def person_ahead(seed: int = 1) -> Scenario:
-    speed, d0, d1 = 1.0, 4.5, 1.2
+    speed, d0, d1 = APPROACH_MPS, 1.8, 0.40
     stop = LEAD_S + (d0 - d1) / speed
     aside0, aside1 = stop + 1.5, stop + 2.5
 
@@ -105,29 +96,44 @@ def person_ahead(seed: int = 1) -> Scenario:
         x = _lerp_dist(t, LEAD_S, d0, d1, speed)
         y = 0.0
         if t >= aside0:
-            y = min(1.6, (t - aside0) / (aside1 - aside0) * 1.6)  # steps aside out of the FOV
+            y = min(1.0, (t - aside0) / (aside1 - aside0) * 1.0)  # steps aside, out of the 18° beam
         return [Box(x_m=x, y_m=y, z_bottom_m=0.0, z_top_m=1.75, width_m=0.5, depth_m=0.3, kind="person")]
 
-    return Scenario("person_ahead", "person walking toward the wearer 4.5 → 1.2 m, pauses, steps aside",
-                    aside1 + 2.5, seed, objs, marks={"motion_start": LEAD_S, "stop": stop,
-                                                     "aside_start": aside0, "gone": aside1})
+    return Scenario("person_ahead", "person walking toward the wearer 1.8 m → 0.4 m, pauses, steps aside",
+                    aside1 + 2.5, seed, objs,
+                    marks={"motion_start": LEAD_S, "stop": stop, "aside_start": aside0, "gone": aside1,
+                           **_band_marks(d0, speed)})
 
 
 def glass_unknown(seed: int = 1) -> Scenario:
     glass_from = LEAD_S
-    corridor = region_zones(range(1, 7), range(2, 6))
-    junk = [0, 2, 4, 6, 12, 13]  # raw non-valid target_status codes; glass/clutter
 
-    def walls(t: float) -> list[Box]:
-        return [Box(0.3, -1.6, 0.0, 2.5, 0.1, 12.0, "wall"), Box(0.3, 1.6, 0.0, 2.5, 0.1, 12.0, "wall")]
+    def invalid(t: float, rng: random.Random) -> int | None:
+        # A valid bar is seen before the sensor goes invalid: the phone must leave READY
+        # for DEGRADED and stop cueing the last valid distance, not treat it as open space.
+        return None if t < glass_from else dw.RANGE_UNKNOWN
 
-    def invalid(t: float, rng: random.Random) -> dict[int, int]:
-        if t < glass_from:
-            return {}
-        return {z: (STATUS_GLASS if rng.random() < 0.6 else rng.choice(junk)) for z in corridor}
+    return Scenario("glass_unknown", "bar at 1.0 m; from 3 s the single reading goes invalid (glass) → UNKNOWN",
+                    glass_from + 6.0, seed, objects_fn=lambda t: [_head_bar(1.0)],
+                    invalid_fn=invalid, marks={"glass_from": glass_from})
 
-    return Scenario("glass_unknown", "corridor walls 1.6 m each side; from 3 s the central zones read invalid (glass)",
-                    glass_from + 6.0, seed, walls, invalid, marks={"glass_from": glass_from})
+
+def approach_then_unknown(seed: int = 1) -> Scenario:
+    """Fault path mid-approach: the bar closes to MID, the sensor goes invalid for 3 s, then recovers."""
+    d0, d1, speed = 1.8, 0.70, APPROACH_MPS
+    glass_from = LEAD_S + 2.0   # bar is at 0.8 m (MID) when the reading goes invalid
+    glass_to = glass_from + 3.0
+
+    def objs(t: float) -> list[Box]:
+        return [_head_bar(_lerp_dist(t, LEAD_S, d0, d1, speed))]
+
+    def invalid(t: float, rng: random.Random) -> int | None:
+        return dw.RANGE_UNKNOWN if glass_from <= t < glass_to else None
+
+    return Scenario("approach_then_unknown",
+                    "bar closes 1.8 m → 0.7 m at 0.5 m/s; at 0.8 m the reading goes invalid for 3 s, then recovers",
+                    glass_to + 3.0, seed, objs, invalid,
+                    marks={"glass_from": glass_from, "glass_to": glass_to, **_band_marks(d0, speed)})
 
 
 def cue_board_dropout(seed: int = 1) -> Scenario:
@@ -153,18 +159,38 @@ def wifi_jitter(seed: int = 1) -> Scenario:
 
 
 def idle_open_space(seed: int = 1) -> Scenario:
-    return Scenario("idle_open_space", "nothing within 4 m; the system must stay silent", LEAD_S + 6.0, seed)
+    return Scenario("idle_open_space",
+                    "no return within the 1.2 m envelope; NO_TARGET (not clear): quiet — no obstacle cue, alert, "
+                    "DEGRADED, UNAVAILABLE or 'sensor limited' speech",
+                    LEAD_S + 6.0, seed)
+
+
+HOVER_CENTRE_M = 0.9
+HOVER_AMPLITUDE_M = 0.03
+HOVER_HZ = 3.0
+
+
+def hover_boundary(seed: int = 1) -> Scenario:
+    """Target jitters ±30 mm around the FAR/MID boundary (900 mm) at 3 Hz, on top of sensor noise."""
+    def objs(t: float) -> list[Box]:
+        return [_head_bar(HOVER_CENTRE_M + HOVER_AMPLITUDE_M * math.sin(2 * math.pi * HOVER_HZ * t))]
+
+    return Scenario("hover_boundary",
+                    "head-height bar oscillating ±30 mm around 900 mm (FAR/MID boundary) at 3 Hz with sensor noise; "
+                    "bands must not chatter",
+                    LEAD_S + 10.0, seed, objs, marks={"hover_start": LEAD_S})
 
 
 SCENARIOS: dict[str, Callable[[int], Scenario]] = {
     "approach_centre": approach_centre,
-    "left_then_right": left_then_right,
     "person_ahead": person_ahead,
     "glass_unknown": glass_unknown,
+    "approach_then_unknown": approach_then_unknown,
     "cue_board_dropout": cue_board_dropout,
     "cam_dropout": cam_dropout,
     "wifi_jitter": wifi_jitter,
     "idle_open_space": idle_open_space,
+    "hover_boundary": hover_boundary,
 }
 
 

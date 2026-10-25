@@ -3,6 +3,13 @@ package org.determine.core.hearing
 /** Firmware hard ceiling (determine_wire.h DT_FW_HARD_CEILING_DB). The phone never asks for more. */
 const val HARD_CEILING_DB = -10
 
+/**
+ * Lowest allowed board haptic cap (PROTOCOL.md v2: PROFILE.haptic_max is 1..255, the board rejects 0 as BAD_CUE).
+ * The temple haptics are the only failure channel that survives phone loss (the board's watchdog), so the user
+ * can never configure them off; a cap of 1 is the weakest setting and is NOT a measured perceptibility guarantee.
+ */
+const val MIN_HAPTIC_MAX = 1
+
 enum class HearingMode(val wire: Int) { STEREO(0), SSD(1), HAPTIC_ONLY(2) }
 
 enum class Ear { LEFT, RIGHT }
@@ -44,7 +51,8 @@ data class HearingProfile(
     init {
         require(ceilingDb <= 0) { "ceiling is dBFS ≤ 0" }
         require(bands.size == CalBand.HZ.size)
-        require(hapticGainL in 0..255 && hapticGainR in 0..255 && hapticMax in 0..255)
+        require(hapticGainL in 0..255 && hapticGainR in 0..255) { "haptic gains are 0..255" }
+        require(hapticMax in MIN_HAPTIC_MAX..255) { "haptic_max is $MIN_HAPTIC_MAX..255: the watchdog failure channel cannot be disabled" }
     }
 
     val effectiveCeilingDb: Int get() = minOf(ceilingDb, HARD_CEILING_DB)

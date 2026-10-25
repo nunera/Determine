@@ -97,7 +97,7 @@ static void test_ping_rejects_corruption(void) {
   buf[0] ^= 0xFF;                                               /* magic */
   TEST_ASSERT_FALSE(dt_parse_ping(buf, VEC_PING_LEN, &t));
   memcpy(buf, VEC_PING, VEC_PING_LEN);
-  buf[2] = 2; /* version */
+  buf[2] = 1; /* obsolete version */
   TEST_ASSERT_FALSE(dt_parse_ping(buf, VEC_PING_LEN, &t));
   TEST_ASSERT_EQUAL_UINT64(7, t); /* untouched on failure */
   /* a PONG is not a PING */
@@ -105,10 +105,10 @@ static void test_ping_rejects_corruption(void) {
 }
 
 static void test_cue_and_profile_ignored(void) {
-  TEST_ASSERT_EQUAL(DT_RX_IGNORED, dt_cam_classify(VEC_CUE_NEAR_LEFT, VEC_CUE_NEAR_LEFT_LEN));
+  TEST_ASSERT_EQUAL(DT_RX_IGNORED, dt_cam_classify(VEC_CUE_READY_LEFT, VEC_CUE_READY_LEFT_LEN));
   TEST_ASSERT_EQUAL(DT_RX_IGNORED, dt_cam_classify(VEC_CUE_NO_SYNC, VEC_CUE_NO_SYNC_LEN));
   TEST_ASSERT_EQUAL(DT_RX_IGNORED, dt_cam_classify(VEC_PROFILE_SSD, VEC_PROFILE_SSD_LEN));
-  TEST_ASSERT_EQUAL(DT_RX_INVALID, dt_cam_classify(VEC_CUE_NEAR_LEFT, 20));
+  TEST_ASSERT_EQUAL(DT_RX_INVALID, dt_cam_classify(VEC_CUE_READY_LEFT, 20));
 }
 
 /* ---------- chunk planner ---------- */

@@ -3,22 +3,18 @@ package org.determine.core.cue
 import org.determine.core.Alert
 import org.determine.core.Band
 import org.determine.core.CueCommand
-import org.determine.core.Region
+import org.determine.core.GAIN_MUTE
+import org.determine.core.Tuning
 import org.determine.core.hearing.CalBand
 import org.determine.core.hearing.Ear
 import org.determine.core.hearing.HearingMode
 import org.determine.core.hearing.HearingProfile
 import org.determine.core.wire.CueId
-import org.determine.core.wire.GAIN_MUTE
 import org.determine.core.wire.Haptic
 import org.determine.core.wire.Side
 import java.util.Locale
 
 data class CueConfig(
-    /** Arch §8: FAR 1/s, MID 2.5/s, NEAR 5/s. */
-    val farPeriodUs: Long = 1_000_000,
-    val midPeriodUs: Long = 400_000,
-    val nearPeriodUs: Long = 200_000,
     /** Arch §8: NEAR is +6 dB, always within the ceiling. */
     val nearStepDb: Int = 6,
     val ttlMs: Int = 150,
@@ -29,27 +25,32 @@ data class CueConfig(
 )
 
 /**
- * Turns the current alert into one CUE per repetition (the phone drives repetition, PROTOCOL.md CUE).
- * Onset and any change of region/band/label family play immediately with the interrupt flag.
+ * Turns the current alert into one repetition of the warning: the phone plays the sound ([CueCommand] gains →
+ * LocalCueSink) and the cue board vibrates the temples (haptic fields → CUE packet). The phone drives
+ * repetition. Onset and any band change play immediately with the interrupt flag.
+ *
+ * The single forward zone never lateralizes: audio and haptics are always side BOTH. PERSON_* cue ids stay
+ * defined for the phone's sound bank, but the policy never selects them — a person/range label must never be
+ * inferred from arbitrary image detections.
  */
-class CueScheduler(val config: CueConfig = CueConfig()) {
+class CueScheduler(var tuning: Tuning = Tuning(), val config: CueConfig = CueConfig()) {
     private var current: Alert? = null
     private var nextDueUs = 0L
 
+    /** Arch §8 repetition period (Tuning: FAR 1/s, MID 2.5/s, NEAR 5/s). */
     fun period(b: Band): Long = when (b) {
-        Band.FAR -> config.farPeriodUs
-        Band.MID -> config.midPeriodUs
-        Band.NEAR -> config.nearPeriodUs
+        Band.FAR -> tuning.farPeriodMs * 1000L
+        Band.MID -> tuning.midPeriodMs * 1000L
+        Band.NEAR -> tuning.nearPeriodMs * 1000L
         Band.NONE -> Long.MAX_VALUE
     }
 
-    /** @return a cue to send now, or null. Call on every tick and whenever the alert changes. */
+    /** @return a cue to play now, or null. Call on every tick and whenever the alert changes. */
     fun update(alert: Alert?, onset: Boolean, profile: HearingProfile, nowUs: Long): CueCommand? {
         if (alert == null || alert.band == Band.NONE) { current = null; return null }
         val prev = current
         current = alert
-        val changed = onset || prev == null || prev.region != alert.region || prev.band != alert.band ||
-            isPerson(prev.label) != isPerson(alert.label)
+        val changed = onset || prev == null || prev.band != alert.band
         if (!changed && nowUs < nextDueUs) return null
         val p = period(alert.band)
         nextDueUs = if (changed || nowUs - nextDueUs >= p) nowUs + p else nextDueUs + p
@@ -59,36 +60,27 @@ class CueScheduler(val config: CueConfig = CueConfig()) {
     fun reset() { current = null }
 
     fun build(alert: Alert, profile: HearingProfile, interrupt: Boolean): CueCommand {
-        val person = isPerson(alert.label)
         val cueId = when (alert.band) {
-            Band.NEAR -> if (person) CueId.PERSON_NEAR else CueId.OBSTACLE_NEAR
-            Band.MID -> if (person) CueId.PERSON_MID else CueId.OBSTACLE_MID
-            else -> if (person) CueId.PERSON_FAR else CueId.OBSTACLE_FAR
+            Band.NEAR -> CueId.OBSTACLE_NEAR
+            Band.MID -> CueId.OBSTACLE_MID
+            else -> CueId.OBSTACLE_FAR
         }
-        // Calibration band matching the timbre: urgent note ~2 kHz, marimba ~500 Hz, wood block ~1 kHz.
-        val calBand = when {
-            alert.band == Band.NEAR -> CalBand.B2K
-            person -> CalBand.B500
-            else -> CalBand.B1K
-        }
+        // Calibration band matching the timbre: urgent note ~2 kHz, wood block ~1 kHz.
+        val calBand = if (alert.band == Band.NEAR) CalBand.B2K else CalBand.B1K
         val step = if (alert.band == Band.NEAR) config.nearStepDb else 0
         val ceil = profile.effectiveCeilingDb
         fun level(e: Ear): Int = profile.levelDb(calBand, e)?.let { minOf(it + step, ceil) } ?: GAIN_MUTE
         val l = level(Ear.LEFT)
         val r = level(Ear.RIGHT)
 
-        val side: Int
+        // SSD and STEREO both play every usable side at its own calibrated level: the forward zone never
+        // lateralizes, so the modes differ only in calibration/verification semantics. HAPTIC_ONLY mutes
+        // the phone audio; the board haptics are unaffected.
         val gl: Int
         val gr: Int
         when (profile.mode) {
-            HearingMode.STEREO -> when (alert.region) {
-                Region.LEFT -> { side = Side.L; gl = l; gr = GAIN_MUTE }
-                Region.RIGHT -> { side = Side.R; gl = GAIN_MUTE; gr = r }
-                Region.CENTER -> { side = Side.BOTH; gl = l; gr = r }
-            }
-            // SSD: identical (mono) audio on every usable side; direction moves to haptics (Arch §9).
-            HearingMode.SSD -> { side = Side.BOTH; gl = l; gr = r }
-            HearingMode.HAPTIC_ONLY -> { side = Side.BOTH; gl = GAIN_MUTE; gr = GAIN_MUTE }
+            HearingMode.STEREO, HearingMode.SSD -> { gl = l; gr = r }
+            HearingMode.HAPTIC_ONLY -> { gl = GAIN_MUTE; gr = GAIN_MUTE }
         }
 
         val pattern = when (alert.band) {
@@ -101,21 +93,19 @@ class CueScheduler(val config: CueConfig = CueConfig()) {
             Band.MID -> config.hapticScaleMid
             else -> config.hapticScaleFar
         }
+        // Forward zone: both temples, never a left/right claim.
         fun hap(gain: Int) = minOf((gain * scale).toInt(), profile.hapticMax).coerceIn(0, 255)
-        val hl = if (alert.region != Region.RIGHT) hap(profile.hapticGainL) else 0
-        val hr = if (alert.region != Region.LEFT) hap(profile.hapticGainR) else 0
+        val hl = hap(profile.hapticGainL)
+        val hr = hap(profile.hapticGainR)
 
-        return CueCommand(cueId, side, gl, gr, pattern, hl, hr, if (interrupt) 1 else 0, config.ttlMs)
+        return CueCommand(cueId, Side.BOTH, gl, gr, pattern, hl, hr, if (interrupt) 1 else 0, config.ttlMs)
     }
 
     companion object {
-        fun isPerson(label: String) = label.lowercase(Locale.ROOT).let { it == "person" || it == "pedestrian" }
-
-        /** Spearcon text (Arch §8.2): label + side; distance only when backed by valid ToF. */
+        /** Spearcon text (Arch §8.2); distance only when backed by valid ToF. */
         fun spearcon(a: Alert): String {
-            val where = when (a.region) { Region.LEFT -> "left"; Region.RIGHT -> "right"; Region.CENTER -> "ahead" }
             val dist = a.distanceMm?.let { String.format(Locale.ROOT, ", %.1f metres", it / 1000.0) } ?: ""
-            return "${a.label} $where$dist"
+            return "obstacle ahead$dist"
         }
     }
 }

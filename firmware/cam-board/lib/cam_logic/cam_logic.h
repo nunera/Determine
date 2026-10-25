@@ -1,6 +1,6 @@
 // Hardware-free camera-board logic: FRAME chunk planning, packet builders, frame pacing and
 // the byte-rate limiter. Compiled for the ESP32-CAM and for [env:native] unit tests.
-// Wire contract: protocol/PROTOCOL.md (v1, frozen).
+// Wire contract: protocol/PROTOCOL.md (v2).
 #pragma once
 
 #include <stdbool.h>

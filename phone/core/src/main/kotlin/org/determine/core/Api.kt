@@ -17,13 +17,22 @@ fun interface Outbox {
 /** Where frames come from (Arch §4.1 FrameSource). PHONE_CAMERA is Tier 0: no camera board, host calls [Engine.onPhoneFrame]. */
 enum class FrameSourceKind { CAM_BOARD, PHONE_CAMERA }
 
-/** Where cues are played (Arch §4.1 CueSink). PHONE_AUDIO: transducers missing, phone audio → headset via [LocalCueSink]. */
-enum class CueOutput { GLASSES, PHONE_AUDIO }
+/** Audio gain sentinel: this channel is silent (dBFS levels are ≤ 0). */
+const val GAIN_MUTE = -128
 
 /**
- * Plays a cue on the phone (PHONE_AUDIO). Called synchronously from the Engine with gains already clamped to the
- * profile ceiling (−128 = mute) and haptics to hapticMax. Returns an AckStatus (wire.AckStatus); any other value
- * (e.g. negative) or a thrown exception counts as a failed cue, exactly like a missing/negative board ACK.
+ * [LocalCueSink.play] result meaning "the required headset route is absent or was lost". The engine goes
+ * UNAVAILABLE (reason `headset_route_lost`) at once and announces it; the sink must never fall back to the
+ * phone speaker for warning audio. Probed every [EngineConfig.profileRetryUs] so a reconnected headset recovers.
+ */
+const val AUDIO_ROUTE_LOST = -2
+
+/**
+ * Plays a cue's AUDIO on the phone — the primary warning path to the finished bone-conduction Bluetooth
+ * headset. Called synchronously from the Engine with gains already clamped to the profile ceiling
+ * (−128 = mute). Returns a wire.AckStatus; any other value (e.g. negative) or a thrown exception counts as a
+ * failed cue, exactly like a missing/negative board ACK. The sink must fail explicitly (never route to the
+ * phone speaker) when no headset is connected.
  */
 fun interface LocalCueSink {
     fun play(cmd: CueCommand, nowPhoneUs: Long): Int
@@ -36,29 +45,17 @@ interface PhoneAlerts {
     fun systemOff()
 }
 
-/** One detector result, box normalised to 0..1 in the camera image (x grows to the wearer's right). */
-data class Detection(
-    val label: String,
-    val score: Float,
-    val left: Float,
-    val top: Float,
-    val right: Float,
-    val bottom: Float,
-) {
-    val centerX: Float get() = (left + right) / 2f
-    val area: Float get() = (right - left).coerceAtLeast(0f) * (bottom - top).coerceAtLeast(0f)
-}
-
 /** Arch §4.2 runtime states. */
 enum class SystemState { STARTING, READY, DEGRADED, UNAVAILABLE, PAUSED }
 
-enum class Region { LEFT, CENTER, RIGHT }
-
-/** Proximity bands, ordered by urgency (Arch §7.2). There is deliberately no CLEAR. */
+/** Proximity bands, ordered by urgency (Arch §7.2), for the single forward zone. There is deliberately no CLEAR. */
 enum class Band { NONE, FAR, MID, NEAR }
 
-/** The single alert the phone presents. [distanceMm] is non-null only when backed by valid ToF (Arch §7.2 "never"). */
-data class Alert(val region: Region, val band: Band, val label: String, val distanceMm: Int?)
+/**
+ * The single alert the phone presents, from the forward ToF zone only. [distanceMm] is non-null only when
+ * backed by a VALID ToF status; nothing is ever inferred from camera imagery (no person/range fusion).
+ */
+data class Alert(val band: Band, val distanceMm: Int?)
 
 data class AssembledFrame(
     val frameId: Long,
@@ -92,6 +89,9 @@ data class Diagnostics(
     val cue: BoardDiagnostics,
     val frameAgeMs: Long?,
     val rangeAgeMs: Long?,
+    /** Last accepted forward ToF measurement (one zone). [rangeMm] is meaningful only when [rangeStatus] is VALID. */
+    val rangeMm: Int?,
+    val rangeStatus: Int?,
     val lastAlert: Alert?,
     val lastCueLatencyMs: Double?,
     val captureToCueP50Ms: Double?,
@@ -105,12 +105,22 @@ data class Diagnostics(
     val malformed: Long,
     val staleDropped: Long,
     val frameSource: FrameSourceKind,
-    val cueOutput: CueOutput,
     /** Camera-board packets received while frameSource = PHONE_CAMERA (ignored, never trusted). */
     val ignoredCamPackets: Long,
+    /** True while the cue board's RSSI has stayed below [Tuning.weakLinkRssiDbm] (informational; never changes [state]). */
+    val linkWeak: Boolean,
+    /** Least-squares closing speed in mm/s over [Tuning.approachWindowMs] (positive = getting closer); null with < 3 VALID samples. */
+    val closingSpeedMmPerS: Double?,
+    /** EXPERIMENTAL approach escalation is enabled and its speed / time-to-contact criteria currently hold. */
+    val approachActive: Boolean,
+    /** EXPERIMENTAL exploration mode is enabled and currently driving haptic pulses from a fresh VALID reading. */
+    val exploring: Boolean,
 )
 
-/** A cue to put on the wire; the engine adds seq, issue time and deadline. Gains in dBFS (≤ 0, −128 = mute). */
+/**
+ * A cue to play. Audio gains (dBFS ≤ 0, −128 = mute) go to the [LocalCueSink] only; the haptic fields go to
+ * the cue board in the CUE packet (the board never plays sound). The engine adds seq, issue time and deadline.
+ */
 data class CueCommand(
     val cueId: Int,
     val side: Int,
@@ -129,5 +139,5 @@ interface EngineListener {
     fun onDiagnostics(d: Diagnostics)
 }
 
-/** Latest accepted ToF grid, for display (PROTOCOL.md RANGE layout: index = row*8+col). */
-class RangeSnapshot(val tBoardUs: Long, val rxPhoneUs: Long, val mm: IntArray, val status: IntArray)
+/** Latest accepted forward ToF measurement, for display (PROTOCOL.md v2 RANGE: one zone, canonical status). */
+data class RangeSnapshot(val tBoardUs: Long, val rxPhoneUs: Long, val mm: Int, val status: Int)

@@ -1,11 +1,11 @@
-"""Reference codec for the Determine wire protocol v1 (see protocol/PROTOCOL.md)."""
+"""Reference codec for the Determine wire protocol v2 (see protocol/PROTOCOL.md)."""
 from __future__ import annotations
 
 import struct
 from dataclasses import dataclass, fields
 
 MAGIC = 0x5444
-VERSION = 1
+VERSION = 2
 HEADER = struct.Struct("<HBBI")
 
 PORT_PHONE = 47000
@@ -13,15 +13,19 @@ PORT_CUE = 47001
 PORT_CAM = 47002
 
 MAX_CHUNK = 1400
-STATUS_NO_TARGET = 255
-VALID_STATUS = frozenset({5, 9})
-GAIN_MUTE = -128
-FW_HARD_CEILING_DB = -10
+# PROFILE.haptic_max must be 1..255: with no board audio the temple haptics are the last local
+# failure channel (watchdog LSS), so they can never be configured away. 0 is BAD_CUE at the board.
+HAPTIC_MAX_MIN = 1
+
+# Canonical RANGE status. The board maps the raw VL53L4CD status: 0 -> VALID, no target ->
+# NO_TARGET, any other invalid/error -> UNKNOWN (never mis-mapped to NO_TARGET, never "far").
+RANGE_VALID, RANGE_NO_TARGET, RANGE_UNKNOWN = 0, 1, 2
 
 BOARD_CAM, BOARD_CUE = 1, 2
 SIDE_L, SIDE_R, SIDE_BOTH = 0, 1, 2
+# Phone audio-profile semantics only; the board is ALWAYS haptic-only in v2.
 MODE_STEREO, MODE_SSD, MODE_HAPTIC_ONLY = 0, 1, 2
-ACK_PLAYED, ACK_EXPIRED, ACK_PLAYED_CLAMPED, ACK_NO_SYNC, ACK_BAD_CUE, ACK_BUSY_DROPPED = range(6)
+ACK_APPLIED, ACK_EXPIRED, ACK_APPLIED_CLAMPED, ACK_NO_SYNC, ACK_BAD_CUE, ACK_BUSY_DROPPED = range(6)
 
 CUE_IDS = {
     "READY": 0, "OBSTACLE_FAR": 1, "OBSTACLE_MID": 2, "OBSTACLE_NEAR": 3,
@@ -58,22 +62,19 @@ class Beat:
 
 @dataclass
 class Range:
+    """One forward ToF reading (single-zone VL53L4CD). mm is 0 unless status == RANGE_VALID."""
     TYPE = 0x02
-    FMT = struct.Struct("<QBBH64H64B")
+    FMT = struct.Struct("<QHB")
     t_us: int
-    mm: list[int]
-    status: list[int]
-    res: int = 64
+    mm: int
+    status: int
 
     def body(self) -> bytes:
-        if len(self.mm) != 64 or len(self.status) != 64:
-            raise WireError("RANGE needs 64 zones")
-        return self.FMT.pack(self.t_us, self.res, 0, 0, *self.mm, *self.status)
+        return self.FMT.pack(self.t_us, self.mm, self.status)
 
     @classmethod
     def from_body(cls, b: bytes) -> "Range":
-        v = cls.FMT.unpack(b)
-        return cls(t_us=v[0], res=v[1], mm=list(v[4:68]), status=list(v[68:132]))
+        return cls(*cls.FMT.unpack(b))
 
 
 @dataclass
@@ -139,14 +140,13 @@ class Pong:
 
 @dataclass
 class Cue:
+    """Haptic command to the board. The phone owns all audio; the board only vibrates."""
     TYPE = 0x20
-    FMT = struct.Struct("<QQBBbbBBBBH")
+    FMT = struct.Struct("<QQBBBBBBH")
     t_issued_phone_us: int
     deadline_board_us: int
     cue_id: int
     side: int
-    gain_l_db: int
-    gain_r_db: int
     haptic_pattern: int
     haptic_l: int
     haptic_r: int
@@ -155,8 +155,7 @@ class Cue:
 
     def body(self) -> bytes:
         return self.FMT.pack(self.t_issued_phone_us, self.deadline_board_us, self.cue_id, self.side,
-                             self.gain_l_db, self.gain_r_db, self.haptic_pattern, self.haptic_l,
-                             self.haptic_r, self.flags, self.ttl_ms)
+                             self.haptic_pattern, self.haptic_l, self.haptic_r, self.flags, self.ttl_ms)
 
     @classmethod
     def from_body(cls, b: bytes) -> "Cue":
@@ -166,38 +165,38 @@ class Cue:
 @dataclass
 class Ack:
     TYPE = 0x21
-    FMT = struct.Struct("<IBBbbQ")
+    FMT = struct.Struct("<IBBQ")
     cue_seq: int
     status: int
-    applied_gain_l_db: int
-    applied_gain_r_db: int
     t_board_us: int
 
     def body(self) -> bytes:
-        return self.FMT.pack(self.cue_seq, self.status, 0, self.applied_gain_l_db,
-                             self.applied_gain_r_db, self.t_board_us)
+        return self.FMT.pack(self.cue_seq, self.status, 0, self.t_board_us)
 
     @classmethod
     def from_body(cls, b: bytes) -> "Ack":
-        seq, st, _r, gl, gr, t = cls.FMT.unpack(b)
-        return cls(seq, st, gl, gr, t)
+        seq, st, _r, t = cls.FMT.unpack(b)
+        return cls(seq, st, t)
 
 
 @dataclass
 class Profile:
     TYPE = 0x22
-    FMT = struct.Struct("<bBBB")
-    ceiling_db: int
+    FMT = struct.Struct("<BB")
     mode: int
     haptic_max: int
 
     def body(self) -> bytes:
-        return self.FMT.pack(self.ceiling_db, self.mode, self.haptic_max, 0)
+        return self.FMT.pack(self.mode, self.haptic_max)
 
     @classmethod
     def from_body(cls, b: bytes) -> "Profile":
-        c, m, h, _r = cls.FMT.unpack(b)
-        return cls(c, m, h)
+        return cls(*cls.FMT.unpack(b))
+
+    def valid(self) -> bool:
+        """Semantic check the board applies (decode itself is permissive so the board can ACK BAD_CUE):
+        known mode and haptic_max within 1..255."""
+        return self.mode <= MODE_HAPTIC_ONLY and self.haptic_max >= HAPTIC_MAX_MIN
 
 
 TYPES = {c.TYPE: c for c in (Beat, Range, Frame, Ping, Pong, Cue, Ack, Profile)}

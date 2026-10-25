@@ -1,19 +1,19 @@
-"""Scene model → VL53L5CX 8×8 grid, as the cue board would send it in RANGE (PROTOCOL.md).
+"""Scene model → one forward ToF reading, as the cue board would send it in RANGE (protocol v2).
 
-Coordinates (metres): wearer's sensor at (0, 0, sensor_height); x forward, y to the wearer's
-RIGHT, z up from the floor. Objects are axis-aligned boxes.
+The cue board wears ONE Arduino Modulino Distance (VL53L4ED): a single forward-looking zone,
+~18° diagonal FOV, vendor maximum range up to 1.2 m; usable warning distance unvalidated (near-field demo envelope — NOT a 3 m grid, NOT a
+lateral sensor: one zone cannot tell left from right or resolve two objects).
 
-Sensor model (Arch §5, VL53L5CX: 4 m, 63° diagonal FOV, 8×8 @ 15 Hz): square field of view,
-so each axis spans 2·atan(tan(31.5°)/√2) ≈ 46.8°. Zones are equal slices of the image plane.
-Zone index = row*8 + col with row 0 = top of the wearer's view and col 0 = wearer's left
-(the firmware's mounting transform is assumed already applied).
+Coordinates (metres): the sensor sits at the origin, x forward, y to the wearer's right, z up
+from the floor at SENSOR_HEIGHT_M. Objects are axis-aligned boxes. A box is visible when it
+cuts the beam height and its lateral extent reaches into the forward cone (half-angle 9°).
+The reading is the nearest forward distance among visible boxes plus Gaussian noise.
 
-Each zone is sampled with sub×sub rays. A zone reports a target when at least `coverage` of its
-rays hit an object; the reported distance is the nearest hit along the ray (radial distance —
-[INFERENCE] about the real sensor's reporting convention), plus Gaussian noise.
-Status 5 = valid with full coverage, 9 = valid with partial coverage (both VALID for the phone);
-nothing within 4 m → 255 NO_TARGET with mm = 0; scripted invalid zones (glass, sunlight) report
-their raw status (e.g. 4) with a meaningless distance, which the phone must treat as UNKNOWN.
+Status mapping mirrors the firmware's VL53L4ED mapping (PROTOCOL.md RANGE,
+lib/cue_logic dt_range_status_from_tof): a detection is VALID (raw status 0); no return from
+open space or beyond the measurement envelope is NO_TARGET (raw status 2/4: the sensor saw no
+target within range, which is NOT an all-clear). An explicit glass/saturation fixture override
+is UNKNOWN (any other nonzero raw status). mm is 0 unless the status is VALID.
 """
 from __future__ import annotations
 
@@ -23,16 +23,10 @@ from dataclasses import dataclass
 
 from dtwire import dw
 
-ROWS = COLS = 8
-ZONES = ROWS * COLS
-DIAG_FOV_DEG = 63.0
-HALF_TAN = math.tan(math.radians(DIAG_FOV_DEG / 2)) / math.sqrt(2)  # per-axis tan(half FOV)
-AXIS_FOV_DEG = 2 * math.degrees(math.atan(HALF_TAN))
-RANGE_LIMIT_MM = 4000
+FOV_DIAG_DEG = 18.0                     # VL53L4CD optical field of view (datasheet)
+HALF_ANGLE_RAD = math.radians(FOV_DIAG_DEG / 2)
+RANGE_LIMIT_MM = 1200                   # vendor maximum range (unvalidated as usable); also the FAR band ceiling
 SENSOR_HEIGHT_M = 1.6
-STATUS_VALID = 5
-STATUS_VALID_PARTIAL = 9
-STATUS_GLASS = 4  # a raw non-valid VL53L5CX target_status; the phone maps it to UNKNOWN
 
 
 @dataclass(frozen=True)
@@ -45,88 +39,33 @@ class Box:
     depth_m: float = 0.1
     kind: str = "obstacle"
 
-    def hit(self, origin: tuple[float, float, float], d: tuple[float, float, float]) -> float | None:
-        """Slab test; d must be normalised. Returns distance along the ray or None."""
-        lo = (self.x_m, self.y_m - self.width_m / 2, self.z_bottom_m)
-        hi = (self.x_m + self.depth_m, self.y_m + self.width_m / 2, self.z_top_m)
-        tmin, tmax = 0.0, math.inf
-        for a in range(3):
-            if abs(d[a]) < 1e-12:
-                if origin[a] < lo[a] or origin[a] > hi[a]:
-                    return None
-                continue
-            t1 = (lo[a] - origin[a]) / d[a]
-            t2 = (hi[a] - origin[a]) / d[a]
-            if t1 > t2:
-                t1, t2 = t2, t1
-            tmin, tmax = max(tmin, t1), min(tmax, t2)
-            if tmin > tmax:
-                return None
-        return tmin if tmin > 0 else None
+
+def in_cone(b: Box) -> bool:
+    """True when the box cuts the beam height and reaches into the forward cone."""
+    if not (b.z_bottom_m <= SENSOR_HEIGHT_M <= b.z_top_m):
+        return False
+    lateral = max(0.0, abs(b.y_m) - b.width_m / 2)  # nearest lateral edge to the axis
+    return math.atan2(lateral, b.x_m) <= HALF_ANGLE_RAD
 
 
-def zone_index(row: int, col: int) -> int:
-    return row * COLS + col
+def measure(objects: list[Box], rng: random.Random | None = None, *, noise: bool = True,
+            range_limit_mm: int = RANGE_LIMIT_MM,
+            invalid_status: int | None = None) -> tuple[int, int]:
+    """Returns (mm, status) in wire semantics: canonical status, mm 0 unless VALID.
 
-
-def zone_ray(row: int, col: int, su: float = 0.5, sv: float = 0.5) -> tuple[float, float, float]:
-    """Normalised ray through image-plane point (su, sv) ∈ [0,1)² of zone (row, col)."""
-    u = -HALF_TAN + (col + su) / COLS * 2 * HALF_TAN   # col 0 → left (−y)
-    v = HALF_TAN - (row + sv) / ROWS * 2 * HALF_TAN    # row 0 → top (+z)
-    n = math.sqrt(1 + u * u + v * v)
-    return (1 / n, u / n, v / n)
-
-
-_RAY_CACHE: dict[int, list[list[tuple[float, float, float]]]] = {}
-
-
-def _zone_rays(sub: int) -> list[list[tuple[float, float, float]]]:
-    rays = _RAY_CACHE.get(sub)
-    if rays is None:
-        rays = [[zone_ray(r, c, (j + 0.5) / sub, (i + 0.5) / sub) for i in range(sub) for j in range(sub)]
-                for r in range(ROWS) for c in range(COLS)]
-        _RAY_CACHE[sub] = rays
-    return rays
-
-
-def project(objects: list[Box], invalid_zones: dict[int, int] | None = None,
-            rng: random.Random | None = None, *, noise: bool = True, sub: int = 5,
-            coverage: float = 0.2, range_limit_mm: int = RANGE_LIMIT_MM,
-            sensor_height_m: float = SENSOR_HEIGHT_M) -> tuple[list[int], list[int]]:
-    """Returns (mm[64], status[64]) in wire order."""
+    invalid_status explicitly overrides the whole reading for a fixture (e.g. a
+    glass/saturation fault → RANGE_UNKNOWN, or a scripted RANGE_NO_TARGET).
+    """
     rng = rng or random.Random(0)
-    origin = (0.0, 0.0, sensor_height_m)
-    mm = [0] * ZONES
-    status = [dw.STATUS_NO_TARGET] * ZONES
-    rays = _zone_rays(sub)
-    for z in range(ZONES):
-        hits = []
-        if objects:
-            for d in rays[z]:
-                best = None
-                for ob in objects:
-                    t = ob.hit(origin, d)
-                    if t is not None and (best is None or t < best):
-                        best = t
-                if best is not None:
-                    hits.append(best)
-        frac = len(hits) / len(rays[z])
-        if hits and frac >= coverage:
-            dist_mm = min(hits) * 1000.0
-            if noise:
-                dist_mm += rng.gauss(0.0, 3.0 + 0.005 * dist_mm)
-            dist_mm = max(1, int(round(dist_mm)))
-            if dist_mm <= range_limit_mm:
-                mm[z] = dist_mm
-                status[z] = STATUS_VALID if frac >= 0.5 else STATUS_VALID_PARTIAL
-    for z, st in (invalid_zones or {}).items():
-        status[z] = st
-        if st == dw.STATUS_NO_TARGET:
-            mm[z] = 0
-        elif st not in dw.VALID_STATUS:
-            mm[z] = rng.randint(150, range_limit_mm)  # meaningless reading on an invalid status
-    return mm, status
-
-
-def region_zones(rows: range, cols: range) -> list[int]:
-    return [zone_index(r, c) for r in rows for c in cols]
+    if invalid_status is not None:
+        return 0, invalid_status
+    visible = [b.x_m for b in objects if b.x_m > 0 and in_cone(b)]
+    if not visible:
+        return 0, dw.RANGE_NO_TARGET  # no return in view
+    dist_mm = min(visible) * 1000.0
+    if noise:
+        dist_mm += rng.gauss(0.0, 4.0 + 0.005 * dist_mm)  # ±7 mm short-range class sensor noise
+    dist_mm = max(1, int(round(dist_mm)))
+    if dist_mm > range_limit_mm:
+        return 0, dw.RANGE_NO_TARGET  # no return beyond the vendor maximum range
+    return dist_mm, dw.RANGE_VALID

@@ -3,11 +3,15 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>Determine Demo</string>
+    <string>Determine</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.3.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>3</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Determine talks to the glasses' cue and camera boards on this phone's Personal Hotspot network to read the forward distance sensor and drive the temple vibration.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Only if you choose the iPhone camera in Settings: the back camera is used as a software fallback for the glasses' camera board. Frames stay on the phone.</string>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UIDeviceFamily</key>

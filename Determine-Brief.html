@@ -148,7 +148,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
     <h1>Determine</h1>
     <p class="sub">Dumb glasses. Your phone does the thinking. A warning you can hear or feel.</p>
   </div>
-  <svg class="score" id="cover-score" viewBox="0 0 1056 300" role="img" aria-label="A two-stave score. The left ear is a blue staff, the right ear a red staff. As an obstacle approaches from 3 metres to 1 metre, beeps on the right speed up from 60 to 150 to 300 beats per minute. At 1 metre, in a yellow hazard field, the obstacle is centred and both staves play single urgent notes. After it passes, both staves rest."></svg>
+  <svg class="score" id="cover-score" viewBox="0 0 1056 300" role="img" aria-label="A two-stave score. The left ear is a blue staff, the right ear a red staff. The single forward distance sensor reports an obstacle approaching from 1.2 metres to 0.5 metres. Both staves always play together: beeps speed up from 60 to 150 to 300 beats per minute as the band changes from far to mid to near. Under 0.5 metres, in a yellow hazard field, both staves play single urgent notes. After it passes, both staves rest."></svg>
   <div class="tag">
     <p>Cars beep when we can't see behind us. People who are blind deserve a head-level warning too.</p>
     <div class="who"><b>Proposed design · HackTX 26</b><br>Not built or tested yet<br>UT Austin, 24–25 Oct 2026<br>For judges, Meta and Annapurna Labs<br>Full architecture contract on request</div>
@@ -165,13 +165,13 @@ svg .mn { font-family:var(--mono); font-weight:600; }
       <p>In a survey of 307 blind travellers, 13% had a head-level accident at least monthly. 86% of head-level accidents happened outdoors, mostly on tree branches, and 23% had medical consequences.<sup>2</sup> A long cane sweeps the ground ahead of you. Research classes it as a primary aid,<sup>1</sup> and it is excellent at curbs and steps. It cannot feel a branch at eye level, an open cabinet door or a truck mirror.</p>
       <p class="quote">The long cane “does not protect users from obstacles at the upper body and head levels.”<br><span class="small">Pittet et al., <i>Scientific Reports</i>, 2026<sup>1</sup></span></p>
     </div>
-    <svg id="elevation" viewBox="0 0 470 300" role="img" aria-label="Side view. A cane covers the ground about one metre ahead. Determine's sensor at eye height covers a wedge from chest to head height out to about three metres, where a branch hangs at 1.7 metres."></svg>
+    <svg id="elevation" viewBox="0 0 470 300" role="img" aria-label="Side view. A cane covers the ground about one metre ahead. Determine's single forward sensor at eye height covers one narrow cone out to about 1.2 metres, where a branch hangs at 1.7 metres about one metre ahead. Beyond 1.2 metres, and above or below the cone, it reports nothing."></svg>
   </div>
   <div class="persona">
     <div><h3>Maya</h3><p class="ill">Illustrative traveller</p><p style="margin-top:6px">Walks to class with a long cane. Her left ear is weaker than her right.</p></div>
     <div><h3>Keeps her cane</h3><p>Determine adds a head-level layer. It never replaces the cane or a guide dog, and it never says the path is clear.</p></div>
     <div><h3>Wants a warning, not a narrator</h3><p>In a 2026 trial, every participant preferred short, precise output (“person to your left at 11 o'clock, 3 metres”) to generative descriptions.<sup>1</sup></p></div>
-    <div><h3>Learns it in minutes</h3><p>4 of 13 trial users struggled with a rival's spatialised sounds.<sup>1</sup> Determine uses a small cue set, taught at setup, with direction carried twice.</p></div>
+    <div><h3>Learns it in minutes</h3><p>4 of 13 trial users struggled with a rival's spatialised sounds.<sup>1</sup> Determine uses a small cue set, taught at setup, and confirms each warning twice: headset sound and temple buzz.</p></div>
   </div>
   <div class="foot"><span><b>Determine</b> · the problem</span><span>2 / 8</span></div>
 </section>
@@ -179,46 +179,46 @@ svg .mn { font-family:var(--mono); font-weight:600; }
 <!-- ===================== B · HARDWARE ===================== -->
 <section class="page">
   <h2><span class="mark">B</span>Dumb glasses. Your phone does the thinking.</h2>
-  <svg id="glasses" viewBox="0 0 960 330" role="img" aria-label="Proposed headband layout: a single compact VL53L5CX Mini distance sensor and separate ESP32-CAM face forward. The C3 cue board, amplifiers and haptic drivers sit on a rear strap. Left and right bone transducers and haptics touch the temples; the power bank is carried in a pocket. Fit is untested."></svg>
+  <svg id="glasses" viewBox="0 0 960 330" role="img" aria-label="Proposed headband layout: a single Arduino Modulino Distance sensor with one forward zone and a separate ESP32-CAM face forward. The C3 cue board and haptic drivers sit on a rear strap. A separate finished bone-conduction Bluetooth headset plays the sound from the phone. Left and right temple haptics buzz together. The power bank is carried in a pocket. Fit is untested."></svg>
   <div class="flow">
-    <div class="step"><h3>Sense · small front, boards behind</h3><p>The ESP32-CAM sends JPEG frames; one compact VL53L5CX Mini sends 64 distances through the rear-mounted C3. Two independent Wi-Fi streams reach the phone, which makes every hazard decision.</p></div>
+    <div class="step"><h3>Sense · small front, boards behind</h3><p>The ESP32-CAM sends JPEG frames; one Modulino Distance reports one forward distance through the rear C3. Two Wi-Fi streams reach the phone, which makes every hazard decision.</p></div>
     <div class="arrow"><svg width="30" height="16" viewBox="0 0 30 16"><path d="M0 8h26M19 2l7 6-7 6" fill="none" stroke="#131316" stroke-width="2.2"/></svg></div>
-    <div class="step"><h3>Decide · on the phone</h3><p>The phone aligns the two streams by timestamp and receive age, then an on-device object detector plus the distance grid feed fixed hazard rules and pick <i>one</i> cue: which sound, how loud on each side, which temple buzzes.</p></div>
+    <div class="step"><h3>Decide · on the phone</h3><p>The phone aligns both streams by timestamp, and fixed rules turn the forward distance into <i>one</i> band: far, mid or near. Camera frames never enter that decision.</p></div>
     <div class="arrow"><svg width="30" height="16" viewBox="0 0 30 16"><path d="M0 8h26M19 2l7 6-7 6" fill="none" stroke="#131316" stroke-width="2.2"/></svg></div>
-    <div class="step"><h3>Play · on the glasses</h3><p>The C3 plays a stored sound straight to the bone over I2S, so urgent beeps skip Bluetooth audio delay. Every command expires: a late one is dropped, never played late.</p></div>
+    <div class="step"><h3>Play · software path</h3><p>Phone cue audio currently uses a Bluetooth headset; C3 haptics buzz both temples. The separate headset is not approved for the build. Integrated bone-conduction output remains unresolved.</p></div>
   </div>
   <div class="b-meta">
-    <p><b>Range plus context.</b> The 8×8 ToF grid measures distance even when a branch or open door has no detector label; the camera adds object context.</p>
-    <p><b>Same app, other glasses.</b> Meta's Wearables DAT 1.0 can stream supported glasses' camera to a phone; its Mock Device Kit simulates it.<sup>9</sup> Determine's frame input could accept Meta frames. Claim only if built at HackTX.</p>
-    <p><b>Two boards, one hotspot.</b> The C3 has no camera or Espressif parallel-camera driver support,<sup>10</sup> so a separate ESP32-CAM supplies JPEG once its sensor and PSRAM are checked. Both join the phone hotspot; the phone drops stale frames and grids after clock-offset and receive-age checks. No inter-board wire.</p>
-    <p><b>Weight off the nose.</b> Only camera and 12.7 × 25.4 mm Mini ToF face forward; C3, amps and drivers go on a rear strap, power bank in a pocket.<sup>7</sup> Fit and comfort remain untested. Two separately powered boards share one phone hotspot.</p>
+    <p><b>One forward zone.</b> It measures how far ahead, whatever the object; it cannot say left or right, and nothing from the camera is attached to it. Spec reach: 1.2 m indoors on a white target, not a validated warning distance.<sup>7</sup></p>
+    <p><b>Other glasses.</b> Meta's Wearables DAT 1.0 can stream a supported pair's camera to a phone;<sup>9</sup> Determine's frame input could accept it. Claim only if built at HackTX.</p>
+    <p><b>Two boards, one hotspot.</b> The C3 has no camera support,<sup>10</sup> so a separate ESP32-CAM supplies JPEG; the second camera is a spare, not stereo. The phone drops stale frames and samples. No inter-board wire.</p>
+    <p><b>Weight off the nose.</b> Only the camera and sensor face forward; the C3 and drivers ride a rear strap, the power bank a pocket.<sup>6</sup> Fit with the headset is untested.</p>
   </div>
   <div class="foot"><span><b>Determine</b> · the glasses</span><span>3 / 8</span></div>
 </section>
 
 <!-- ===================== C · CUE LANGUAGE ===================== -->
 <section class="page">
-  <h2><span class="mark">C</span>A parking sensor that knows what it's beeping at.</h2>
+  <h2><span class="mark">C</span>One forward distance. A warning you can hear or feel.</h2>
   <div class="row">
-    <div><h3>How close → tempo</h3><p>The car-sensor model everyone already knows. Never above 6 notes a second.<sup>3</sup></p></div>
-    <svg id="r-close" viewBox="0 0 780 92" role="img" aria-label="Far: one beep pair per second at 60 bpm. Mid: 2.5 pairs per second at 150 bpm. Near: 5 single urgent notes per second at 300 bpm, a haptic buzz and up to 6 decibels more, within the ceiling."></svg>
+    <div><h3>How close → tempo</h3><p>The car-sensor model everyone already knows. Never above 6 notes a second.<sup>3</sup> Bands are proposed and tuned by measurement.</p></div>
+    <svg id="r-close" viewBox="0 0 780 92" role="img" aria-label="Far, 0.9 to 1.2 metres: one beep pair per second at 60 bpm. Mid, 0.5 to 0.9 metres: 2.5 pairs per second at 150 bpm. Near, under 0.5 metres: 5 single urgent notes per second at 300 bpm, a haptic buzz and up to 6 decibels more, within the ceiling. Bands are proposed, not measured."></svg>
   </div>
   <div class="row">
-    <div><h3>Where → which ear</h3><p>Left staff plays the left ear, right staff the right. The matching temple buzzes too.</p></div>
-    <svg id="r-where" viewBox="0 0 780 104" role="img" aria-label="Left: notes on the blue left staff only. Centre: notes on both staves, overprinted violet. Right: notes on the red right staff only."></svg>
+    <div><h3>Where → both, always</h3><p>One forward zone cannot tell left from right, so every hazard plays on both ears and buzzes both temples. Left and right exist only for calibration tones.</p></div>
+    <svg id="r-where" viewBox="0 0 780 104" role="img" aria-label="Left: notes on the blue left staff only, used for calibration tones only. Centre: notes on both staves, overprinted violet, used for every hazard cue. Right: notes on the red right staff only, used for calibration tones only."></svg>
   </div>
   <div class="row">
     <div><h3>What → timbre</h3><p>Timbre and rhythm are the strongest cues for telling sounds apart.<sup>3</sup></p></div>
-    <svg id="r-what" viewBox="0 0 780 92" role="img" aria-label="Obstacle: a wood-block double. Person: a two-tone marimba rising. System off: three descending notes repeated every 5 seconds. Ready: one soft tick, once."></svg>
+    <svg id="r-what" viewBox="0 0 780 92" role="img" aria-label="Obstacle: a wood-block double. Person: a two-tone marimba rising, reserved and not raised from the distance sensor in this version. System off: three descending notes repeated every 5 seconds. Ready: one soft tick, once."></svg>
   </div>
   <div class="row">
-    <div><h3>Words → optional</h3><p>Sped-up spoken words (spearcons) after the beep, never instead of it.<sup>4</sup></p></div>
-    <div class="words"><span class="q L">left</span><span class="q">door</span><span class="q">person</span><span class="q R">right</span><span class="q">11 o'clock, 2 metres</span></div>
+    <div><h3>Words → optional</h3><p>Sped-up spoken words (spearcons) after the beep, never instead of it. Never a side, never an object name.<sup>4</sup></p></div>
+    <div class="words"><span class="q">obstacle</span><span class="q">near</span><span class="q">system off</span><span class="q">about 1 metre</span></div>
   </div>
   <div class="silence">
     <svg viewBox="0 0 96 110" width="96" height="110" aria-hidden="true"><text x="48" y="86" text-anchor="middle" class="m" font-size="104" fill="#131316">&#x1D13D;</text></svg>
     <p class="big">There is no all-clear sound. Silence is a rest, not the end of the piece.</p>
-    <p>Silence would mean “nothing to report from a working system”, never “path clear”. If the camera, distance grid or either board's link fails, the design targets a descending <b>system off</b> motif within one second, repeated until recovery. If the cue board loses power, the glasses cannot beep: the phone must speak or vibrate the failure instead. Timing and audibility are untested. Tempo, motif and haptics carry urgency too.</p>
+    <p>Silence would mean “nothing to report from a working system”, never “path clear”. If the camera, the distance sensor, either board's link or the headset route fails, the design targets a descending <b>system off</b> motif within one second on a surviving output: headset audio, temple haptics or phone vibration. If the phone itself dies, only the board's temple buzz remains, with no sound. Timing and audibility are untested. Tempo, motif and haptics carry urgency too.</p>
   </div>
   <div class="foot"><span><b>Determine</b> · the cue language</span><span>4 / 8</span></div>
 </section>
@@ -234,7 +234,7 @@ svg .mn { font-family:var(--mono); font-weight:600; }
     <div>
       <p class="lede" style="font-size:21px">Two to three minutes at setup, a 20-second check each time you put them on.</p>
       <ol class="steps">
-        <li><span><b>Fit</b>Seat the frame. The app notes which output is in use and which side feels weaker.</span></li>
+        <li><span><b>Fit</b>Seat the headset. The app requires the bone-conduction route to be active and notes which side feels weaker.</span></li>
         <li><span><b>Find each side's quietest audible level</b>An adaptive staircase, tap “heard” or “not heard”, in the three bands the cues use.</span></li>
         <li><span><b>Set the level</b>10–20 dB above that threshold, your choice, clamped to the ceiling.<sup>3</sup></span></li>
         <li><span><b>Balance</b>The real obstacle cue alternates left and right. Nudge until both feel the same.</span></li>
@@ -243,9 +243,9 @@ svg .mn { font-family:var(--mono); font-weight:600; }
     </div>
   </div>
   <div class="modes">
-    <div><h3><span class="chip"><i style="background:var(--L)"></i><i style="background:var(--R)"></i></span>Stereo</h3><p>Each ear gets its own calibrated level. Side is heard, and the matching temple confirms it.</p></div>
-    <div><h3><span class="chip"><i style="background:#7a3d9c"></i></span>One deaf ear</h3><p>Bone-conducted sound crosses the skull losing only about 0–10 dB,<sup>5</sup> so left/right audio can't carry direction. Audio goes the same to both sides; the temple buzz and words carry direction.</p></div>
-    <div><h3><span class="chip"><i style="background:var(--ink)"></i><i style="background:#fff;border:2px solid var(--ink)"></i></span>Haptic only</h3><p>For anyone who prefers it. No calibration step, slider or urgency boost ever passes the ceiling; if the weak side would need more, it's marked unusable.</p></div>
+    <div><h3><span class="chip"><i style="background:var(--L)"></i><i style="background:var(--R)"></i></span>Stereo</h3><p>Each ear gets its own calibrated level in the headset. Every hazard cue still plays on both, and both temples confirm it.</p></div>
+    <div><h3><span class="chip"><i style="background:#7a3d9c"></i></span>One deaf ear</h3><p>Bone-conducted sound crosses the skull losing only about 0–10 dB,<sup>5</sup> so left/right audio can't carry direction. Audio goes the same to both sides; hazard cues never carried a side anyway, and the temple buzz confirms each one.</p></div>
+    <div><h3><span class="chip"><i style="background:var(--ink)"></i><i style="background:#fff;border:2px solid var(--ink)"></i></span>Haptic only</h3><p>For anyone who prefers it: the phone plays no cue audio and the temples carry the warning. No step ever passes the audio ceiling. Haptic strength can be lowered, never to zero, so the last local failure buzz stays possible.</p></div>
   </div>
   <div class="foot"><span><b>Determine</b> · calibration</span><span>5 / 8</span></div>
 </section>
@@ -257,9 +257,9 @@ svg .mn { font-family:var(--mono); font-weight:600; }
   <div class="e-grid">
     <div class="loop">
       <h3>Reflex <span class="ill">phone · offline · always on</span></h3>
-      <svg id="reflex" viewBox="0 0 440 150" role="img" aria-label="Latency budget on a millisecond axis: sensing and JPEG on the two boards 60, two Wi-Fi streams 40, alignment and detection 80, cue and playback 40, against a 250 millisecond target that is unmeasured."></svg>
-      <p>Target ≤ 250 ms from capture to cue at the 95th percentile, shown live on the judges' screen. It's a goal until we measure it, and nothing is measured yet — the shared hotspot carrying two streams is the least certain part. At walking pace (1.4 m/s), 250 ms is about 35 cm, so warning distances budget for it.</p>
-      <p class="small">Three tiers of silicon, placed by latency, power and failure budget: two ESP32-class boards on the glasses (a C3 for grid, cues and haptics<sup>6</sup>; a classic-ESP32 camera<sup>10</sup>), the phone for every decision, and Annapurna silicon for the one job that can wait seconds.</p>
+      <svg id="reflex" viewBox="0 0 440 150" role="img" aria-label="Latency budget on a millisecond axis: sensing and JPEG on the two boards 60, two Wi-Fi streams 40, banding and policy on the phone 80, cue command and haptic start on the C3 40, against a 250 millisecond target that is unmeasured. Headset audio arrives a further 100 to 200 milliseconds later over Bluetooth."></svg>
+      <p>Target ≤ 250 ms from range sample to temple buzz at the 95th percentile, shown live on the judges' screen. A goal until measured, and nothing is measured yet; the shared hotspot carrying two streams is the least certain part. Headset sound follows 100–200 ms later over Bluetooth, so the buzz carries urgency. At 1.4 m/s, 250 ms is about 35 cm and the sensor reaches about 1.2 m: a slow, staged near-field demo.</p>
+      <p class="small">Three tiers of silicon, placed by latency, power and failure budget: two ESP32-class boards on the glasses (a C3 for one-zone range and haptics<sup>6</sup>; a classic-ESP32 camera<sup>10</sup>), the phone for every decision and every sound, and Annapurna silicon for the one job that can wait seconds.</p>
     </div>
     <div class="loop">
       <h3>Describe <span class="ill">on request · Annapurna silicon</span></h3>
@@ -283,7 +283,6 @@ svg .mn { font-family:var(--mono); font-weight:600; }
     <div><b>Trainium2 · alternative</b>AWS Neuron documents Qwen2-VL-7B on one chip; fit on a smaller trn2.3xlarge is untested.<sup>12,13,16</sup></div>
     <div><b>Bedrock · fallback</b>Nova Lite can handle images, but Bedrock does not guarantee the silicon. New accounts start with Inf/Trn quota 0.<sup>18,19</sup></div>
   </div>
-  <p class="small" style="margin-top:7px">Annapurna Labs is HackTX 26's first platinum partner, but no Annapurna challenge is published yet, so Describe stays optional.<sup>21</sup> Request accelerator access now; approval is not guaranteed. Compile and integrate the model at HackTX under its all-work-at-the-event rule.<sup>20</sup></p>
   <div class="foot"><span><b>Determine</b> · Reflex and Describe</span><span>6 / 8</span></div>
 </section>
 
@@ -293,26 +292,26 @@ svg .mn { font-family:var(--mono); font-weight:600; }
   <div class="f-grid">
     <svg id="demo" viewBox="0 0 520 470" role="img" aria-label="Three-minute demo timeline: hook, live course, calibration, pulled plug, scene description, close."></svg>
     <div>
-      <h3 style="font-size:19px">The parts, Houston-first</h3>
+      <h3 style="font-size:19px">The parts, one store</h3>
       <ol class="parts">
-        <li><b><a href="https://www.microcenter.com/product/713924/seeed-studio-xiao-esp32-c3-(3-pack)">C3 · 3-pack</a></b><span>Micro Center Houston SKU 069005; one used, two spare. User reports stock; price and pickup not independently verified.<sup>6</sup></span></li>
-        <li><b><a href="https://www.microcenter.com/product/632692/inland-esp32-cam-wifi-bluetooth-camera-modules-pair">ESP32-CAM</a></b><span>Micro Center SKU 221739; one used, one spare. Check actual PSRAM and sensor before relying on vision.<sup>10</sup></span></li>
-        <li><b><a href="https://www.sparkfun.com/sparkfun-qwiic-mini-tof-imager-vl53l5cx.html">Mini ToF</a></b><span>One 8×8 VL53L5CX, 12.7 × 25.4 mm. Ship with one Qwiic-to-wire lead; no three-board local cluster.<sup>7</sup></span></li>
-        <li><b>Cues + haptics</b><span>Two each: bone transducers, I²S amps, haptic drivers and motors; one I²C mux. Houston Micro Center SKUs in the architecture. Raw 8 Ω bone pair ships from DigiKey.<sup>8</sup></span></li>
-        <li><b>Power + fit</b><span>One 3.3 V regulator, FTDI programmer, pocket power bank, insulated leads and mounts. Front camera/ToF, boards on rear strap. Build and measure fit.</span></li>
+        <li><b><a href="https://www.microcenter.com/product/707372/arduino-modulino-distance">Modulino Distance</a></b><span>SKU 992826: 2 in Houston, $11.99. One forward zone; not lateral depth.<sup>7</sup></span></li>
+        <li><b>Audio unresolved</b><span>Separate OpenRun not approved; old link is support-only. No suitable stocked discrete bone transducer identified.<sup>8</sup></span></li>
+        <li><b>Boards</b><span>C3 3-pack 069005: 3 packs, $15.59 (one used, two spare). Camera pair 221739: 6 pairs, $17.99 (one spare, not stereo).<sup>6,10</sup></span></li>
+        <li><b>Haptic shortage</b><span>Drivers: 4/$7.99; motors: 1/$1.99, need 2; mux: 2/$10.99; FTDI: 2/$7.99. LM3671 sold out. TPS62827 and Vibro are candidates, not drop-ins.</span></li>
+        <li><b>Power + fit</b><span>Stock-checked supply candidates in Architecture §12.2. Dedicated mounts require fabrication; fit untested.</span></li>
       </ol>
-      <p class="small">Full quantities, Houston SKUs, cables and sources: Architecture §12.2. No grand total or guaranteed delivery: local stock is user-reported, and the Mini ToF and raw bone transducers are shipped exceptions. The prototype is a headband layout, not proven comfortable glasses.</p>
+      <p class="small">Houston website snapshot: 24 Oct, ~1:40 PM CDT, checked in Zen. Not reserved; prices may change. No complete-build total or approved integrated audio. Micro Center only.</p>
       <h3 style="font-size:19px;margin-top:14px">Built at HackTX, by four people</h3>
       <p class="small" style="color:var(--ink)">The official rule: “All work must be done at the event.”<sup>20</sup> Parts are bought ahead; firmware, app and frame are built on site.</p>
       <div class="team">
-        <div><b>Glasses firmware</b>Two boards: C3 runs grid, cues, haptics; ESP32-CAM streams JPEG</div>
-        <div><b>Phone perception</b>Stream alignment, detector, hazard rules, judge screen</div>
-        <div><b>Sound and calibration</b>Cue bank, balance flow, one-ear mode</div>
+        <div><b>Glasses firmware</b>Two boards: C3 runs one-zone range and temple haptics; ESP32-CAM streams JPEG</div>
+        <div><b>Phone perception</b>Stream alignment, distance bands, hazard rules, judge screen</div>
+        <div><b>Sound and calibration</b>Phone-side cues to the headset, balance flow, one-ear mode</div>
         <div><b>Describe and demo</b>Graviton API, Neuron model, the pitch</div>
       </div>
     </div>
   </div>
-  <p class="small" style="margin-top:14px">Demo branches: if accelerator access fails, skip the scene answer and show the offline warning loop. If the camera module cannot stream, use the phone camera on a headband as a labelled software fallback — not the proposed glasses. No prerecorded result or fabricated latency; sponsor integration is a goal, not a claim.</p>
+  <p class="small" style="margin-top:14px">Demo branches: no accelerator access → skip the scene answer; camera won't stream → phone camera on a headband, labelled a software fallback. No prerecorded result or fabricated latency.</p>
   <div class="foot"><span><b>Determine</b> · demo and cost</span><span>7 / 8</span></div>
 </section>
 
@@ -323,32 +322,33 @@ svg .mn { font-family:var(--mono); font-weight:600; }
     <div>
       <ul class="cant">
         <li>Glass doors and windows <span>light passes through</span></li>
-        <li>Thin wires and ropes <span>too small for 8×8</span></li>
+        <li>Thin wires and ropes <span>too thin for one zone</span></li>
         <li>Drop-offs, curbs, stairs going down <span>the cane's job</span></li>
-        <li>Anything outside the forward view <span>63° diagonal</span></li>
+        <li>Anything outside one narrow cone <span>18° diagonal</span></li>
+        <li>Which side, or what it is <span>one zone, no label</span></li>
         <li>Fast-moving vehicles <span>not a traffic aid</span></li>
-        <li>Glare, darkness, rain and fog <span>degrades, announced</span></li>
-        <li>Anything beyond about 3 m <span>by design</span></li>
+        <li>Glare, darkness, rain, sun, gray surfaces <span>degrades, announced</span></li>
+        <li>Anything beyond about 1.2 m <span>vendor spec, unvalidated</span></li>
       </ul>
       <p class="small" style="margin-top:8px">Spoken to every new user during setup. Demos run on a staged indoor course with a sighted spotter.</p>
     </div>
     <div>
       <ul class="rules">
-        <li><b>Fail loud.</b>Design target: announce “system off” within one second through a working output, including the phone if the frame loses power. Never call silence a clear path. Not yet tested.</li>
-        <li><b>Unknown is not clear.</b>No detections never produces a reassuring sound.</li>
+        <li><b>Fail loud.</b>Design target: announce “system off” within one second through a working output (headset, temple buzz or phone vibration). If the phone dies, only the board's buzz remains. Never call silence a clear path. Not yet tested.</li>
+        <li><b>Unknown is not clear.</b>No target or an unreadable sample never produces a reassuring sound.</li>
         <li><b>The cane stays.</b>Determine is a secondary aid, on top of a cane or guide dog.</li>
         <li><b>Claim only what we measured.</b>Every threshold and latency here is a target until tested with blind and low-vision people, with an orientation and mobility specialist.</li>
       </ul>
-      <h3 style="margin-top:12px;font-size:13px">Sources (15–24 Oct 2026; Houston stock user-reported)</h3>
+      <h3 style="margin-top:12px;font-size:13px">Sources (15–24 Oct 2026; Houston stock snapshot on page 7)</h3>
       <ol class="sources">
         <li><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC12909938/">Pittet et al.</a>, secondary travel-aid trial, 2026</li>
         <li><a href="https://users.soe.ucsc.edu/~manduchi/papers/MobilityAccidents.pdf">Manduchi &amp; Kurniawan</a>, mobility accidents, 2011</li>
         <li><a href="https://www.dcs.gla.ac.uk/~stephen/papers/HCI95.pdf">Brewster et al.</a>, earcon guidelines, 1995</li>
         <li><a href="https://pubmed.ncbi.nlm.nih.gov/23516800/">Walker et al.</a>, spearcons, 2013</li>
         <li><a href="https://pubmed.ncbi.nlm.nih.gov/22193619/">Stenfelt</a>, sound crossing the skull, 2012</li>
-        <li><a href="https://wiki.seeedstudio.com/XIAO_ESP32C3_Getting_Started/">Seeed</a>, XIAO ESP32-C3 wiki: 400 KB SRAM, one I2C; <a href="https://documentation.espressif.com/esp32-c3_datasheet_en.pdf">Espressif</a>, I2S</li>
-        <li><a href="https://www.sparkfun.com/sparkfun-qwiic-mini-tof-imager-vl53l5cx.html">SparkFun</a>, VL53L5CX ToF, $25.95</li>
-        <li>Adafruit: <a href="https://www.adafruit.com/product/1674">bone</a> (direct sold out; <a href="https://www.digikey.com/en/products/detail/adafruit-industries-llc/1674/6827067">DigiKey same part</a>), <a href="https://www.adafruit.com/product/3006">amp</a>, <a href="https://www.adafruit.com/product/2305">driver</a>, <a href="https://www.adafruit.com/product/1201">motor</a></li>
+        <li><a href="https://wiki.seeedstudio.com/XIAO_ESP32C3_Getting_Started/">Seeed</a>, XIAO ESP32-C3 wiki: 400 KB SRAM, one I2C, no camera</li>
+        <li><a href="https://docs.arduino.cc/hardware/modulino-distance/">Arduino</a>, Modulino Distance; <a href="https://www.st.com/resource/en/datasheet/vl53l4cd.pdf">ST</a>, VL53L4CD datasheet: 1200 mm indoors, 18° FOV; <a href="https://www.microcenter.com/product/707372/arduino-modulino-distance">Micro Center</a> listing</li>
+        <li><a href="https://www.microcenter.com/product/679007/shokz-openrun-wireless-bluetooth-bone-conduction-headphones-black">OpenRun</a>: old link redirects to support, not approved; <a href="https://www.microcenter.com/product/675121/humbird-bone-conduction-speaker">Humbird</a>: no longer carried; <a href="https://www.adafruit.com/product/2305">DRV2605L</a></li>
         <li><a href="https://developers.meta.com/wearables/faq/">Meta</a>, Wearables DAT and Mock Device Kit</li>
         <li><a href="https://github.com/espressif/esp32-camera">Espressif</a>, esp32-camera driver: ESP32/S2/S3; PSRAM above-CIF JPEG</li>
         <li><a href="https://www.aboutamazon.com/news/aws/take-a-look-inside-the-lab-where-aws-makes-custom-chips">About Amazon</a>, Annapurna Labs</li>
@@ -421,23 +421,21 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
   [b1, b2, b3].forEach(x => bar(s, x, Ltop, Rtop + 4 * gap, 1.5));
   repeatEnd(s, xe, Ltop, Rtop, gap);
   const tempo = (x, name, bpm) => { const t = label(s, x, 42, '', { 'font-size': 15, 'font-weight': 800 }); t.innerHTML = `${name}<tspan font-weight="400" dx="8">\u2669 = ${bpm}</tspan>`; };
-  tempo(x0 + 8, 'FAR', 60); tempo(b1 + 14, 'MID', 150); tempo(b2 + 14, 'NEAR', 300);
+  tempo(x0 + 8, 'FAR 0.9–1.2 m', 60); tempo(b1 + 14, 'MID 0.5–0.9 m', 150); tempo(b2 + 14, 'NEAR < 0.5 m', 300);
   label(s, b3 + 14, 42, 'rest', { 'font-size': 15, 'font-style': 'italic' });
   const o = { gap, dx: 15, stem: 32, rx: 6.4, ry: 4.6, beam: 5.5 };
-  [150, 285].forEach(x => notes(s, x, Rmid, [0, 0], C.R, o));
-  [190, 325].forEach(x => rest(s, x, Lmid, C.L, 36));
-  [408, 468, 528, 588].forEach(x => notes(s, x, Rmid, [0, 0], C.R, o));
-  [450, 570].forEach(x => rest(s, x, Lmid, C.L, 36));
+  [150, 285].forEach(x => { notes(s, x, Rmid, [0, 0], C.R, o); notes(s, x, Lmid, [0, 0], C.L, o); });
+  [408, 468, 528, 588].forEach(x => { notes(s, x, Rmid, [0, 0], C.R, o); notes(s, x, Lmid, [0, 0], C.L, o); });
   [672, 704, 736, 768, 800, 832].forEach(x => { notes(s, x, Rmid, [0], C.R, o); notes(s, x, Lmid, [0], C.L, o); });
   [900, 952].forEach(x => { rest(s, x, Lmid, C.L, 36); rest(s, x, Rmid, C.R, 36); });
   // distance ruler
   const ry = 250;
   el(s, 'line', { x1: x0, x2: b3, y1: ry, y2: ry, stroke: C.ink, 'stroke-width': 1.2 });
-  [[x0, '3 m'], [b1, '2 m'], [b2, '1 m'], [b3, 'passed']].forEach(([x, t]) => { bar(s, x, ry - 5, ry + 5, 1.2); label(s, x + 5, ry + 18, t, { class: 'mn', 'font-size': 12 }); });
-  label(s, b2 + 12, 150, 'centre: both ears, both temples', { 'font-size': 12.5, 'font-weight': 800 });
+  [[x0, '1.2 m'], [b1, '0.9 m'], [b2, '0.5 m'], [b3, 'passed']].forEach(([x, t]) => { bar(s, x, ry - 5, ry + 5, 1.2); label(s, x + 5, ry + 18, t, { class: 'mn', 'font-size': 12 }); });
+  label(s, b2 + 12, 150, 'single urgent notes', { 'font-size': 12.5, 'font-weight': 800 });
   label(s, b3 + 12, 150, 'nothing to report.', { 'font-size': 12.5, 'font-weight': 800 });
   label(s, b3 + 12, 165, 'never “all clear”', { 'font-size': 12.5 });
-  label(s, x0 + 8, 150, 'obstacle on your right: right ear, right temple', { 'font-size': 12.5, fill: C.R, 'font-weight': 700 });
+  label(s, x0 + 8, 150, 'one distance: both ears, both temples', { 'font-size': 12.5, 'font-weight': 800 });
 })();
 
 /* ---------- elevation ---------- */
@@ -445,8 +443,8 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
   const s = document.getElementById('elevation');
   const gx = 70, gy = 262, ppm = 112; // px per metre
   const Y = h => gy - h * ppm / 1.0 * 0.9, X = d => gx + d * ppm;
-  // Determine wedge from eye height 1.6 m, ±22° vertical, out to 3 m
-  const eh = 1.6, half = 22 * Math.PI / 180, R = 3.05;
+  // Determine cone from eye height 1.6 m, about 18 degrees diagonal (±9°), vendor-spec reach 1.2 m
+  const eh = 1.6, half = 9 * Math.PI / 180, R = 1.2;
   const up = [X(R), Y(eh + Math.tan(half) * R)], dn = [X(R), Y(eh - Math.tan(half) * R)];
   el(s, 'polygon', { points: `${X(0)},${Y(eh)} ${up[0]},${Math.max(up[1], 8)} ${dn[0]},${dn[1]}`, fill: C.hz });
   // cane sweep
@@ -461,10 +459,10 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
   el(s, 'circle', { cx: X(0), cy: Y(eh), r: 6, fill: C.ink });
   label(s, X(0) + 10, Y(eh) - 10, 'glasses, eye height', { 'font-size': 11.5, 'font-weight': 700 });
   // branch
-  el(s, 'rect', { x: X(2.0), y: Y(1.72), width: 120, height: 7, fill: C.ink });
-  label(s, X(2.0) + 4, Y(1.72) - 8, 'branch at 1.7 m', { 'font-size': 11.5, 'font-weight': 700 });
-  label(s, X(1.25), Y(1.18), 'Determine: chest to head,', { 'font-size': 13, 'font-weight': 800 });
-  label(s, X(1.25), Y(1.18) + 16, 'out to about 3 m', { 'font-size': 13, 'font-weight': 800 });
+  el(s, 'rect', { x: X(0.95), y: Y(1.72), width: 80, height: 7, fill: C.ink });
+  label(s, X(0.95) + 4, Y(1.72) - 20, 'branch at 1.7 m, 1 m ahead', { 'font-size': 11.5, 'font-weight': 700 });
+  label(s, X(1.3), Y(1.18), 'Determine: one narrow cone,', { 'font-size': 13, 'font-weight': 800 });
+  label(s, X(1.3), Y(1.18) + 16, 'about 1.2 m (spec, unvalidated)', { 'font-size': 13, 'font-weight': 800 });
   label(s, X(0.18), gy - 12, 'cane: the ground, ~1 m', { 'font-size': 11.5, 'font-weight': 700 });
 })();
 
@@ -497,15 +495,15 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
     const tx = anchor === 'end' ? x2 - 6 : x2 + 6;
     lines.forEach((t, i) => label(s, tx, y2 + 4 + i * 15, t, { 'font-size': i ? 11.5 : 13.5, 'font-weight': i ? 400 : 800, fill: i ? C.muted : color, 'text-anchor': anchor }));
   };
-  call(476, 60, 268, 24, ['Mini ToF · one 8×8 sensor', '12.7 × 25.4 mm at brow', 'C3 and cue boards on rear strap'], 'end');
+  call(476, 60, 268, 24, ['Modulino Distance · one zone', 'a single forward distance', 'C3 and haptic drivers on rear strap'], 'end');
   call(652, 56, 716, 20, ['ESP32-CAM camera', 'JPEG frames over Wi-Fi', 'OV2640 + PSRAM: check the item']);
   // one label per temple: bone transducer and haptic motor leaders meet above it
   el(s, 'line', { x1: 134, y1: 144, x2: 40, y2: 236, stroke: C.L, 'stroke-width': 1.3 });
-  call(102, 144, 40, 236, ['Left: bone transducer + haptic', 'plays the left ear · buzzes for left hazards'], 'start', C.L);
+  call(102, 144, 40, 236, ['Left: headset speaker + haptic', 'hazard cues play on both sides'], 'start', C.L);
   el(s, 'line', { x1: 826, y1: 144, x2: 850, y2: 236, stroke: C.R, 'stroke-width': 1.3 });
-  call(858, 144, 850, 236, ['Right: bone transducer + haptic', 'plays the right ear · buzzes for right hazards'], 'end', C.R);
-  label(s, 905, 318, 'power bank in a pocket; board fit is untested', { 'font-size': 11.5, fill: C.muted, 'text-anchor': 'end' });
-  label(s, 480, 318, 'Clear or tinted lenses: camera and ToF look out from the front.', { 'font-size': 11.5, fill: C.muted, 'text-anchor': 'middle' });
+  call(858, 144, 850, 236, ['Right: headset speaker + haptic', 'hazard cues play on both sides'], 'end', C.R);
+  label(s, 905, 318, 'power bank in a pocket; headset fit untested', { 'font-size': 11.5, fill: C.muted, 'text-anchor': 'end' });
+  label(s, 55, 318, 'Clear or tinted lenses: camera and sensor face front.', { 'font-size': 11.5, fill: C.muted, 'text-anchor': 'start' });
 })();
 
 /* ---------- C rows ---------- */
@@ -516,7 +514,7 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
   staff(s, 4, 776, top, C.ink, gap);
   [230, 532].forEach(x => bar(s, x, top, top + 4 * gap));
   const head = (x, a, b) => { const t = label(s, x, 16, '', { 'font-size': 12.5, 'font-weight': 800 }); t.innerHTML = `${a}<tspan font-weight="400" dx="6">${b}</tspan>`; };
-  head(10, 'FAR', 'under 3 m · 1/s · \u2669 = 60'); head(242, 'MID', 'under 2 m · 2.5/s · \u2669 = 150'); head(544, 'NEAR', 'under 1 m · 5/s · \u2669 = 300');
+  head(10, 'FAR', '0.9–1.2 m · 1/s · \u2669 = 60'); head(242, 'MID', '0.5–0.9 m · 2.5/s · \u2669 = 150'); head(544, 'NEAR', 'under 0.5 m · 5/s · \u2669 = 300');
   [44, 150].forEach(x => notes(s, x, mid, [0, 0], C.ink));
   [256, 310, 364, 418, 472].forEach(x => notes(s, x, mid, [0, 0], C.ink));
   [556, 592, 628, 664, 700, 736].forEach(x => notes(s, x, mid, [0], C.ink));
@@ -544,9 +542,9 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
     label(g, x0 + w + 12, 62, title[1], { 'font-size': 11, fill: C.muted });
     label(g, x0 + w + 12, 76, title[2], { 'font-size': 11, fill: C.muted });
   };
-  block(6, 150, 'L', ['Left', 'left ear +', 'left temple']);
-  block(268, 150, 'C', ['Centre', 'both ears +', 'both temples']);
-  block(530, 150, 'R', ['Right', 'right ear +', 'right temple']);
+  block(6, 150, 'L', ['Left', 'calibration tones', 'only']);
+  block(268, 150, 'C', ['Centre', 'every hazard cue:', 'both ears + temples']);
+  block(530, 150, 'R', ['Right', 'calibration tones', 'only']);
 })();
 (() => {
   const s = document.getElementById('r-what');
@@ -554,7 +552,7 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
   staff(s, 4, 776, top, C.ink, gap);
   [196, 392, 620].forEach(x => bar(s, x, top, top + 4 * gap));
   const head = (x, a, b) => { label(s, x, 14, a, { 'font-size': 12.5, 'font-weight': 800 }); label(s, x, 88, b, { 'font-size': 10.5, fill: C.muted }); };
-  head(12, 'Obstacle', 'wood-block double'); head(208, 'Person', 'two-tone marimba, rising');
+  head(12, 'Obstacle', 'wood-block double'); head(208, 'Person · reserved', 'two-tone marimba; unused in v0');
   head(404, 'System off', 'descending three, every 5 s until fixed'); head(632, 'Ready', 'one soft tick, once');
   [40, 112].forEach(x => notes(s, x, mid, [0, 0], C.ink));
   [236, 308].forEach(x => notes(s, x, mid, [1, -2], C.ink, { dx: 16 }));
@@ -600,7 +598,7 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
 (() => {
   const s = document.getElementById('reflex');
   const x0 = 6, w = 428, ms = 250, X = t => x0 + t / ms * w;
-  const segs = [[60, 'sense + JPEG', 'two boards'], [40, 'Wi-Fi ×2', 'hotspot'], [80, 'align + detect', 'phone'], [40, 'cue + play', 'glasses']];
+  const segs = [[60, 'sense + JPEG', 'two boards'], [40, 'Wi-Fi ×2', 'hotspot'], [80, 'band + policy', 'phone'], [40, 'CUE + buzz', 'C3']];
   let t = 0;
   segs.forEach(([d, n, where], i) => {
     const fill = i % 2 ? '#e6e7ea' : '#ffffff';
@@ -622,8 +620,8 @@ function repeatEnd(g, x, top1, top2, gap = 10) {
   const x0 = 64, y0 = 14, H = 440, T = 180, Y = t => y0 + t / T * H;
   const items = [
     [0, 20, 'Hook', 'The parking-sensor line, moved from the bumper to the brow.'],
-    [20, 75, 'Live course', 'A spotter walks the wearer past a head-height foam bar, a person, then a left and a right obstacle. The judges’ screen shows both streams’ age, the 8×8 grid, the chosen cue and measured latency.'],
-    [95, 30, 'One-ear mode', 'Switch to a single-sided profile: audio goes mono, the temples carry direction.'],
+    [20, 75, 'Live course', 'A spotter walks the wearer slowly head-on toward a light foam board, then past a head-height bar. The judges’ screen shows both streams’ age, the one forward distance and its status, the band and measured latency. No side is claimed.'],
+    [95, 30, 'One-ear mode', 'Switch to a single-sided profile: headset audio goes mono, the temples keep buzzing for every hazard.'],
     [125, 20, 'Pull the plug', 'Unplug the camera board. “System off” plays; reconnect and wait for ready. Never silence.'],
     [145, 20, 'Ask', 'After recovery, “What’s ahead?” If cloud is ready, send a redacted frame for a two-sentence description.'],
     [165, 15, 'Close', 'What we measured, what it can’t see, what’s next.']

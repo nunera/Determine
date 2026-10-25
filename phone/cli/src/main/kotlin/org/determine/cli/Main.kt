@@ -2,6 +2,7 @@ package org.determine.cli
 
 import org.determine.core.Alert
 import org.determine.core.BoardId
+import org.determine.core.CueCommand
 import org.determine.core.Diagnostics
 import org.determine.core.Engine
 import org.determine.core.EngineConfig
@@ -11,10 +12,12 @@ import org.determine.core.PhoneAlerts
 import org.determine.core.SystemState
 import org.determine.core.hearing.HearingMode
 import org.determine.core.hearing.HearingProfile
+import org.determine.core.wire.AckStatus
 import org.determine.core.wire.Beat
 import org.determine.core.wire.CuePkt
 import org.determine.core.wire.PacketType
 import org.determine.core.wire.ProfilePkt
+import org.determine.core.wire.RangeStatus
 import org.determine.core.wire.Wire
 import org.determine.core.wire.WireException
 import java.io.PrintStream
@@ -28,8 +31,13 @@ import kotlin.concurrent.withLock
 import kotlin.system.exitProcess
 
 /**
- * Headless phone: the real [Engine] over UDP, no detector. Output format is the stable one in
+ * Headless phone: the real [Engine] over UDP, no camera detector. Output format is the stable one in
  * phone/core/API.md ("Stable cli output"); tools/sim/e2e.py parses it.
+ *
+ * Audio: this process has no audio device. Every cue's audio half is LOGGED as an AUDIO line by
+ * [LogCueSink] and acknowledged as APPLIED so the engine's audio-path state machine runs exactly as it does
+ * on the phone; the sounds themselves only exist on a real phone with its headset. The board half (haptics)
+ * goes on the wire as real CUE packets.
  */
 data class CliOptions(
     val port: Int = 47000,
@@ -48,7 +56,7 @@ const val USAGE = """determine-phone [options]
   --cam HOST:PORT     camera board address (default: learn from its first BEAT)
   --cue HOST:PORT     cue board address (default: learn from its first BEAT)
   --duration S        exit after S seconds (default: run until killed)
-  --ceiling DB        profile ceiling in dBFS (default -20; never above the -10 hard cap)
+  --ceiling DB        local audio ceiling in dBFS (default -20; never above the -10 hard cap)
   --mode M            STEREO | SSD | HAPTIC_ONLY (default STEREO)
   --no-spearcons      disable spoken words after cues
   --help"""
@@ -90,10 +98,10 @@ class EventLog(private val out: PrintStream, private val startUs: Long) {
 }
 
 private fun tok(s: String) = s.replace(' ', '_').ifEmpty { "-" }
-private fun opt(v: Any?) = when (v) { null -> "-"; is Double -> "%.2f".format(v); else -> v.toString() }
+private fun opt(v: Any?) = when (v) { null -> "-"; is Double -> String.format(java.util.Locale.ROOT, "%.2f", v); else -> v.toString() }
 
 fun alertLine(a: Alert?): String =
-    if (a == null) "none" else "region=${a.region} band=${a.band} label=${tok(a.label)} dist_mm=${opt(a.distanceMm)}"
+    if (a == null) "none" else "band=${a.band} dist_mm=${opt(a.distanceMm)}"
 
 fun diagLine(d: Diagnostics): String = listOf(
     "state=${d.state}",
@@ -104,18 +112,36 @@ fun diagLine(d: Diagnostics): String = listOf(
     "ack_p50=${opt(d.ackP50Ms)}", "ack_p95=${opt(d.ackP95Ms)}",
     "cues=${d.cuesSent}", "acks=${d.acks}", "nacks=${d.nacks}", "missed=${d.missedAcks}",
     "malformed=${d.malformed}", "stale=${d.staleDropped}",
+    rangeLine(d.rangeMm, d.rangeStatus), "range_left=unavailable", "range_right=unavailable",
+    "link_weak=${d.linkWeak}", "closing_mm_s=${opt(d.closingSpeedMmPerS)}", "approach=${d.approachActive}", "exploring=${d.exploring}",
 ).joinToString(" ")
+
+/** The forward ToF zone as one diagnostic pair: `range_mm=870 range_status=VALID` (canonical v2 status). */
+fun rangeLine(mm: Int?, status: Int?): String {
+    val st = when (status) {
+        null -> "-"
+        RangeStatus.VALID -> "VALID"
+        RangeStatus.NO_TARGET -> "NO_TARGET"
+        RangeStatus.UNKNOWN -> "UNKNOWN"
+        else -> "INVALID_${status}"
+    }
+    return "range_mm=${if (status == RangeStatus.VALID) mm?.toString() ?: "-" else "-"} range_status=$st"
+}
 
 /** Text line for an outgoing command, or null for packets that are not logged (PING). */
 fun txLine(packet: ByteArray): Pair<String, String>? {
     val d = try { Wire.decode(packet) } catch (_: WireException) { return null }
     return when (val p = d.packet) {
-        is CuePkt -> "CUE-TX" to "seq=${d.seq} cue=${p.cueId} side=${p.side} gl=${p.gainLDb} gr=${p.gainRDb} " +
+        is CuePkt -> "CUE-TX" to "seq=${d.seq} cue=${p.cueId} side=${p.side} " +
             "hp=${p.hapticPattern} hl=${p.hapticL} hr=${p.hapticR} flags=${p.flags} ttl=${p.ttlMs} deadline=${p.deadlineBoardUs}"
-        is ProfilePkt -> "PROFILE-TX" to "seq=${d.seq} ceiling=${p.ceilingDb} mode=${p.mode} haptic_max=${p.hapticMax}"
+        is ProfilePkt -> "PROFILE-TX" to "seq=${d.seq} mode=${p.mode} haptic_max=${p.hapticMax}"
         else -> null
     }
 }
+
+/** Text line for a cue played by the local (headless) audio sink. */
+fun audioLine(c: CueCommand, status: Int): String =
+    "cue=${c.cueId} side=${c.side} gl=${c.gainLDb} gr=${c.gainRDb} status=${status}"
 
 /**
  * Board addressing: a packet's sender is identified by the board field of its BEAT (PROTOCOL.md: the phone
@@ -142,6 +168,17 @@ class BoardDirectory(cam: InetSocketAddress?, cue: InetSocketAddress?) {
 
 fun nowUs(): Long = System.nanoTime() / 1000
 
+/**
+ * The headless stand-in for the phone's headset audio ([org.determine.core.LocalCueSink]): logs every cue and
+ * acknowledges APPLIED. There is no speaker or headset in this process — the AUDIO line IS the audio path.
+ */
+class LogCueSink(private val log: EventLog) : org.determine.core.LocalCueSink {
+    override fun play(cmd: CueCommand, nowPhoneUs: Long): Int {
+        log.emit(nowUs(), "AUDIO", audioLine(cmd, AckStatus.APPLIED))
+        return AckStatus.APPLIED
+    }
+}
+
 fun run(o: CliOptions, out: PrintStream = System.out): Int {
     val start = nowUs()
     val log = EventLog(out, start)
@@ -166,9 +203,9 @@ fun run(o: CliOptions, out: PrintStream = System.out): Int {
     }
     val engine = Engine(
         EngineConfig(initialProfile = HearingProfile.uncalibrated(o.ceilingDb, o.mode), spearcons = o.spearcons),
-        outbox, alerts, listener,
+        outbox, alerts, listener, LogCueSink(log),
     )
-    out.println("determine-phone listening on ${o.bind}:${o.port}"); out.flush()
+    out.println("determine-phone listening on ${o.bind}:${o.port} (headless: AUDIO lines stand in for headset playback)"); out.flush()
 
     val running = java.util.concurrent.atomic.AtomicBoolean(true)
     Runtime.getRuntime().addShutdownHook(Thread { running.set(false) })

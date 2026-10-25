@@ -1,27 +1,25 @@
 // Determine cue board firmware (Seeed XIAO ESP32-C3).
 //
-// The board decides nothing about hazards (Arch §4, Invariant 3). It streams ToF ranges
-// and heartbeats to the phone, answers PINGs, and plays the CUEs the phone sends. When the
-// phone goes silent it plays SYSTEM_OFF on its own (PROTOCOL.md Watchdog, Invariant 2).
+// The board decides nothing about hazards (Arch §4, Invariant 3). It streams single-zone
+// ToF ranges and heartbeats to the phone, answers PINGs, and plays the haptic side of the
+// CUEs the phone sends. All cue audio is rendered by the phone itself (bone-conduction
+// Bluetooth headset); this board has no sound hardware anymore. When the phone goes
+// silent it plays the haptic LSS alarm on its own (PROTOCOL.md Watchdog, Invariant 2).
 //
 // Tasks:
 //   loopTask (Arduino loop)  Wi-Fi, UDP receive, PING/CUE/PROFILE, BEAT, watchdog, LED
-//   audio    (prio 5)        renders cues into I2S; never blocks the network loop
-//   haptic   (prio 4)        plays haptic patterns on both sides
-//   tof      (prio 2)        VL53L5CX init/retry + RANGE at 15 Hz
+//   haptic   (prio 4)        plays haptic patterns on the Modulino Vibro (one actuator)
+//   tof      (prio 2)        VL53L4ED init/retry + single-zone RANGE stream
 // Pure logic lives in lib/cue_logic (host-tested).
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <Wire.h>
-#include <driver/i2s.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 
-#include <SparkFun_VL53L5CX_Library.h>
-#ifndef DT_HAPTIC_MOSFET
-#include <Adafruit_DRV2605.h>
-#endif
+#include <vl53l4ed_class.h> // ST driver for the purchased Modulino Distance (sensor ID 0xECAA)
+#include <string.h>
 
 #include <atomic>
 
@@ -35,34 +33,25 @@
 #warning "secrets.h missing: using secrets.example.h hotspot credentials"
 #endif
 
-#ifndef DT_TOF_FLIP_X
-#define DT_TOF_FLIP_X 0
-#endif
-#ifndef DT_TOF_FLIP_Y
-#define DT_TOF_FLIP_Y 0
-#endif
-#ifndef DT_TOF_ROTATE
-#define DT_TOF_ROTATE 0
-#endif
 #ifndef DT_I2C_HZ
 #define DT_I2C_HZ 400000
 #endif
 
 // ---------------------------------------------------------------- pins (Arch §5)
-static constexpr int PIN_SDA = 6;       // D4
-static constexpr int PIN_SCL = 7;       // D5
-static constexpr int PIN_I2S_BCLK = 3;  // D1
-static constexpr int PIN_I2S_LRCLK = 4; // D2
-static constexpr int PIN_I2S_DIN = 5;   // D3
-static constexpr int PIN_LED = 10;      // D10
+static constexpr int PIN_SDA = 6;  // D4
+static constexpr int PIN_SCL = 7;  // D5
+static constexpr int PIN_LED = 10; // D10
 static constexpr int PIN_MOSFET_L = 21; // D6 (DT_HAPTIC_MOSFET only)
 static constexpr int PIN_MOSFET_R = 20; // D7
-static constexpr uint8_t ADDR_TOF = 0x29;
-static constexpr uint8_t ADDR_MUX = 0x70;
-static constexpr uint8_t MUX_CH_L = 0, MUX_CH_R = 1;
+static constexpr uint8_t ADDR_TOF = 0x29;  // VL53L4ED default address (purchased Modulino Distance)
 
-static constexpr uint32_t AUDIO_RATE = 22050;
-static constexpr size_t AUDIO_CHUNK = 128; // frames per I2S write (~5.8 ms)
+// VL53L4ED ranging: 20 ms timing budget,
+// inter-measurement 0 (continuous). Poll interval bounds the stream to well under the
+// 50 Hz the sensor can produce; every ready sample is sent as one RANGE.
+static constexpr uint32_t TOF_TIMING_BUDGET_MS = 20;
+static constexpr uint32_t TOF_POLL_MS = 5;
+static constexpr uint32_t TOF_RETRY_MS = 10000;
+static constexpr uint32_t TOF_READ_ERR_LIMIT = 10;
 static constexpr uint16_t LOW_HEAP_KB = 20;
 
 // ---------------------------------------------------------------- shared state
@@ -82,10 +71,9 @@ static IPAddress g_phone;
 static uint32_t g_seq_beat, g_seq_pong, g_seq_ack; // loop task only
 static uint32_t g_seq_range;                        // tof task only
 
-struct AudioReq { uint8_t cue_id; int8_t gain_l_db; int8_t gain_r_db; };
 struct HapticReq { uint8_t pattern; uint8_t l; uint8_t r; };
-static QueueHandle_t g_audio_q, g_haptic_q; // length 1: one pending request
-static volatile bool g_audio_busy = false, g_haptic_busy = false;
+static QueueHandle_t g_haptic_q; // length 1: one pending request
+static volatile bool g_haptic_busy = false;
 
 static void set_fault(uint16_t bit, bool on) {
   if (on) g_faults.fetch_or(bit);
@@ -101,63 +89,31 @@ static dt_profile_state_t profile_get() {
   return p;
 }
 
+// The Arduino core logs every failed endPacket() itself ("could not send data") and that
+// cannot be silenced per call, so a Wi-Fi drop used to flood the serial log at 200 RANGE/s.
+// Never attempt a send while Wi-Fi is down, and report failures here at most once per 5 s.
+static constexpr uint32_t UDP_FAIL_LOG_MS = 5000;
+static uint32_t g_udp_fail_count = 0;  // guarded by g_net
+static uint32_t g_udp_fail_log_ms = 0; // guarded by g_net; 0 = nothing logged yet
+
 static void udp_send(const void *buf, size_t len) {
-  if (!g_udp_up) return;
+  if (!g_udp_up || WiFi.status() != WL_CONNECTED) return;
   xSemaphoreTake(g_net, portMAX_DELAY);
-  if (g_udp.beginPacket(g_phone, DT_PORT_PHONE)) {
+  bool sent = g_udp.beginPacket(g_phone, DT_PORT_PHONE) != 0;
+  if (sent) {
     g_udp.write((const uint8_t *)buf, len);
-    g_udp.endPacket();
+    sent = g_udp.endPacket() != 0;
+  }
+  if (!sent) {
+    g_udp_fail_count++;
+    uint32_t now = millis();
+    if (g_udp_fail_log_ms == 0 || now - g_udp_fail_log_ms >= UDP_FAIL_LOG_MS) {
+      Serial.printf("[udp] send failed (%lu since last report)\n", (unsigned long)g_udp_fail_count);
+      g_udp_fail_count = 0;
+      g_udp_fail_log_ms = now ? now : 1;
+    }
   }
   xSemaphoreGive(g_net);
-}
-
-// ---------------------------------------------------------------- audio
-static void audio_task(void *) {
-  static int16_t buf[AUDIO_CHUNK * 2];
-  i2s_config_t cfg = {};
-  cfg.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
-  cfg.sample_rate = AUDIO_RATE;
-  cfg.bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT;
-  cfg.channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT; // left amp takes L slot, right amp R slot
-  cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
-  cfg.intr_alloc_flags = 0;
-  cfg.dma_buf_count = 4;
-  cfg.dma_buf_len = AUDIO_CHUNK;
-  cfg.use_apll = false;
-  cfg.tx_desc_auto_clear = true; // silence when idle
-  i2s_pin_config_t pins = {};
-  pins.mck_io_num = I2S_PIN_NO_CHANGE;
-  pins.bck_io_num = PIN_I2S_BCLK;
-  pins.ws_io_num = PIN_I2S_LRCLK;
-  pins.data_out_num = PIN_I2S_DIN;
-  pins.data_in_num = I2S_PIN_NO_CHANGE;
-  bool ok = i2s_driver_install(I2S_NUM_0, &cfg, 0, nullptr) == ESP_OK && i2s_set_pin(I2S_NUM_0, &pins) == ESP_OK;
-  set_fault(DT_FAULT_I2S, !ok);
-  Serial.printf("[audio] i2s %s\n", ok ? "ok" : "FAILED");
-
-  AudioReq req;
-  dt_player_t player;
-  for (;;) {
-    if (xQueueReceive(g_audio_q, &req, portMAX_DELAY) != pdTRUE) continue;
-    g_audio_busy = true;
-    dt_player_start(&player, dt_cue_def(req.cue_id), AUDIO_RATE, dt_db_to_q15(req.gain_l_db),
-                    dt_db_to_q15(req.gain_r_db));
-    while (!player.done) {
-      size_t n = dt_player_render(&player, buf, AUDIO_CHUNK);
-      if (n < AUDIO_CHUNK) memset(&buf[2 * n], 0, (AUDIO_CHUNK - n) * 2 * sizeof(int16_t));
-      if (ok) {
-        size_t written;
-        if (i2s_write(I2S_NUM_0, buf, sizeof buf, &written, pdMS_TO_TICKS(100)) != ESP_OK) set_fault(DT_FAULT_I2S, true);
-      } else {
-        vTaskDelay(pdMS_TO_TICKS(AUDIO_CHUNK * 1000 / AUDIO_RATE + 1));
-      }
-      // Interrupt: a newer request replaces the current sound mid-cue (CUE flags bit0).
-      if (xQueueReceive(g_audio_q, &req, 0) == pdTRUE)
-        dt_player_start(&player, dt_cue_def(req.cue_id), AUDIO_RATE, dt_db_to_q15(req.gain_l_db),
-                        dt_db_to_q15(req.gain_r_db));
-    }
-    g_audio_busy = false;
-  }
 }
 
 // ---------------------------------------------------------------- haptics
@@ -173,32 +129,44 @@ static bool haptic_set(int side, uint8_t level) {
   return true;
 }
 #else
-static Adafruit_DRV2605 g_drv[2];
-static bool g_drv_ok[2];
+// Arduino Modulino Vibro (ABX00130): one I2C-controlled motor, found at 0x38 on the bench.
+// It cannot lateralise, so the protocol's per-side intensities drive it at max(L, R);
+// both haptic fault bits reflect this single device.
+static constexpr uint8_t ADDR_VIBRO = 0x38;
+// Device-side auto-off for every ON write: if this task stalls, the motor still stops.
+// Longer than the longest pattern segment (LSS 400 ms); every segment rewrites it.
+static constexpr uint32_t VIBRO_SAFETY_MS = 1000;
+static uint8_t g_side_level[2];
 
-static bool mux_select(uint8_t ch) {
-  Wire.beginTransmission(ADDR_MUX);
-  Wire.write((uint8_t)(1u << ch));
-  return Wire.endTransmission() == 0;
+// Command layout from Arduino_Modulino ModulinoVibro::on()/off():
+// ON  = uint32 freq (1000), uint32 duration_ms, int32 power (0..50); OFF = 8 zero bytes.
+static bool vibro_write(uint8_t level) {
+  uint8_t buf[12] = {0};
+  size_t len = 8;
+  if (level) {
+    uint32_t freq = 1000, ms = VIBRO_SAFETY_MS;
+    int32_t power = dt_vibro_power(level);
+    memcpy(&buf[0], &freq, 4);
+    memcpy(&buf[4], &ms, 4);
+    memcpy(&buf[8], &power, 4);
+    len = sizeof buf;
+  }
+  xSemaphoreTake(g_i2c, portMAX_DELAY);
+  Wire.beginTransmission(ADDR_VIBRO);
+  Wire.write(buf, len);
+  bool ok = Wire.endTransmission() == 0;
+  xSemaphoreGive(g_i2c);
+  return ok;
+}
+static bool haptic_set(int side, uint8_t level) {
+  g_side_level[side] = level;
+  bool ok = vibro_write(max(g_side_level[0], g_side_level[1]));
+  // A failed side must not keep the shared motor on through the other side's writes.
+  if (!ok) g_side_level[side] = 0;
+  return ok;
 }
 static bool haptic_init_side(int side) {
-  xSemaphoreTake(g_i2c, portMAX_DELAY);
-  bool ok = mux_select(side == 0 ? MUX_CH_L : MUX_CH_R) && g_drv[side].begin(&Wire);
-  if (ok) {
-    g_drv[side].useERM();
-    g_drv[side].setMode(DRV2605_MODE_REALTIME); // RTP: amplitude written directly
-    g_drv[side].setRealtimeValue(0);
-  }
-  xSemaphoreGive(g_i2c);
-  return ok;
-}
-// level 0..255 -> RTP signed format 0..127.
-static bool haptic_set(int side, uint8_t level) {
-  xSemaphoreTake(g_i2c, portMAX_DELAY);
-  bool ok = mux_select(side == 0 ? MUX_CH_L : MUX_CH_R);
-  if (ok) g_drv[side].setRealtimeValue(level >> 1);
-  xSemaphoreGive(g_i2c);
-  return ok;
+  return haptic_set(side, 0);
 }
 #endif
 
@@ -253,85 +221,91 @@ static void haptic_task(void *) {
   }
 }
 
-// ---------------------------------------------------------------- ToF
+// ---------------------------------------------------------------- ToF (VL53L4ED)
+// The purchased Modulino Distance reports VL53L4ED model ID 0xECAA at I2C 0x29.
+// The older VL53L4CD driver requires 0xEBAA and rejects this module.
+// Use ST's VL53L4ED driver; do not bypass its sensor identity check.
+// XSHUT remains unconnected (pulled up on the module). InitSensor(), 20 ms
+// continuous timing and polling preserve the existing scalar wire-v2 contract.
+// Raw range_status 0 -> VALID, 2/4 (no target / beyond range) -> NO_TARGET, anything else
+// -> UNKNOWN (dt_range_status_from_tof, unit-tested); mm is 0 unless VALID.
 static void tof_task(void *) {
-  static SparkFun_VL53L5CX imager;
-  static VL53L5CX_ResultsData res;
-  static int16_t raw_mm[DT_ZONES];
-  static uint8_t raw_st[DT_ZONES], raw_nb[DT_ZONES], st[DT_ZONES];
-  static uint16_t mm[DT_ZONES];
+  static VL53L4ED tof(&Wire, -1); // -1: XSHUT not wired
+  static VL53L4ED_ResultsData_t res;
   static dt_range_t pkt;
   bool ok = false;
   uint32_t last_try = 0, read_errs = 0;
   bool first = true;
   for (;;) {
     if (!ok) {
-      // Firmware upload (~90 KB) holds the bus for seconds: only retry when haptics are idle,
-      // and never from the cue path. Audio is unaffected (no I2C).
-      if ((first || millis() - last_try > 10000) && !g_haptic_busy) {
+      // L4CD init is a short register sweep (no firmware upload like the old L5CX), so a
+      // retry only needs the bus mutex — no need to wait for idle haptics.
+      if (first || millis() - last_try > TOF_RETRY_MS) {
         first = false;
         last_try = millis();
         xSemaphoreTake(g_i2c, portMAX_DELAY);
-        imager.setWireMaxPacketSize(128);
-        ok = imager.begin(ADDR_TOF, Wire) && imager.setResolution(64) && imager.setRangingFrequency(15) &&
-             imager.startRanging();
+        // Cheap presence probe first, like Modulino's begin(): avoids long ULD timeouts.
+        Wire.beginTransmission(ADDR_TOF);
+        bool present = Wire.endTransmission() == 0;
+        bool init = present && tof.InitSensor() == VL53L4ED_ERROR_NONE &&
+                    tof.VL53L4ED_SetRangeTiming(TOF_TIMING_BUDGET_MS, 0) == VL53L4ED_ERROR_NONE &&
+                    tof.VL53L4ED_StartRanging() == VL53L4ED_ERROR_NONE;
         xSemaphoreGive(g_i2c);
+        ok = init;
         set_fault(DT_FAULT_SENSOR_INIT, !ok);
-        Serial.printf("[tof] init %s\n", ok ? "ok (8x8 @15Hz)" : "FAILED, retry in 10 s");
+        Serial.printf("[tof] init %s\n", ok ? "ok (VL53L4ED, single zone, 20 ms budget)" : "FAILED, retry in 10 s");
         read_errs = 0;
       }
       vTaskDelay(pdMS_TO_TICKS(100));
       continue;
     }
+    uint8_t ready = 0;
     xSemaphoreTake(g_i2c, portMAX_DELAY);
-    bool ready = imager.isDataReady();
-    bool got = ready && imager.getRangingData(&res);
+    bool err = tof.VL53L4ED_CheckForDataReady(&ready) != VL53L4ED_ERROR_NONE;
+    bool got = false;
+    if (!err && ready) {
+      // Read the held result before arming the next sample (ST driver contract).
+      err = tof.VL53L4ED_GetResult(&res) != VL53L4ED_ERROR_NONE ||
+            tof.VL53L4ED_ClearInterrupt() != VL53L4ED_ERROR_NONE;
+      got = !err;
+    }
     xSemaphoreGive(g_i2c);
-    if (ready && !got) {
+    if (err) {
       set_fault(DT_FAULT_SENSOR_READ, true);
-      if (++read_errs >= 10) {
+      if (++read_errs >= TOF_READ_ERR_LIMIT) {
         Serial.println("[tof] repeated read errors, re-initialising");
+        xSemaphoreTake(g_i2c, portMAX_DELAY);
+        tof.VL53L4ED_StopRanging();
+        xSemaphoreGive(g_i2c);
         ok = false;
       }
     } else if (got) {
-      uint64_t t = now_us();
       read_errs = 0;
       set_fault(DT_FAULT_SENSOR_READ, false);
-      for (int i = 0; i < DT_ZONES; i++) {
-        raw_mm[i] = res.distance_mm[i * VL53L5CX_NB_TARGET_PER_ZONE];
-        raw_st[i] = res.target_status[i * VL53L5CX_NB_TARGET_PER_ZONE];
-        raw_nb[i] = res.nb_target_detected[i];
-      }
-      dt_tof_transform(raw_mm, raw_st, raw_nb, DT_TOF_FLIP_X, DT_TOF_FLIP_Y, DT_TOF_ROTATE, mm, st);
-      dt_build_range(&pkt, g_seq_range++, t, mm, st);
+      uint8_t status = dt_range_status_from_tof(res.range_status);
+      dt_build_range(&pkt, g_seq_range++, now_us(), res.distance_mm, status);
       udp_send(&pkt, sizeof pkt);
     }
-    vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelay(pdMS_TO_TICKS(TOF_POLL_MS));
   }
 }
 
 // ---------------------------------------------------------------- output dispatch
 static bool output_busy() {
-  return g_audio_busy || g_haptic_busy || uxQueueMessagesWaiting(g_audio_q) || uxQueueMessagesWaiting(g_haptic_q);
+  return g_haptic_busy || uxQueueMessagesWaiting(g_haptic_q);
 }
 
-static void dispatch(uint8_t cue_id, int8_t gl, int8_t gr, uint8_t pattern, uint8_t hl, uint8_t hr, bool interrupt) {
-  if (gl != DT_GAIN_MUTE || gr != DT_GAIN_MUTE) {
-    AudioReq a{cue_id, gl, gr};
-    if (interrupt) xQueueOverwrite(g_audio_q, &a);
-    else xQueueSend(g_audio_q, &a, 0);
-  }
-  if (pattern != DT_HAPTIC_NONE) {
-    HapticReq h{pattern, hl, hr};
-    if (interrupt) xQueueOverwrite(g_haptic_q, &h);
-    else xQueueSend(g_haptic_q, &h, 0);
-  }
+static void dispatch(uint8_t pattern, uint8_t hl, uint8_t hr, bool interrupt) {
+  if (pattern == DT_HAPTIC_NONE) return;
+  HapticReq h{pattern, hl, hr};
+  if (interrupt) xQueueOverwrite(g_haptic_q, &h);
+  else xQueueSend(g_haptic_q, &h, 0);
 }
 
 // ---------------------------------------------------------------- packet handling
-static void send_ack(uint32_t cue_seq, uint8_t status, int8_t gl, int8_t gr) {
+static void send_ack(uint32_t cue_seq, uint8_t status) {
   dt_ack_t a;
-  dt_build_ack(&a, g_seq_ack++, cue_seq, status, gl, gr, now_us());
+  dt_build_ack(&a, g_seq_ack++, cue_seq, status, now_us());
   udp_send(&a, sizeof a);
 }
 
@@ -354,10 +328,10 @@ static void handle_packet(const uint8_t *buf, size_t len, uint64_t rx_us) {
       dt_profile_state_t prof = profile_get();
       dt_cue_decision_t d = dt_cue_decide(&c, now_us(), &prof, output_busy());
       if (d.play)
-        dispatch(c.cue_id, d.gain_l_db, d.gain_r_db, c.haptic_pattern, d.haptic_l, d.haptic_r,
-                 (c.flags & DT_CUE_FLAG_INTERRUPT) != 0);
-      send_ack(c.h.seq, d.status, d.gain_l_db, d.gain_r_db);
-      if (d.status != DT_ACK_PLAYED) Serial.printf("[cue] seq=%lu id=%u status=%u\n", (unsigned long)c.h.seq, c.cue_id, d.status);
+        dispatch(c.haptic_pattern, d.haptic_l, d.haptic_r, (c.flags & DT_CUE_FLAG_INTERRUPT) != 0);
+      send_ack(c.h.seq, d.status);
+      if (d.status != DT_ACK_APPLIED)
+        Serial.printf("[cue] seq=%lu id=%u status=%u\n", (unsigned long)c.h.seq, c.cue_id, d.status);
       break;
     }
     case DT_PROFILE: {
@@ -367,9 +341,8 @@ static void handle_packet(const uint8_t *buf, size_t len, uint64_t rx_us) {
       bool ok = dt_profile_apply(&g_profile, &p);
       dt_profile_state_t now = g_profile;
       portEXIT_CRITICAL(&g_prof_mux);
-      send_ack(p.h.seq, ok ? DT_ACK_PLAYED : DT_ACK_BAD_CUE, now.ceiling_db, now.ceiling_db);
-      Serial.printf("[profile] %s ceiling=%d mode=%u haptic_max=%u\n", ok ? "applied" : "REJECTED", now.ceiling_db,
-                    now.mode, now.haptic_max);
+      send_ack(p.h.seq, ok ? DT_ACK_APPLIED : DT_ACK_BAD_CUE);
+      Serial.printf("[profile] %s mode=%u haptic_max=%u\n", ok ? "applied" : "REJECTED", now.mode, now.haptic_max);
       break;
     }
     default: break; // wrong magic/version/type/length, or a type the cue board never receives
@@ -441,20 +414,17 @@ void setup() {
   dt_wd_init(&g_wd);
   g_i2c = xSemaphoreCreateMutex();
   g_net = xSemaphoreCreateMutex();
-  g_audio_q = xQueueCreate(1, sizeof(AudioReq));
   g_haptic_q = xQueueCreate(1, sizeof(HapticReq));
 
   Wire.begin(PIN_SDA, PIN_SCL, DT_I2C_HZ);
-
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false); // modem sleep adds 100+ ms latency to CUE delivery
   WiFi.setAutoReconnect(true);
   WiFi.begin(DT_WIFI_SSID, DT_WIFI_PASS);
   Serial.printf("[wifi] connecting to %s\n", DT_WIFI_SSID);
 
-  xTaskCreate(audio_task, "audio", 4096, nullptr, 5, nullptr);
   xTaskCreate(haptic_task, "haptic", 4096, nullptr, 4, nullptr);
-  xTaskCreate(tof_task, "tof", 6144, nullptr, 2, nullptr);
+  xTaskCreate(tof_task, "tof", 4096, nullptr, 2, nullptr);
 }
 
 void loop() {
@@ -475,12 +445,11 @@ void loop() {
   uint64_t now = now_us();
   bool was_active = g_wd.active;
   if (dt_wd_update(&g_wd, now)) {
-    // Failure is loud (Invariant 2): SYSTEM_OFF + LSS every 5 s at min(ceiling, -20 dBFS).
+    // Failure is loud (Invariant 2), haptic-only since v2: LSS every 5 s at haptic_max.
     dt_profile_state_t prof = profile_get();
-    int8_t g = prof.mode == DT_MODE_HAPTIC_ONLY ? (int8_t)DT_GAIN_MUTE : dt_wd_gain_db(prof.ceiling_db);
-    uint8_t h = dt_haptic_cap(255, prof.haptic_max);
-    dispatch(DT_CUE_SYSTEM_OFF, g, g, DT_HAPTIC_LSS, h, h, true);
-    if (!was_active) Serial.println("[wd] no PING: WATCHDOG active, playing SYSTEM_OFF every 5 s");
+    uint8_t h = dt_clamp_haptic(255, prof.haptic_max);
+    dispatch(DT_HAPTIC_LSS, h, h, true);
+    if (!was_active) Serial.println("[wd] no PING: WATCHDOG active, playing haptic LSS every 5 s");
   }
 
   if (now >= next_beat) {

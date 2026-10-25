@@ -59,7 +59,7 @@ class DescribeTest {
         fun ok(id: String, text: String) = DescribeResult.Ok(id, text, "inf2", "Inferentia2", 812, 855)
     }
 
-    private fun alert(band: Band) = Alert(Region.CENTER, band, "obstacle", 1200)
+    private fun alert(band: Band) = Alert(band, 1100)
 
     @Test
     fun `answer is redacted upload, prefixed and spoken`() {

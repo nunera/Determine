@@ -1,9 +1,13 @@
 # Determine — Android app
 
+**Hardware status (24 Oct 2026):** headset playback below is the implemented software/bench path, not approval of the separate OpenRun for the build. Integrated bone-conduction output is unresolved. The cue board's haptics are one Modulino Vibro (no left/right); see the [cue-board README](../firmware/cue-board/README.md). Architecture §12.2–12.4 holds the older stock snapshot.
+
 The phone is the only integrator (Arch §4): it receives the two boards' UDP streams, runs the hazard loop from
-`phone/core` (`org.determine:core`, pulled in with `includeBuild("../phone")`), runs the MediaPipe detector on the
-camera frames, and sends cue commands back to the cue board. This module is only the Android shell around the core:
-UDP socket, foreground service, detector, phone-side alerts, and the accessible UI.
+`phone/core` (`org.determine:core`, pulled in with `includeBuild("../phone")`), plays every warning sound through a
+Bluetooth bone-conduction headset (Shokz OpenRun class), and sends temple-haptic cues to the cue board. Distance
+comes from exactly one source: the cue board's single forward VL53L4CD zone. The camera feeds Describe only. This
+module is only the Android shell around the core: UDP socket, foreground service, headset audio, phone-side
+alerts, and the accessible UI.
 
 **Cross-platform target:** [`../ios/`](../ios/README.md) contains a native SwiftUI interactive prototype of
 these workflows, with explicitly synthetic inputs and xtool packaging. It is not yet a live hardware client.
@@ -13,9 +17,9 @@ remaining device gates. Platform-specific permissions and lifecycle behavior mus
 | Piece | File | Notes |
 |---|---|---|
 | Foreground service | `service/DetermineService.kt` | type `connectedDevice`; partial wake lock + Wi-Fi lock; battery → `engine.setBatteryCritical` |
-| Engine host | `runtime/EngineHost.kt` | owns `Engine`, 10 ms tick on an urgent-priority thread, engine lock, calibration session |
+| Engine host | `runtime/EngineHost.kt` | owns `Engine`, 10 ms tick on an urgent-priority thread, engine lock, calibration session, live haptic cap |
 | UDP | `net/UdpLink.kt`, `net/BoardAddressBook.kt` | binds :47000; learns board IPs; PONG attributed by source IP; sends to CUE :47001 / CAM :47002 |
-| Detector | `detect/DetectorRunner.kt`, `detect/FramePacer.kt` | MediaPipe ObjectDetector LIVE_STREAM, allowlist, score ≥ 0.5; one frame in flight, stale/busy frames skipped, never queued |
+| Headset audio | `audio/PhoneCueSink.kt`, `audio/CueBank.kt` | the phone sound bank (cue ids 0–11) rendered on a low-latency `AudioTrack` bound to the connected Bluetooth (A2DP / LE Audio) headset; per-side ceiling `min(profile, −10 dBFS)`; **no headset or a route diverted elsewhere → explicit `headset_route_lost` (system off), never the phone speaker** |
 | Phone alerts | `alerts/AndroidPhoneAlerts.kt` | TTS spearcons (rate 1.8), vibration, system-off tone + "System off" on the alarm stream |
 | UI | `ui/` | Main (state live region, start/stop, pause), Judge diagnostics, Calibration (Arch §9), Settings |
 
@@ -59,21 +63,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk                 # adb: 
 ```
 
 The core (wire codec, clock sync, policy, state machine, calibration) is tested in `phone/`
-(`cd phone && gradle test`).
+(`cd phone && gradle test`). The app's own JVM tests cover the sound bank (`CueBankTest`), addressing and the battery gate.
 
-### Detector model
+### Face model
 
-`./gradlew assembleDebug` runs `:app:downloadDetectorModel`, which fetches EfficientDet-Lite0 (int8, COCO, ~4.6 MB)
-from
-`https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite`
-into `app/build/generated/detectorModel/assets/` and checks its SHA-256
-(`0720bf24…c723bb`). The model is never committed. Offline builds: place the file there by hand (same hash) and
-the task is up to date. If the model is missing at runtime the app runs ToF-only with the generic "obstacle"
-label and the Judge screen shows "Detector unavailable" (Arch §11.3 abort branch).
-
-Allowlist (COCO): person, bicycle, car, motorcycle, bus, truck, traffic light, fire hydrant, stop sign, parking
-meter, bench, chair, couch, potted plant, dining table, dog, suitcase, refrigerator, tv. COCO has no door class;
-doors are reported by the ToF corridor as "obstacle".
+`./gradlew assembleDebug` runs `:app:downloadFaceModel`, which fetches MediaPipe BlazeFace (short range, ~230 KB) into
+`app/build/generated/faceModel/assets/` and checks its SHA-256. It is used only to blur faces before a Describe
+upload; if it is missing, Describe uploads are disabled. There is no object-detection model: hazard distance, band
+and label never depend on an image (one forward ToF zone, alerts read "obstacle ahead").
 
 ## Hotspot setup
 
@@ -83,8 +80,15 @@ doors are reported by the ToF corridor as "obstacle".
    UDP 47000. The app learns each board's IP from its first packet.
 3. Open Determine → **Start Determine**. Allow notifications (optional; the service runs without it).
 4. Settings → *Hotspot and boards* shows this phone's addresses and each board's learned IP. Judge diagnostics
-   shows heartbeat ages, clock sync, ToF grid and latency.
-5. Status reaches **Ready** once frames are fresh, ToF is valid and the cue board acknowledges (Arch §4.2).
+   shows heartbeat ages, clock sync, the headset route, the **one forward distance** (left and right are shown as
+   "not measured") and latency.
+5. Status reaches **Ready** once frames are fresh, the forward ToF is valid, the cue board acknowledges the haptic
+   profile **and** the headset route plays (Arch §4.2). Without a paired headset the status is **System off:
+   headset route lost** within a second, the main screen says "No Bluetooth headset connected. Warning sounds are
+   off", and Judge diagnostics still shows the forward distance and board links. Exception: with warning sounds
+   switched off on purpose (Settings → Output mode → haptic only, or "Use haptics only" in calibration) no headset
+   is needed: the audio sink is never called, Ready needs only the cue board, and the main screen shows no headset
+   warning. Calibration tones always need the headset, and switching back to a sound mode re-proves it.
 
 Some phones isolate hotspot clients or pause the hotspot when idle; disable "turn off hotspot automatically".
 The Wi-Fi lock only matters if the phone is a client of an external access point instead of the hotspot.
@@ -93,17 +97,25 @@ The Wi-Fi lock only matters if the phone is a client of an external access point
 
 - **No all-clear.** With no warning, the main screen shows nothing in the alert area plus the standing line
   "Silence … never means the path is clear". There is no clear sound.
-- **Failure is loud.** UNAVAILABLE (missing BEAT/frames > 500 ms, cue NACK/missed ACK, battery critical) makes
-  the engine call `systemOff()` every 5 s: three descending notes and "System off" on the alarm stream, plus
-  long-short-short vibration. Stopping the app stops PINGs, so the cue board's own watchdog also plays SYSTEM OFF.
+- **Failure is loud.** UNAVAILABLE (missing BEAT/frames > 500 ms, cue NACK/missed ACK, headset route lost, battery
+  critical) makes the engine call `systemOff()` every 5 s: three descending notes and "System off" on the alarm
+  stream, plus long-short-short vibration, the same cue on the headset if it is still there, and temple haptics (LSS).
+  Stopping the app stops PINGs, so the cue board's own watchdog plays haptic LSS (the board makes no sound).
 - **Battery critical** = ≤ 5 % and not charging, cleared above 8 % or on charge (`power/BatteryCriticalGate.kt`).
   Android has no public "critical" broadcast; these thresholds are PROPOSED.
 - **Head yaw.** The boards carry no IMU and the phone is not head-mounted, so `Engine.setHeadYawRate` is never
   called (yaw stays 0; the scanning hold of FAR cues is inactive).
-- **Calibration** pauses obstacle cues, sends tones through the cue board (`Engine.sendCalibrationCue`, ttl
-  1000 ms), and applies the resulting profile with `Engine.setProfile`. Leaving the screen cancels it and lifts
-  the pause. The profile lives for the service session only (Arch §9.1: re-run every session). The ambient-noise
-  check of Arch §9 step 1 is not implemented (it needs microphone permission).
+- **Calibration** pauses obstacle cues, plays tones on the headset (`Engine.sendCalibrationCue`, ttl 1000 ms; they
+  never go to the board), and applies the resulting audio profile with `Engine.setProfile` only after successful
+  completion and a final headset-route check (the user's haptic cap is kept). An unaccepted tone, playback error,
+  or lost route during any calibration step—even while idle or after finishing but before applying—stops the session,
+  discards its result, resumes the user's previous pause setting, and asks for headset reconnection and a fresh
+  calibration. An unanswered/unplayed tone cannot count as hearing loss. Haptic-only warnings outside calibration
+  remain usable without a headset. The profile lives for the service session only (Arch §9.1: re-run every session).
+  The ambient-noise check of Arch §9 step 1 is not implemented (it needs microphone permission). Left/right
+  calibration fits the two audio channels; the single forward sensor never says which side a hazard is on.
+- **Temple vibration strength** (Settings): the board haptic cap, 1..255, never off (the temples are the only alert
+  left when the phone link is lost). The lowest setting is not a tested guarantee that you will feel it.
 - **Spearcons** toggle in Settings maps to `Engine.setSpearcons`; state announcements are always spoken.
 - **Describe** (Arch §7.3): off by default. Settings → Describe: enable, enter the service URL (deployed
   `cloud/describe-api` Function URL, or `http://<laptop-ip>:8787` from `local_server.py` in debug builds) and the
@@ -111,7 +123,6 @@ The Wi-Fi lock only matters if the phone is a client of an external access point
   TalkBack action "Describe what's ahead". The phone blurs faces with BlazeFace (`describe/FaceRedactor`); if that
   fails nothing is uploaded. The answer is spoken as "May be wrong. …"; a MID/NEAR warning cancels it. The Judge
   screen shows the backend, silicon and measured timings of the last request.
-- **Fallbacks** (Arch §11.4 demo branches, labelled "software fallback — not the proposed glasses" on the Judge
-  screen): Settings → Fallbacks → Camera = phone camera on a headband (CameraX, asks for CAMERA permission), and
-  Warning sounds = phone audio to headphones (`audio/PhoneCueSink`, same cue bank as the firmware, phone
-  vibration instead of temple motors). Changing either restarts the session. The cue board's ToF is still required.
+- **Camera fallback** (Arch §11.4 demo branch, labelled "software fallback — not the proposed glasses" on the Judge
+  screen): Settings → Camera = phone camera on a headband (CameraX, asks for CAMERA permission). Changing it
+  restarts the session. The cue board's forward ToF and the headset are still required.

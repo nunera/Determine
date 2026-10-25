@@ -34,7 +34,6 @@ import androidx.compose.ui.unit.dp
 import org.determine.android.R
 import org.determine.core.Alert
 import org.determine.core.Band
-import org.determine.core.Region
 import org.determine.core.SystemState
 
 /** Spoken/visible description of a state (also used for the notification). There is no "clear" state. */
@@ -49,13 +48,8 @@ fun describe(context: Context, state: SystemState?): String = context.getString(
     },
 )
 
-/** "Person, left, near, 0.9 metres". Distance only when backed by valid ToF (Arch §7.2 "never"). */
+/** "Obstacle ahead, near, 0.4 metres". Distance only when backed by a valid forward ToF reading (Arch §7.2). */
 fun describe(alert: Alert): String {
-    val side = when (alert.region) {
-        Region.LEFT -> "left"
-        Region.CENTER -> "ahead"
-        Region.RIGHT -> "right"
-    }
     val band = when (alert.band) {
         Band.NEAR -> "near"
         Band.MID -> "mid"
@@ -63,12 +57,12 @@ fun describe(alert: Alert): String {
         Band.NONE -> null
     }
     val dist = alert.distanceMm?.let { "%.1f metres".format(it / 1000.0) }
-    return listOfNotNull(alert.label.replaceFirstChar { it.uppercase() }, side, band, dist).joinToString(", ")
+    return listOfNotNull("Obstacle ahead", band, dist).joinToString(", ")
 }
 
-/** PROTOCOL.md BEAT fault bits. */
+/** PROTOCOL.md BEAT fault bits. Bit 2 is reserved since v2 (the board's I2S audio was removed). */
 val FAULT_NAMES = listOf(
-    "sensor init failed", "sensor read error", "I2S error", "left haptic error", "right haptic error",
+    "sensor init failed", "sensor read error", "reserved", "left haptic error", "right haptic error",
     "brownout seen", "no clock sync", "watchdog active", "low heap", "capture failed",
 )
 

@@ -1,21 +1,22 @@
 package org.determine.core.hearing
 
 import org.determine.core.CueCommand
+import org.determine.core.GAIN_MUTE
 import org.determine.core.wire.CueId
-import org.determine.core.wire.GAIN_MUTE
 import org.determine.core.wire.Haptic
 import org.determine.core.wire.Side
 import kotlin.random.Random
 
-enum class CalStep { FIT, THRESHOLD, LEVEL, BALANCE, VERIFY, DONE }
+enum class CalStep { FIT, THRESHOLD, LEVEL, BALANCE, VERIFY, DONE, FAILED }
 
 /**
  * Arch §9 calibration: fit → per-side threshold in three bands → presentation level → balance → verify + mode.
  * Every presented gain is ≤ the ceiling (Arch §9.1). Cues go out through [sink] with ttl 1000 ms (PROTOCOL.md).
+ * The sink returns true only when headset playback accepts the cue; rejection or an exception fails this session.
  */
 class CalibrationSession(
     ceilingDb: Int,
-    private val sink: (CueCommand) -> Unit,
+    private val sink: (CueCommand) -> Boolean,
     private val random: Random = Random.Default,
     private val staircaseFactory: (ceilingDb: Int) -> Staircase = { Staircase(ceilingDb = it) },
     private val nowMs: () -> Long = { System.currentTimeMillis() },
@@ -45,8 +46,8 @@ class CalibrationSession(
     private var verifyTarget: Ear? = null
     var verifyTrials = 0; private set
     var verifyCorrect = 0; private set
-    private var mode: HearingMode? = null
     private var result: HearingProfile? = null
+    var failureReason: String? = null; private set
 
     fun setFit(deviceId: String, weakerEar: Ear?, note: String = "") {
         check(step == CalStep.FIT)
@@ -61,22 +62,37 @@ class CalibrationSession(
         replay()
     }
 
-    /** Re-presents the current stimulus. */
+    /** Re-presents the current stimulus. An unplayed cue terminates calibration, never a hearing trial. */
     fun replay() {
         when (step) {
             CalStep.THRESHOLD -> {
                 val (e, b) = order[orderIdx]
                 val lvl = stair!!.levelDb
-                sink(cue(CueId.CAL_TONE_500 + b, e, lvl))
+                present(cue(CueId.CAL_TONE_500 + b, e, lvl))
             }
             CalStep.BALANCE -> {
                 val e = balanceNextEar
                 balanceNextEar = if (e == Ear.LEFT) Ear.RIGHT else Ear.LEFT
-                sink(cue(CueId.CAL_OBSTACLE, e, balancedLevel(e)))
+                present(cue(CueId.CAL_OBSTACLE, e, balancedLevel(e)))
             }
-            CalStep.VERIFY -> verifyTarget?.let { sink(cue(CueId.CAL_OBSTACLE, it, balancedLevel(it))) }
+            CalStep.VERIFY -> verifyTarget?.let { present(cue(CueId.CAL_OBSTACLE, it, balancedLevel(it))) }
             else -> Unit
         }
+    }
+
+    private fun present(cmd: CueCommand) {
+        val accepted = try { sink(cmd) } catch (_: RuntimeException) { false }
+        if (!accepted) fail("Calibration sound could not play. Reconnect the headset and restart calibration.")
+    }
+
+    /** Revokes even a finished but unapplied result when the route disappears. */
+    fun fail(reason: String) {
+        if (step == CalStep.FAILED) return
+        failureReason = reason
+        result = null
+        stair = null
+        verifyTarget = null
+        step = CalStep.FAILED
     }
 
     fun answerHeard(heard: Boolean) {
@@ -137,12 +153,15 @@ class CalibrationSession(
         finish(if (verifyCorrect >= 4 && !atCeiling) HearingMode.STEREO else HearingMode.SSD)
     }
 
-    fun chooseHapticOnly() { finish(HearingMode.HAPTIC_ONLY) }
+    fun chooseHapticOnly() {
+        check(step != CalStep.FAILED && step != CalStep.DONE)
+        finish(HearingMode.HAPTIC_ONLY)
+    }
 
-    fun result(): HearingProfile? = result
+    fun result(): HearingProfile? = result.takeIf { step == CalStep.DONE }
 
     private fun finish(m: HearingMode) {
-        mode = m
+        check(step != CalStep.FAILED && step != CalStep.DONE)
         step = CalStep.DONE
         stair = null
         val offL = -balanceDb / 2

@@ -33,13 +33,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
+from dtwire import dw  # noqa: E402
 import scenarios  # noqa: E402
 from simclock import host_us  # noqa: E402
 
 OBSTACLE_IDS = {"OBSTACLE_FAR", "OBSTACLE_MID", "OBSTACLE_NEAR", "PERSON_FAR", "PERSON_MID", "PERSON_NEAR"}
 BAND_OF = {"OBSTACLE_FAR": "FAR", "PERSON_FAR": "FAR", "OBSTACLE_MID": "MID", "PERSON_MID": "MID",
            "OBSTACLE_NEAR": "NEAR", "PERSON_NEAR": "NEAR"}
-PLAYED = {"PLAYED", "PLAYED_CLAMPED"}
+APPLIED = {"APPLIED", "APPLIED_CLAMPED"}  # ACK statuses meaning the board executed the haptic command
 CLEAR_WORDS = ("clear", "all clear", "safe", "nothing ahead", "no obstacle")
 
 
@@ -161,7 +162,7 @@ class Run:
         for l in self.sim:
             if l.kind != "CUE" or (src and l.kv.get("src") != src):
                 continue
-            if played and l.kv.get("status") not in PLAYED:
+            if played and l.kv.get("status") not in APPLIED:
                 continue
             if ids is not None and l.kv.get("id") not in ids:
                 continue
@@ -195,8 +196,11 @@ def check_common(r: Run):
     r.check("phone cli produced events", len(r.phone) > 0, f"{len(r.phone)} phone lines")
     r.check("sim ran", r.t0 > 0, f"{len(r.sim)} sim lines")
     late = [l for l in r.sim_cues(None, True) if int(l.kv.get("late_us", "0")) > 0]
-    r.check("no cue played after its deadline (Invariant 5)", not late,
-            "; ".join(l.raw for l in late[:3]) or f"{len(r.sim_cues(None, True))} played cues, none late")
+    r.check("no cue applied after its deadline (Invariant 5)", not late,
+            "; ".join(l.raw for l in late[:3]) or f"{len(r.sim_cues(None, True))} applied cues, none late")
+    audio = [l for l in r.sim if l.kind == "CUE" and ("gl" in l.kv or "gr" in l.kv)]
+    r.check("cue board is haptic-only (no board audio in the sim log)", not audio,
+            "; ".join(l.raw for l in audio[:2]))
     nosync = [l for l in r.sim_cues("phone", False) if l.kv.get("status") == "NO_SYNC"]
     r.check("phone never sent a CUE without clock sync", not nosync, f"{len(nosync)} NO_SYNC acks", warn_only=True)
     speak = [l for l in r.phone_kind("SPEAK") if any(w in l.kv.get("text", "").lower() for w in CLEAR_WORDS)]
@@ -209,22 +213,26 @@ def check_progression(r: Run):
     m = r.scenario.marks
     cues = r.obstacle_cues()
     bands = [BAND_OF[l.kv["id"]] for l in cues]
-    r.check("obstacle cues occurred", bool(cues), f"{len(cues)} played")
+    r.check("obstacle cues occurred", bool(cues), f"{len(cues)} applied")
     first = {b: next((l.host for l in cues if BAND_OF[l.kv["id"]] == b), None) for b in ("FAR", "MID", "NEAR")}
     r.check("FAR, MID and NEAR all played", all(first.values()),
             " ".join(f"{b}@{'-' if h is None else f'{r.st(h):.2f}s'}" for b, h in first.items()))
     if all(first.values()):
         r.check("onsets in order FAR → MID → NEAR", first["FAR"] < first["MID"] < first["NEAR"],
                 f"FAR {r.st(first['FAR']):.2f}s MID {r.st(first['MID']):.2f}s NEAR {r.st(first['NEAR']):.2f}s "
-                f"(scene crosses 3/2/1 m at {m['far_at']:.2f}/{m['mid_at']:.2f}/{m['near_at']:.2f}s)")
+                f"(scene crosses 1200/900/500 mm at {m['far_at']:.2f}/{m['mid_at']:.2f}/{m['near_at']:.2f}s)")
         # no regression once a closer band started while the bar keeps closing
         reg = [l for l in cues if l.host < r.T(m["hold_end"]) and
                ((BAND_OF[l.kv["id"]] == "FAR" and l.host > first["MID"] + 300_000) or
                 (BAND_OF[l.kv["id"]] != "NEAR" and l.host > first["NEAR"] + 300_000))]
         r.check("no band regression while approaching", not reg, f"{len(reg)} regressions", warn_only=True)
     not_both = [l for l in cues if l.kv.get("side") != "BOTH"]
-    r.check("all cues centred (side=BOTH)", not not_both, "; ".join(l.raw for l in not_both[:2]))
-    # At 1.4 m/s the FAR band (3→2 m) lasts ~0.7 s, shorter than one 1000 ms FAR period, so FAR usually
+    r.check("all cues centred (side=BOTH): one forward zone never lateralizes", not not_both,
+            "; ".join(l.raw for l in not_both[:2]))
+    no_haptic = [l for l in cues if l.kv.get("haptic") == "NONE" or l.kv.get("hl") == "0"]
+    r.check("obstacle cues carry temple haptics", not no_haptic, "; ".join(l.raw for l in no_haptic[:2]),
+            warn_only=True)
+    # At 0.5 m/s the FAR band (1200→900 mm) lasts ~0.6 s, shorter than one 1000 ms FAR period, so FAR usually
     # plays once and has no measurable interval. Compare every band that repeated, in urgency order.
     iv = {b: _median_interval_ms([l for l in cues if BAND_OF[l.kv["id"]] == b]) for b in ("FAR", "MID", "NEAR")}
     have = [(b, v) for b, v in iv.items() if v is not None]
@@ -233,7 +241,7 @@ def check_progression(r: Run):
             " ".join(f"{b} {'-' if v is None else f'{v:.0f} ms'}" for b, v in iv.items())
             + f" (Arch §8: 1000/400/200) bands={bands.count('FAR')}/{bands.count('MID')}/{bands.count('NEAR')}")
     early = [l for l in cues if l.host < r.T(m["far_at"] - 0.1)]
-    r.check("silent while the bar is beyond 3 m", not early, f"{len(early)} early cues")
+    r.check("silent while the bar is beyond 1200 mm", not early, f"{len(early)} early cues")
     after = [l for l in cues if l.host > r.T(m["hold_end"] + 1.5)]
     r.check("silent again after the bar leaves", not after, f"{len(after)} cues after {m['hold_end'] + 1.5:.1f}s")
 
@@ -254,14 +262,69 @@ def check_wifi_jitter(r: Run):
 
 
 def check_idle(r: Run):
+    """Open view = NO_TARGET: the sensor sees nothing within range. That is quiet, not reassurance and not a fault."""
     cues = r.obstacle_cues()
     r.check("zero obstacle cues in open space", not cues, "; ".join(l.raw for l in cues[:3]))
     alerts = [l for l in r.phone_kind("ALERT") if "none" not in l.words]
     r.check("zero phone alerts", not alerts, "; ".join(l.raw for l in alerts[:3]))
     states = r.states()
-    r.check("phone reached READY", any(s == "READY" for _, s in states), str([s for _, s in states]))
+    deg = [(h, s) for h, s in states if s == "DEGRADED"]
+    r.check("no DEGRADED for NO_TARGET (an empty view is not a sensor fault)", not deg,
+            str([(f"{r.st(h):.2f}s", s) for h, s in states]))
     unav = [h for h, s in states if s == "UNAVAILABLE" and h > r.T(scenarios.LEAD_S)]
     r.check("no UNAVAILABLE once connected", not unav, f"{len(unav)} transitions")
+    # READY itself is allowed (muted route probes still apply); it is not an all-clear claim.
+    texts = [(l, l.kv.get("text", "").lower()) for l in r.phone_kind("SPEAK")]
+    limited = [l for l, t in texts if "distance sensor limited" in t or "no reading" in t]
+    r.check("no 'distance sensor limited' / 'no reading' speech", not limited, "; ".join(l.raw for l in limited[:3]))
+    clear = [l for l, t in texts if any(w in t for w in CLEAR_WORDS)]
+    r.check("no 'clear' speech", not clear, "; ".join(l.raw for l in clear[:3]))
+    system_off = r.phone_kind("SYSTEM-OFF") + r.sim_cues(None, True, {"SYSTEM_OFF"})
+    r.check("no false system-off timeout in open space", not system_off,
+            "; ".join(l.raw for l in system_off[:3]))
+
+
+BAND_EXIT_MS = 600  # engine default Tuning.bandExitMs: no FAR/MID flip-flop faster than this
+
+
+def check_hover(r: Run):
+    """Target jitters ±30 mm around the FAR/MID boundary: the reported band must not chatter."""
+    start = r.T(r.scenario.marks["hover_start"])
+    cues = [l for l in r.obstacle_cues() if l.host >= start]
+    r.check("obstacle cues occurred near the boundary", bool(cues), f"{len(cues)} applied")
+    # Band onsets: a cue whose band differs from the previous cue's band.
+    onsets: list[tuple[int, str]] = []
+    prev = None
+    for l in cues:
+        band = BAND_OF[l.kv["id"]]
+        if band != prev:
+            onsets.append((l.host, band))
+            prev = band
+    seq = " ".join(f"{r.st(h):.2f}s:{b}" for h, b in onsets)
+    flips = [(a, b) for a, b in zip(onsets, onsets[1:])]
+    fast = [(a, b) for a, b in flips if b[0] - a[0] < BAND_EXIT_MS * 1000]
+    r.check(f"no band onset change faster than bandExitMs ({BAND_EXIT_MS} ms)", not fast,
+            f"{len(onsets)} onsets: {seq}"[:300])
+    # The phone's own reported band (ALERT lines), collapsed to changes.
+    changes: list[int] = []
+    prev = None
+    for l in r.phone_kind("ALERT"):
+        if not l.host or l.host < start:
+            continue
+        band = "NONE" if "none" in l.words else l.kv.get("band")
+        if band != prev:
+            if prev is not None:
+                changes.append(l.host)
+            prev = band
+    worst = 0
+    for h in changes:
+        worst = max(worst, sum(1 for x in changes if h <= x < h + 1_000_000))
+    r.check("at most 2 reported band changes in any 1 s window", worst <= 2,
+            f"{len(changes)} changes, worst window {worst}")
+    unav = [h for h, s in r.states() if s == "UNAVAILABLE" and h > r.T(scenarios.LEAD_S)]
+    r.check("no UNAVAILABLE during the run", not unav, f"{len(unav)} transitions")
+    r.check("no DEGRADED during the run (readings are all VALID)",
+            not any(s == "DEGRADED" for _, s in r.states()), str([s for _, s in r.states()]))
 
 
 def _check_dropout(r: Run, board: str):
@@ -271,22 +334,22 @@ def _check_dropout(r: Run, board: str):
     r.check("phone UNAVAILABLE within 1 s of the dropout (Invariant 2)", unav is not None and unav - a <= 1_000_000,
             "never" if unav is None else f"after {(unav - a) / 1000:.0f} ms")
     so = next((l.host for l in r.phone_kind("SYSTEM-OFF") if l.host >= a), None)
-    r.check("phone system-off output (speaker/vibration) within 1.5 s", so is not None and so - a <= 1_500_000,
+    r.check("phone system-off output (headset audio + vibration) within 1.5 s", so is not None and so - a <= 1_500_000,
             "never" if so is None else f"after {(so - a) / 1000:.0f} ms")
     if board == "cue":
         wd = next((l.host for l in r.sim_cues("watchdog", True) if l.host >= a), None)
-        r.check("cue board watchdog plays SYSTEM_OFF ≈ 800 ms after losing PINGs",
+        r.check("cue board watchdog fires haptic LSS ≈ 800 ms after losing PINGs",
                 wd is not None and 700_000 <= wd - a <= 1_200_000,
                 "never" if wd is None else f"after {(wd - a) / 1000:.0f} ms")
     else:
         sc = next((l.host for l in r.sim_cues("phone", True, {"SYSTEM_OFF"}) if l.host >= a), None)
-        r.check("system-off cue played on the surviving cue board within 1.5 s", sc is not None and sc - a <= 1_500_000,
+        r.check("system-off haptic cue applied on the surviving cue board within 1.5 s", sc is not None and sc - a <= 1_500_000,
                 "never" if sc is None else f"after {(sc - a) / 1000:.0f} ms")
     obst = [l for l in r.obstacle_cues() if a + 1_000_000 <= l.host < b]
     r.check("obstacle cues suppressed while UNAVAILABLE", not obst, f"{len(obst)} cues")
     rec = next((h for h, s in r.states() if h > b and s in ("READY", "DEGRADED")), None)
     r.check("recovers after the board returns", rec is not None and rec - b <= 3_000_000,
-            "never" if rec is None else f"after {(rec - b) / 1000:.0f} ms", warn_only=True)
+            "never" if rec is None else f"after {(rec - b) / 1000:.0f} ms")
 
 
 def check_cue_dropout(r: Run):
@@ -299,44 +362,71 @@ def check_cam_dropout(r: Run):
 
 def check_glass(r: Run):
     g = r.T(r.scenario.marks["glass_from"])
-    deg = next((h for h, s in r.states() if s == "DEGRADED" and h >= g), None)
-    r.check("phone reports DEGRADED once the corridor is unknown", deg is not None and deg - g <= 2_000_000,
-            "never" if deg is None else f"after {(deg - g) / 1000:.0f} ms")
+    states = r.states()
+    r.check("phone reached READY with a valid target before the fault",
+            any(s == "READY" and h < g for h, s in states), str([(f"{r.st(h):.2f}s", s) for h, s in states]))
     cues = r.obstacle_cues()
-    r.check("no obstacle cues from unknown zones (unknown is never far, never an obstacle distance)",
-            not [l for l in cues if l.host >= g], f"{len(cues)} cues")
-    ready = [l for l in r.sim_cues("phone", True, {"READY"}) if l.host >= g]
-    r.check("no reassurance (READY) while the corridor is unknown", not ready, f"{len(ready)} READY cues")
-    dist = [l for l in r.phone_kind("ALERT") if l.host and l.host >= g and l.kv.get("dist_mm", "-") != "-"]
-    r.check("no distance reported without valid ToF", not dist, "; ".join(l.raw for l in dist[:2]))
+    r.check("obstacle cues played for the valid target before the fault",
+            any(l.host < g for l in cues), f"{len([l for l in cues if l.host < g])} cues")
+    deg = next((h for h, s in states if s == "DEGRADED" and h >= g), None)
+    r.check("phone reports DEGRADED once the single reading is UNKNOWN (never treated as empty space)",
+            deg is not None and deg - g <= 2_000_000, "never" if deg is None else f"after {(deg - g) / 1000:.0f} ms")
+    grace = 700_000  # one stale-reading window (500 ms freshness bound + one cue period)
+    stale = [l for l in cues if l.host >= g + grace]
+    r.check("no obstacle cues after UNKNOWN supersedes the last valid distance",
+            not stale, "; ".join(l.raw for l in stale[:2]))
+    ready = [(h, s) for h, s in states if s == "READY" and h >= g]
+    ready_audio = [l for l in r.phone_kind("AUDIO") if l.host >= g and l.kv.get("cue") == str(dw.CUE_IDS["READY"])
+                   and (l.kv.get("gl") != "-128" or l.kv.get("gr") != "-128")]
+    r.check("no reassuring READY after the reading goes UNKNOWN (muted route probes allowed)",
+            not ready and not ready_audio, f"states={ready}; audio={len(ready_audio)}")
+    dist = [l for l in r.phone_kind("ALERT") if l.host and l.host >= g + grace
+            and l.kv.get("dist_mm", "-") != "-"]
+    r.check("no distance reported without a VALID ToF reading", not dist, "; ".join(l.raw for l in dist[:2]))
 
 
-def check_left_right(r: Run):
+def check_approach_then_unknown(r: Run):
+    """Fault path mid-approach: stale VALID must not keep cueing once the reading is UNKNOWN."""
     m = r.scenario.marks
+    g, g2 = r.T(m["glass_from"]), r.T(m["glass_to"])
+    grace = 700_000  # one stale-reading window (500 ms freshness bound + one cue period)
     cues = r.obstacle_cues()
-    left = [l for l in cues if r.T(m["left_start"]) <= l.host < r.T(m["left_end"] + 1.0)]
-    right = [l for l in cues if r.T(m["right_start"]) <= l.host < r.T(m["right_end"] + 1.0)]
-    r.check("left phase cues are on the LEFT", bool(left) and all(l.kv.get("side") == "L" for l in left),
-            f"sides={[l.kv.get('side') for l in left]}")
-    r.check("right phase cues are on the RIGHT", bool(right) and all(l.kv.get("side") == "R" for l in right),
-            f"sides={[l.kv.get('side') for l in right]}")
-    stray = [l for l in cues if l not in left and l not in right]
-    r.check("silent between and after the phases", not stray, f"{len(stray)} stray cues")
+    before = [l for l in cues if l.host < g]
+    r.check("obstacle cues played during the approach", bool(before), f"{len(before)} cues before the fault")
+    deg = next((h for h, s in r.states() if s == "DEGRADED" and h >= g), None)
+    r.check("phone reports DEGRADED when the reading goes UNKNOWN", deg is not None and deg - g <= 2_000_000,
+            "never" if deg is None else f"after {(deg - g) / 1000:.0f} ms")
+    held = [l for l in cues if g + grace <= l.host < g2]
+    r.check("no obstacle cues while UNKNOWN (no stale VALID, never far)", not held,
+            "; ".join(l.raw for l in held[:2]) or f"{len(cues)} cues total")
+    ready = [(h, s) for h, s in r.states() if s == "READY" and g <= h < g2]
+    ready_audio = [l for l in r.phone_kind("AUDIO") if l.host and g <= l.host < g2
+                   and l.kv.get("cue") == str(dw.CUE_IDS["READY"])
+                   and (l.kv.get("gl") != "-128" or l.kv.get("gr") != "-128")]
+    r.check("no reassurance (READY) while UNKNOWN (muted route probes allowed)",
+            not ready and not ready_audio, f"states={ready}; audio={len(ready_audio)}")
+    dist = [l for l in r.phone_kind("ALERT") if l.host and g + grace <= l.host < g2
+            and l.kv.get("dist_mm", "-") != "-"]
+    r.check("no distance reported while UNKNOWN", not dist, "; ".join(l.raw for l in dist[:2]))
+    back = [l for l in cues if g2 <= l.host <= g2 + 3_000_000]
+    r.check("obstacle cues resume after the sensor recovers", bool(back), f"{len(back)} cues within 3 s",
+            warn_only=True)
 
 
 def check_person(r: Run):
     m = r.scenario.marks
-    cues = [l for l in r.obstacle_cues() if l.host < r.T(m["gone"] + 1.0)]
+    all_cues = r.obstacle_cues()
+    cues = [l for l in all_cues if l.host < r.T(m["gone"] + 1.0)]
     r.check("cues while the person approaches", bool(cues), f"{len(cues)} cues")
     bands = [BAND_OF[l.kv["id"]] for l in cues]
-    r.check("reaches MID as the person closes to 1.2 m", "MID" in bands, f"bands={sorted(set(bands))}")
+    r.check("reaches MID as the person closes toward 0.4 m", "MID" in bands, f"bands={sorted(set(bands))}")
     if "FAR" in bands and "MID" in bands:
         r.check("FAR precedes MID", bands.index("FAR") < bands.index("MID"), "")
-    # Only while the person is straight ahead: stepping aside to the right correctly moves the cue right.
-    ahead = [l for l in cues if l.host < r.T(m["aside_start"])]
-    r.check("centred (side=BOTH) while the person is ahead", bool(ahead) and all(l.kv.get("side") == "BOTH" for l in ahead),
-            f"sides={sorted({l.kv.get('side') for l in ahead})}")
-    after = [l for l in r.obstacle_cues() if l.host > r.T(m["gone"] + 1.5)]
+    # One forward zone cannot tell left from right: even when the person steps aside the cue is never lateral.
+    not_both = [l for l in all_cues if l.kv.get("side") != "BOTH"]
+    r.check("every cue centred (side=BOTH); a single zone never infers left/right", not not_both,
+            f"sides={sorted({l.kv.get('side') for l in all_cues})}")
+    after = [l for l in all_cues if l.host > r.T(m["gone"] + 1.5)]
     r.check("silent after the person steps aside", not after, f"{len(after)} cues")
 
 
@@ -344,10 +434,11 @@ CHECKS = {
     "approach_centre": check_approach,
     "wifi_jitter": check_wifi_jitter,
     "idle_open_space": check_idle,
+    "hover_boundary": check_hover,
     "cue_board_dropout": check_cue_dropout,
     "cam_dropout": check_cam_dropout,
     "glass_unknown": check_glass,
-    "left_then_right": check_left_right,
+    "approach_then_unknown": check_approach_then_unknown,
     "person_ahead": check_person,
 }
 

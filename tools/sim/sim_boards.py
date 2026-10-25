@@ -7,9 +7,9 @@ Output: one line per event on stdout (space-separated key=value; `host=` is CLOC
 the same clock as the phone cli's System.nanoTime()):
   SIM host=.. t=.. event=start|dropout_start|dropout_end|end ...
   SYNC board=cue|cam first_ping t=<board s> host=..
-  CUE t=<board s> id=NAME side=L|R|BOTH gl=.. gr=.. haptic=PATTERN status=ACK_STATUS hl=.. hr=..
-      rgl=.. rgr=.. flags=.. ttl=.. seq=.. deadline=<board µs> late_us=.. ceiling=.. src=phone|watchdog host=..
-  PROFILE t=.. applied|REJECTED seq=.. req_ceiling=.. ceiling=.. mode=.. haptic_max=.. host=..
+  CUE t=<board s> id=NAME side=L|R|BOTH haptic=PATTERN status=ACK_STATUS hl=.. hr=..
+      rhl=.. rhr=.. flags=.. ttl=.. seq=.. deadline=<board µs> late_us=.. haptic_max=.. src=phone|watchdog host=..
+  PROFILE t=.. applied|REJECTED seq=.. mode=.. haptic_max=.. host=..
   WATCHDOG enter|exit t=.. host=.. reason=..
   STATS board=.. <counters>
 """
@@ -40,7 +40,8 @@ def _size(s: str) -> tuple[int, int]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Determine two-board simulator (protocol v1).",
+    p = argparse.ArgumentParser(description="Determine two-board simulator (protocol v2: one forward ToF zone, "
+                                            "haptic-only cue board).",
                                 epilog="Scenarios: " + "; ".join(f"{n}: {f(1).description}"
                                                                  for n, f in scenarios.SCENARIOS.items()))
     p.add_argument("--phone", default="127.0.0.1", help="phone IP (default 127.0.0.1)")

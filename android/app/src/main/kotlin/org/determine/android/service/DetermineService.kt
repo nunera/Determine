@@ -38,7 +38,7 @@ import org.determine.android.ui.describe
 
 /**
  * Foreground service that keeps the hazard loop alive with the screen off (Arch §4): it owns the
- * [EngineHost] (UDP :47000, engine, detector, 10 ms tick), a partial wake lock so the tick keeps running,
+ * [EngineHost] (UDP :47000, engine, headset audio sink, 10 ms tick), a partial wake lock so the tick keeps running,
  * a Wi-Fi lock, and the battery watcher that feeds "phone battery critical" to the engine.
  *
  * Type connectedDevice: the service exists to talk to the two wearable boards.
@@ -92,12 +92,15 @@ class DetermineService : Service() {
         scope.launch {
             settings.spearcons.collectLatest { DetermineRuntime.setSpearcons(it) }
         }
-        // Frame source, cue output and the Describe opt-in are fixed per engine session: a change restarts it
-        // (the restart passes through STARTING, so the user hears the state change).
+        // Frame source and the Describe opt-in are fixed per engine session: a change restarts it (the restart
+        // passes through STARTING, so the user hears the state change). The haptic cap is applied live.
         scope.launch {
-            combine(settings.frameSource, settings.cueOutput, settings.describeEnabled) { f, c, d -> Triple(f, c, d) }
+            combine(settings.frameSource, settings.describeEnabled) { f, d -> f to d }
                 .drop(1)
                 .collectLatest { restartHost() }
+        }
+        scope.launch {
+            settings.hapticMax.drop(1).collectLatest { DetermineRuntime.setHapticMax(it) }
         }
         // Restarted by the system after a kill: resume the loop, never stay silently off.
         return START_STICKY
@@ -110,8 +113,8 @@ class DetermineService : Service() {
             HostOptions(
                 spearcons = s.spearcons.value,
                 frameSource = s.frameSource.value,
-                cueOutput = s.cueOutput.value,
                 describeEnabled = s.describeEnabled.value,
+                hapticMax = s.hapticMax.value,
                 describeEndpoint = s::describeEndpoint,
             ),
         )

@@ -1,8 +1,13 @@
 # Determine flow maps
 
 Mermaid diagrams (GitHub renders them inline). Pre-rendered SVGs live in [`rendered/`](rendered/).
-Sources of truth: `protocol/PROTOCOL.md` (wire v1, frozen), `firmware/common/include/determine_wire.h`,
+Sources of truth: `protocol/PROTOCOL.md` (wire v2), `firmware/common/include/determine_wire.h`,
 `Determine-Architecture.html`. Numbers marked PROPOSED are untuned design values, not measurements.
+
+Design basis: one forward single-zone ToF (Arduino Modulino Distance, VL53L4CD), a haptic-only cue board, cue audio
+synthesised on the phone and played on a Bluetooth bone-conduction headset. No 8×8 grid, no board audio, no lateral range.
+
+The headset path is implemented software/bench behavior, not approved final hardware. Separate OpenRun not approved; integrated bone conduction unresolved. Houston's snapshot shows one of two motors and sold-out LM3671; candidates are not adopted (Architecture §12.2).
 
 | File | Diagram | SVG |
 |---|---|---|
@@ -22,8 +27,8 @@ Sources of truth: `protocol/PROTOCOL.md` (wire v1, frozen), `firmware/common/inc
 | | (g) Describe loop | [software-8](rendered/software-8.svg) |
 | | (h) Phone core / Android module map | [software-9](rendered/software-9.svg) |
 
-Re-render every diagram after editing (writes `rendered/<file>-<n>.svg` with plain SVG text labels, so they show in
-any viewer and in GitHub image tags):
+The `.md` files are the source. The checked-in SVGs are generated artifacts: re-render every diagram after editing
+(writes `rendered/<file>-<n>.svg` with plain SVG text labels, so they show in any viewer and in GitHub image tags):
 
 ```sh
 nix shell nixpkgs#mermaid-cli -c python3 docs/flows/render.py

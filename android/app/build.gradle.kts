@@ -45,11 +45,11 @@ android {
 }
 
 /**
- * Downloads the EfficientDet-Lite0 (int8, COCO) object-detector model used by MediaPipe Tasks Vision
- * into a generated assets directory (never committed). The SHA-256 pins the exact file so a changed
- * upstream model cannot silently alter detector behaviour (Arch §7.1).
+ * Downloads a MediaPipe model into a generated assets directory (never committed). The SHA-256 pins the exact
+ * file so a changed upstream model cannot silently alter behaviour. Only the face model for Describe redaction
+ * remains: hazard distance never depends on any image model.
  */
-abstract class DownloadDetectorModel : DefaultTask() {
+abstract class DownloadModel : DefaultTask() {
     @get:Input abstract val url: Property<String>
     @get:Input abstract val sha256: Property<String>
     @get:Input abstract val fileName: Property<String>
@@ -63,7 +63,7 @@ abstract class DownloadDetectorModel : DefaultTask() {
         val bytes = URI(url.get()).toURL().openStream().use { it.readBytes() }
         val actual = sha256Of(bytes)
         check(actual == sha256.get()) {
-            "Detector model hash mismatch: expected ${sha256.get()}, got $actual from ${url.get()}"
+            "Model hash mismatch: expected ${sha256.get()}, got $actual from ${url.get()}"
         }
         out.writeBytes(bytes)
     }
@@ -72,16 +72,9 @@ abstract class DownloadDetectorModel : DefaultTask() {
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 }
 
-val downloadDetectorModel = tasks.register<DownloadDetectorModel>("downloadDetectorModel") {
-    url.set("https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite")
-    sha256.set("0720bf247bd76e6594ea28fa9c6f7c5242be774818997dbbeffc4da460c723bb")
-    fileName.set("efficientdet_lite0.tflite")
-    outputDir.set(layout.buildDirectory.dir("generated/detectorModel/assets"))
-}
-
 // MediaPipe BlazeFace short-range (the face model MediaPipe Tasks FaceDetector supports), used to blur faces
 // before a Describe upload. Faces far from the camera may be missed: redaction is imperfect (Arch §7.3).
-val downloadFaceModel = tasks.register<DownloadDetectorModel>("downloadFaceModel") {
+val downloadFaceModel = tasks.register<DownloadModel>("downloadFaceModel") {
     url.set("https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite")
     sha256.set("b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f")
     fileName.set("blaze_face_short_range.tflite")
@@ -90,8 +83,7 @@ val downloadFaceModel = tasks.register<DownloadDetectorModel>("downloadFaceModel
 
 androidComponents {
     onVariants { variant ->
-        variant.sources.assets?.addGeneratedSourceDirectory(downloadDetectorModel, DownloadDetectorModel::outputDir)
-        variant.sources.assets?.addGeneratedSourceDirectory(downloadFaceModel, DownloadDetectorModel::outputDir)
+        variant.sources.assets?.addGeneratedSourceDirectory(downloadFaceModel, DownloadModel::outputDir)
     }
 }
 

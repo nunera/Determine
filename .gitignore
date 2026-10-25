@@ -2,6 +2,7 @@ firmware/common/include/secrets.h
 .pio/
 build/
 .gradle/
+.kotlin/
 local.properties
 *.iml
 .idea/

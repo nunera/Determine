@@ -15,14 +15,14 @@ from boards import ClockSpec, SimRig  # noqa: E402
 from dtwire import FAULT_NO_CLOCK_SYNC, FAULT_WATCHDOG_ACTIVE, dw  # noqa: E402
 from phonelib import ClockSync, FrameAssembler  # noqa: E402
 from scenarios import Scenario  # noqa: E402
-from scene import Box, zone_index  # noqa: E402
+from scene import Box  # noqa: E402
 from simclock import host_us  # noqa: E402
 
 JPEGS = jpg.make_test_jpegs(2, 160, 120)
 
 
 def centre_wall(t):
-    return [Box(2.0, 0.0, 1.2, 2.0, 1.0, 0.05)]
+    return [Box(0.8, 0.0, 1.2, 2.0, 1.0, 0.05)]  # head-height wall dead ahead at 0.8 m (MID)
 
 
 class FakePhone:
@@ -124,9 +124,9 @@ class LoopbackTest(unittest.TestCase):
             ranges = ph.of(dw.Range, since=t_b)
             self.assertAlmostEqual(len(ranges) / dur, 15.0, delta=2.0)
             r = ranges[-1][1]
-            self.assertIn(r.status[zone_index(3, 3)], dw.VALID_STATUS)
-            self.assertAlmostEqual(r.mm[zone_index(3, 3)], 2005, delta=60)
-            self.assertEqual(r.status[0], dw.STATUS_NO_TARGET)
+            self.assertEqual(r.status, dw.RANGE_VALID)   # one scalar forward reading
+            self.assertAlmostEqual(r.mm, 800, delta=60)
+            self.assertTrue(all(m.status == dw.RANGE_VALID and 700 < m.mm < 900 for _, m in ranges))
             beats_cue = [m for _, m in ph.of(dw.Beat, since=t_b) if m.board == dw.BOARD_CUE]
             self.assertAlmostEqual(len(beats_cue) / dur, 10.0, delta=1.5)
             asm, frames = FrameAssembler(), []
@@ -149,31 +149,35 @@ class LoopbackTest(unittest.TestCase):
             def bt():
                 return ph.sync[dw.BOARD_CUE].board_time(host_us())
 
-            def send_cue(gl, gr, deadline, cue_id=1, flags=1):
-                return ph.send(dw.BOARD_CUE, dw.Cue(host_us(), deadline, cue_id, dw.SIDE_BOTH, gl, gr, 1, 200, 200,
+            def send_cue(hl, hr, deadline, cue_id=1, flags=1):
+                return ph.send(dw.BOARD_CUE, dw.Cue(host_us(), deadline, cue_id, dw.SIDE_BOTH, 1, hl, hr,
                                                     flags, 150))
-            a = ph.wait_ack(send_cue(-20, -20, bt() + 150_000))
-            self.assertEqual((a.status, a.applied_gain_l_db, a.applied_gain_r_db), (dw.ACK_PLAYED, -20, -20))
-            a = ph.wait_ack(send_cue(0, -20, bt() + 150_000))
-            self.assertEqual((a.status, a.applied_gain_l_db), (dw.ACK_PLAYED_CLAMPED, -10))
-            a = ph.wait_ack(send_cue(-20, -20, bt() - 1_000))
+            a = ph.wait_ack(send_cue(200, 200, bt() + 150_000))
+            self.assertEqual(a.status, dw.ACK_APPLIED)
+            a = ph.wait_ack(send_cue(200, 200, bt() - 1_000))
             self.assertEqual(a.status, dw.ACK_EXPIRED)
-            a = ph.wait_ack(send_cue(-20, -20, 0))
+            a = ph.wait_ack(send_cue(200, 200, 0))
             self.assertEqual(a.status, dw.ACK_NO_SYNC)
-            a = ph.wait_ack(send_cue(-20, -20, bt() + 150_000, cue_id=99))
+            a = ph.wait_ack(send_cue(200, 200, bt() + 150_000, cue_id=99))
             self.assertEqual(a.status, dw.ACK_BAD_CUE)
-            a = ph.wait_ack(ph.send(dw.BOARD_CUE, dw.Profile(-25, dw.MODE_STEREO, 255)))
-            self.assertEqual((a.status, a.applied_gain_l_db), (dw.ACK_PLAYED, -25))
-            a = ph.wait_ack(send_cue(-20, -30, bt() + 150_000))
-            self.assertEqual((a.status, a.applied_gain_l_db, a.applied_gain_r_db), (dw.ACK_PLAYED_CLAMPED, -25, -30))
+            a = ph.wait_ack(ph.send(dw.BOARD_CUE, dw.Profile(dw.MODE_STEREO, 120)))
+            self.assertEqual(a.status, dw.ACK_APPLIED)
+            a = ph.wait_ack(send_cue(255, 100, bt() + 150_000))
+            self.assertEqual(a.status, dw.ACK_APPLIED_CLAMPED)   # haptic_l 255 → 120, haptic_r 100 untouched
+            # haptic_max 0 would silence the last board-local failure channel → BAD_CUE, profile kept
+            a = ph.wait_ack(ph.send(dw.BOARD_CUE, dw.Profile(dw.MODE_STEREO, 0)))
+            self.assertEqual(a.status, dw.ACK_BAD_CUE)
+            a = ph.wait_ack(send_cue(255, 100, bt() + 150_000))
+            self.assertEqual(a.status, dw.ACK_APPLIED_CLAMPED)   # still clamped at 120
             # BUSY without interrupt flag right after a cue
-            s1 = send_cue(-30, -30, bt() + 150_000, cue_id=2, flags=1)
-            s2 = send_cue(-30, -30, bt() + 150_000, cue_id=2, flags=0)
-            self.assertEqual(ph.wait_ack(s1).status, dw.ACK_PLAYED)
+            s1 = send_cue(100, 100, bt() + 150_000, cue_id=2, flags=1)
+            s2 = send_cue(100, 100, bt() + 150_000, cue_id=2, flags=0)
+            self.assertEqual(ph.wait_ack(s1).status, dw.ACK_APPLIED)
             self.assertEqual(ph.wait_ack(s2).status, dw.ACK_BUSY_DROPPED)
             cue_lines = [ln for ln in self.lines if ln.startswith("CUE ")]
-            self.assertTrue(any("id=OBSTACLE_FAR side=BOTH gl=-10 gr=-20 haptic=PULSE40 status=PLAYED_CLAMPED" in ln
+            self.assertTrue(any("id=OBSTACLE_FAR side=BOTH haptic=PULSE40 status=APPLIED_CLAMPED hl=120 hr=100" in ln
                                 for ln in cue_lines), cue_lines)
+            self.assertFalse(any(" gl=" in ln or " gr=" in ln for ln in self.lines), "board audio in the sim log")
 
             # --- watchdog over the network: stop pinging
             ph.pinging = False
@@ -185,7 +189,7 @@ class LoopbackTest(unittest.TestCase):
             self.assertTrue(780_000 <= wd[0] - last_ping <= 1_000_000, wd[0] - last_ping)
             wd_lines = [ln for ln in self.lines if "src=watchdog" in ln]
             self.assertEqual(len(wd_lines), 1)  # one alarm so far; the next only after 5 s
-            self.assertIn("id=SYSTEM_OFF side=BOTH gl=-25 gr=-25 haptic=LSS", wd_lines[0])  # min(ceiling, -20)
+            self.assertIn("id=SYSTEM_OFF side=BOTH haptic=LSS status=APPLIED hl=120 hr=120", wd_lines[0])  # haptic_max
             self.assertTrue(any(ln.startswith("WATCHDOG enter") for ln in self.lines))
             ph.pinging = True
             ph.next_ping = 0
@@ -230,20 +234,26 @@ class LoopbackTest(unittest.TestCase):
             for name, clk in (("cue", rig.cue.clock), ("cam", rig.cam.clock)):
                 self.assertLess(abs(s["boards"][name]["offset_us"] - clk.offset_at(host_us())), 2000)
             self.assertAlmostEqual(s["range_hz"], 15.0, delta=2.5)
+            self.assertEqual(s["range"]["status"], "VALID")
+            self.assertEqual(s["range"]["band"], "MID")
+            self.assertAlmostEqual(s["range"]["mm"], 800, delta=60)
             self.assertTrue(9.0 <= s["frame_fps"] <= 13.0, s["frame_fps"])
             msgs = []
-            res = run_latency(bench, 5, "OBSTACLE_FAR", dw.SIDE_L, -20, 0.3, msgs.append)
+            res = run_latency(bench, 5, "OBSTACLE_FAR", dw.SIDE_L, 180, 0.3, msgs.append)
             self.assertEqual(res["acked"], 5)
-            self.assertEqual(res["status"], {"PLAYED": 5})
+            self.assertEqual(res["status"], {"APPLIED": 5})
             self.assertLess(res["p95_ms"], 50.0)
             self.assertTrue(run_fault_test(bench, 1.3, msgs.append), msgs)
             self.assertTrue(any(m.startswith("PASS: WATCHDOG_ACTIVE") for m in msgs), msgs)
-            seq = bench.send_profile(-30, dw.MODE_HAPTIC_ONLY, 100)
-            r = bench.wait_ack(seq)
-            self.assertEqual((r.status, r.applied), ("PLAYED", (-30, -30)))
-            r = bench.wait_ack(bench.send_cue("OBSTACLE_NEAR", dw.SIDE_BOTH, -20, flags=1))
-            self.assertEqual(r.applied, (dw.GAIN_MUTE, dw.GAIN_MUTE))  # HAPTIC_ONLY mutes audio
-            self.assertIn("r3", "\n".join(bench.render(color=False).splitlines()))
+            r = bench.wait_ack(bench.send_profile(dw.MODE_HAPTIC_ONLY, 100))
+            self.assertEqual(r.status, "APPLIED")
+            r = bench.wait_ack(bench.send_cue("OBSTACLE_NEAR", dw.SIDE_BOTH, hl=180, flags=1))
+            self.assertEqual((r.status, r.requested), ("APPLIED_CLAMPED", (180, 180)))  # haptic_max 100 clamps
+            r = bench.wait_ack(bench.send_profile(dw.MODE_STEREO, 0))
+            self.assertEqual(r.status, "BAD_CUE")  # haptic_max 0 is illegal
+            screen = bench.render(color=False)
+            self.assertIn("forward: ", screen)
+            self.assertIn("MID", screen)
         finally:
             rig.stop()
             bench.close()

@@ -2,17 +2,16 @@ package org.determine.android.audio
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import android.os.Build
 import android.os.Process
 import android.os.SystemClock
-import android.os.VibrationAttributes
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import android.util.Log
+import org.determine.core.AUDIO_ROUTE_LOST
 import org.determine.core.CueCommand
 import org.determine.core.LocalCueSink
 import org.determine.core.hearing.HearingProfile
@@ -20,48 +19,51 @@ import org.determine.core.wire.AckStatus
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Phone-audio cue output (Arch §4.1 CueSink "phone audio to headset · phone vibration (non-directional)"), the
- * fallback when the glasses transducers are missing (Arch §11.3). It plays the cue board's own cue bank ([CueBank])
- * on a low-latency stereo [AudioTrack] routed to whatever the phone is using (wired or Bluetooth headset, else the
- * speaker), and the haptic patterns on the phone's single vibrator.
+ * Phone audio output for every warning sound (Arch §4.1 CueSink): the cue bank ([CueBank]) rendered on a
+ * low-latency stereo [AudioTrack] bound to the connected Bluetooth bone-conduction headset (an A2DP or BLE audio
+ * output such as the Shokz OpenRun). The cue board is haptic-only since protocol v2, so this is the only audio
+ * path of the product, and the temple haptics are driven by the engine through the board, not here.
  *
- * Like the board it decides BAD_CUE / BUSY_DROPPED / PLAYED / PLAYED_CLAMPED itself, clamping each gain to
- * min(profile ceiling, −10 dBFS) independently of the engine (invariant 5), and muting audio in HAPTIC_ONLY mode.
+ * There is no silent fallback. The sink only plays while a Bluetooth headset output exists AND the track is not
+ * routed anywhere else:
+ *  - no headset connected, or it disconnects → [play] returns [AUDIO_ROUTE_LOST] (the engine goes UNAVAILABLE with
+ *    reason `headset_route_lost` and announces it); a cue in flight is cut, nothing is ever sent to the speaker;
+ *  - the OS reroutes the track to another output (e.g. the speaker after a Bluetooth drop) → the chunk is not
+ *    written, the track is rebuilt against the headset, and [play] reports the route as lost until that works;
+ *  - the track cannot be opened or written → [FAILED], counted by the engine as a missing ACK.
+ * A muted, haptic-free READY command (the engine's link probe) returns APPLIED only if the route is actually
+ * ready, so reconnecting the headset recovers the system within one probe period.
+ *
+ * Like the board it replaces, it decides BAD_CUE / BUSY_DROPPED / APPLIED / APPLIED_CLAMPED itself, clamping each
+ * gain to min(profile ceiling, −10 dBFS) independently of the engine (invariant 5).
  *
  * Threading: [play] runs on the engine thread inside the engine lock and only decides and hands the request to a
- * one-slot mailbox; a dedicated urgent-audio thread renders the PCM in 5 ms chunks, writes it, and fires the
- * vibration, so the engine never waits for audio. The interrupt flag replaces the mailbox content and the output
- * thread switches to it at the next chunk boundary, as the board's audio task does.
- *
- * Failure is loud: if the audio output cannot be opened or a write fails and the track cannot be rebuilt,
- * [play] returns [FAILED] (not an ACK status), the engine counts a missing ACK and escalates to UNAVAILABLE, and the
- * phone's own alarm path speaks "System off".
+ * one-slot mailbox; a dedicated urgent-audio thread owns the track, renders PCM in 5 ms chunks and writes it, so
+ * the engine never waits for audio. The interrupt flag replaces the mailbox content and the output thread switches
+ * to it at the next chunk boundary.
  */
 class PhoneCueSink(
     context: Context,
     /** Current profile; read inside [play], i.e. under the engine lock. */
     private val profile: () -> HearingProfile,
 ) : LocalCueSink {
-    data class Stats(val outputOk: Boolean, val sampleRate: Int, val played: Long, val dropped: Long, val writeErrors: Long, val error: String?)
+    data class Stats(
+        val headsetPresent: Boolean,
+        val headsetName: String?,
+        val routeReady: Boolean,
+        val sampleRate: Int,
+        val played: Long,
+        val dropped: Long,
+        val writeErrors: Long,
+        val error: String?,
+    )
 
-    private class Request(val cueId: Int, val gainLDb: Int, val gainRDb: Int, val hapticPattern: Int, val hapticAmp: Int)
+    private class Request(val cueId: Int, val gainLDb: Int, val gainRDb: Int)
 
-    private val vibrator: Vibrator? = (
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        }
-        ).takeIf { it.hasVibrator() }
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     private val attributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-        .build()
-
-    private val vibrationAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_ALARM)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
         .build()
 
@@ -73,44 +75,84 @@ class PhoneCueSink(
     private val mailbox = AtomicReference<Request?>(null)
     private val wake = Object()
     @Volatile private var rendering = false
-    @Volatile private var hapticUntilUs = Long.MIN_VALUE
     @Volatile private var running = true
-    @Volatile private var outputOk = false
-    @Volatile private var error: String? = null
+
+    /** The connected Bluetooth headset output, or null. Written by the device callback and the constructor. */
+    @Volatile private var headset: AudioDeviceInfo? = findHeadset()
+    /** True only while the track is open, bound to [headset] and not diverted. Read by [play] under the engine lock. */
+    @Volatile private var routeReady = false
+    @Volatile private var error: String? = if (headset == null) NO_HEADSET else null
     @Volatile private var played = 0L
     @Volatile private var dropped = 0L
     @Volatile private var writeErrors = 0L
 
-    @Volatile private var track: AudioTrack? = openTrack()
+    // Owned by the output thread.
+    private var track: AudioTrack? = null
+    private var boundDeviceId = -1
+    private var nextOpenAttemptMs = 0L
+    private var paused = true
+
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) = onDevicesChanged()
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) = onDevicesChanged()
+    }
 
     private val thread = Thread({ outputLoop() }, "determine-cue-audio").apply {
         isDaemon = true
         start()
     }
 
+    init {
+        audioManager.registerAudioDeviceCallback(deviceCallback, null)
+    }
+
     override fun play(cmd: CueCommand, nowPhoneUs: Long): Int {
         val p = profile()
-        val busy = rendering || mailbox.get() != null || nowPhoneUs < hapticUntilUs
-        val d = CueBank.decide(cmd, p.effectiveCeilingDb, p.mode, p.hapticMax, busy)
+        val busy = rendering || mailbox.get() != null
+        val d = CueBank.decide(cmd, p.effectiveCeilingDb, busy)
         if (!d.play) {
             if (d.status == AckStatus.BUSY_DROPPED) dropped++
             return d.status
         }
-        // Non-directional phone vibrator: the stronger side's intensity (Arch §4.1).
-        val amp = maxOf(d.hapticL, d.hapticR)
-        val haptic = cmd.hapticPattern != 0 && amp > 0
-        if (d.audible && !outputOk) return FAILED
-        if (haptic && vibrator == null && !d.audible) return FAILED
-        // A muted, haptic-free command (the engine's link probe) only proves the output path is open.
-        if (!d.audible && !haptic) return if (outputOk) d.status else FAILED
-        if (haptic) hapticUntilUs = nowPhoneUs + CueBank.hapticLengthMs(cmd.hapticPattern) * 1000L
-        mailbox.set(Request(cmd.cueId, d.gainLDb, d.gainRDb, if (haptic) cmd.hapticPattern else 0, amp))
+        // No headset route, no answer but "lost": never queue sound for whatever output the OS picks instead.
+        if (headset == null || !routeReady) return AUDIO_ROUTE_LOST
+        // A muted command (the engine's link probe) only proves the route is open.
+        if (!d.audible) return d.status
+        mailbox.set(Request(cmd.cueId, d.gainLDb, d.gainRDb))
         synchronized(wake) { wake.notify() }
         played++
         return d.status
     }
 
-    private fun openTrack(): AudioTrack? = try {
+    private fun onDevicesChanged() {
+        headset = findHeadset()
+        synchronized(wake) { wake.notifyAll() }
+    }
+
+    private fun findHeadset(): AudioDeviceInfo? =
+        audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { isHeadset(it) }
+
+    /** Reconciles the track with the headset: closes it when the headset is gone, rebuilds it when it changed. */
+    private fun syncTrack() {
+        val dev = headset
+        val t = track
+        if (dev == null) {
+            if (t != null) { t.release(); track = null; paused = true }
+            routeReady = false
+            error = NO_HEADSET
+            return
+        }
+        if (t != null && routeReady && boundDeviceId == dev.id) return
+        val now = SystemClock.uptimeMillis()
+        if (now < nextOpenAttemptMs) return
+        nextOpenAttemptMs = now + OPEN_RETRY_MS
+        t?.release()
+        track = null
+        paused = true
+        track = openTrack(dev)
+    }
+
+    private fun openTrack(dev: AudioDeviceInfo): AudioTrack? = try {
         val minBytes = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
         val t = AudioTrack.Builder()
             .setAudioAttributes(attributes)
@@ -128,18 +170,30 @@ class PhoneCueSink(
         if (t.state != AudioTrack.STATE_INITIALIZED) {
             t.release()
             error = "audio track not initialised"
-            outputOk = false
+            routeReady = false
+            null
+        } else if (!t.setPreferredDevice(dev)) {
+            t.release()
+            error = "cannot bind audio to the headset ${dev.productName}"
+            routeReady = false
             null
         } else {
-            outputOk = true
+            boundDeviceId = dev.id
             error = null
+            routeReady = true
             t
         }
     } catch (e: Exception) {
-        Log.e(TAG, "cannot open cue audio output", e)
+        Log.e(TAG, "cannot open headset audio output", e)
         error = e.message ?: e.javaClass.simpleName
-        outputOk = false
+        routeReady = false
         null
+    }
+
+    /** True if the track is (as far as Android reports) routed to something other than a Bluetooth headset. */
+    private fun diverted(t: AudioTrack): Boolean {
+        val rd = t.routedDevice ?: return false // not routed yet: cannot be proven elsewhere
+        return !isHeadset(rd)
     }
 
     private fun outputLoop() {
@@ -148,12 +202,11 @@ class PhoneCueSink(
         val silence = ShortArray(chunkFrames * 2)
         var player: CueBank.Player? = null
         var idleSinceMs = 0L
-        var paused = true
         while (running) {
+            syncTrack()
             val req = mailbox.getAndSet(null)
             if (req != null) {
                 rendering = true
-                if (req.hapticPattern != 0) vibrate(req.hapticPattern, req.hapticAmp)
                 val cue = CueBank.cue(req.cueId)
                 player = if (cue != null && (req.gainLDb != CueBank.GAIN_MUTE || req.gainRDb != CueBank.GAIN_MUTE)) {
                     CueBank.Player(cue, sampleRate, CueBank.dbToQ15(req.gainLDb), CueBank.dbToQ15(req.gainRDb))
@@ -163,7 +216,16 @@ class PhoneCueSink(
             }
             val t = track
             val active = player
-            if (active != null && t != null) {
+            if (active != null) {
+                if (t == null || headset == null || diverted(t)) {
+                    // The headset route vanished under a cue: cut it, never let it reach another output.
+                    if (t != null) { t.pause(); t.flush(); paused = true }
+                    routeReady = false
+                    error = if (headset == null) NO_HEADSET else "audio was routed away from the headset"
+                    player = null
+                    rendering = false
+                    continue
+                }
                 if (paused) { t.play(); paused = false }
                 val n = active.render(buf, chunkFrames)
                 if (n < chunkFrames) buf.fill(0, 2 * n, buf.size)
@@ -178,7 +240,7 @@ class PhoneCueSink(
             rendering = false
             if (t != null && !paused) {
                 // Keep the stream warm with silence between repetitions (FAR cues repeat every second), then pause.
-                if (SystemClock.uptimeMillis() - idleSinceMs < IDLE_WARM_MS) {
+                if (SystemClock.uptimeMillis() - idleSinceMs < IDLE_WARM_MS && headset != null && !diverted(t)) {
                     if (!write(t, silence)) paused = true
                     continue
                 }
@@ -191,56 +253,54 @@ class PhoneCueSink(
                     try { wake.wait(IDLE_WAIT_MS) } catch (_: InterruptedException) { return }
                 }
             }
-            if (track == null && running) track = openTrack()
         }
     }
 
-    /** Blocking write of one chunk; on failure (e.g. audio server died) rebuilds the track once. */
+    /** Blocking write of one chunk; on failure (e.g. audio server died) drops the track so it is rebuilt. */
     private fun write(t: AudioTrack, pcm: ShortArray): Boolean {
         val r = t.write(pcm, 0, pcm.size)
         if (r == pcm.size) return true
         writeErrors++
         Log.w(TAG, "cue audio write failed ($r); reopening")
         t.release()
-        track = openTrack()
-        if (track == null) error = "audio write failed ($r)"
+        track = null
+        routeReady = false
+        error = "audio write failed ($r)"
+        nextOpenAttemptMs = 0
         return false
     }
 
-    private fun vibrate(pattern: Int, amplitude: Int) {
-        val v = vibrator ?: return
-        val (timings, amps) = CueBank.vibrationWaveform(pattern, amplitude) ?: return
-        try {
-            val effect = if (v.hasAmplitudeControl()) VibrationEffect.createWaveform(timings, amps, -1)
-            else VibrationEffect.createWaveform(timings, -1)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                v.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM))
-            } else {
-                @Suppress("DEPRECATION")
-                v.vibrate(effect, vibrationAttributes)
-            }
-        } catch (e: RuntimeException) {
-            Log.w(TAG, "vibration failed", e)
-        }
+    fun stats(): Stats {
+        val dev = headset
+        return Stats(dev != null, dev?.productName?.toString(), routeReady && dev != null, sampleRate, played, dropped, writeErrors, error)
     }
-
-    fun stats(): Stats = Stats(outputOk, sampleRate, played, dropped, writeErrors, error)
 
     fun close() {
         running = false
+        audioManager.unregisterAudioDeviceCallback(deviceCallback)
         synchronized(wake) { wake.notifyAll() }
         thread.join(500)
-        vibrator?.cancel()
         track?.release()
         track = null
     }
 
     companion object {
         private const val TAG = "PhoneCueSink"
-        /** Returned instead of an ACK status when the output path is not usable; the engine treats it as a failure. */
+        const val NO_HEADSET = "no Bluetooth headset connected"
+
+        /** Returned for a write/open failure that is not a route loss; the engine counts it as a missing ACK. */
         const val FAILED = -1
         private const val CHUNK_MS = 5
         private const val IDLE_WARM_MS = 2_000L
         private const val IDLE_WAIT_MS = 1_000L
+        private const val OPEN_RETRY_MS = 500L
+
+        /** A Bluetooth output that can carry the warning sounds: A2DP, or LE Audio headset on Android 12+. */
+        fun isHeadset(d: AudioDeviceInfo): Boolean =
+            d.isSink && isHeadsetType(d.type)
+
+        fun isHeadsetType(type: Int): Boolean =
+            type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && type == AudioDeviceInfo.TYPE_BLE_HEADSET)
     }
 }

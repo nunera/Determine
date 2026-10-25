@@ -3,9 +3,9 @@ package org.determine.core
 import org.determine.core.clock.ClockSync
 import org.determine.core.ingest.FrameAssembler
 import org.determine.core.ingest.FreshnessGate
-import org.determine.core.range.RangeCorridor
-import org.determine.core.range.RegionMasks
-import org.determine.core.range.RegionRange
+import org.determine.core.range.ForwardRange
+import org.determine.core.range.ForwardTo
+import org.determine.core.wire.RangeStatus
 import org.determine.core.wire.FramePkt
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -151,41 +151,21 @@ class FrameAssemblerTest {
     }
 }
 
-class RangeCorridorTest {
-    private fun grid(fill: Int, status: Int) = IntArray(64) { fill } to IntArray(64) { status }
-
+class ForwardRangeTest {
     @Test
-    fun `regions take min valid distance`() {
-        val (mm, st) = grid(0, 255)
-        mm[2 * 8 + 3] = 1500; st[2 * 8 + 3] = 5
-        mm[3 * 8 + 4] = 900; st[3 * 8 + 4] = 9
-        mm[1 * 8 + 0] = 2500; st[1 * 8 + 0] = 5
-        mm[1 * 8 + 1] = 100; st[1 * 8 + 1] = 4 // invalid status ignored even if near
-        val r = RangeCorridor().evaluate(mm, st)
-        assertEquals(RegionRange.Target(900), r.of(Region.CENTER))
-        assertEquals(RegionRange.Target(2500), r.of(Region.LEFT))
-        assertEquals(RegionRange.NothingSeen, r.of(Region.RIGHT))
+    fun `canonical status maps to target, nothing seen or unknown`() {
+        assertEquals(ForwardRange.Target(640), ForwardTo.reading(RangeStatus.VALID, 640))
+        assertEquals(ForwardRange.NothingSeen, ForwardTo.reading(RangeStatus.NO_TARGET, 0))
+        assertEquals(ForwardRange.Unknown, ForwardTo.reading(RangeStatus.UNKNOWN, 0))
     }
 
     @Test
-    fun `all invalid is unknown, never clear, and floor rows are excluded`() {
-        val (mm, st) = grid(500, 3)
-        val r = RangeCorridor().evaluate(mm, st)
-        Region.entries.forEach { assertEquals(RegionRange.Unknown, r.of(it)) }
-        assertEquals(1f, r.corridorUnknownFraction)
-        val (mm2, st2) = grid(0, 255)
-        mm2[7 * 8 + 3] = 300; st2[7 * 8 + 3] = 5 // bottom row sees the floor: not in default corridor
-        assertEquals(RegionRange.NothingSeen, RangeCorridor().evaluate(mm2, st2).of(Region.CENTER))
-        val tilted = RangeCorridor(RegionMasks.of(rows = 2..7))
-        assertEquals(RegionRange.Target(300), tilted.evaluate(mm2, st2).of(Region.CENTER))
+    fun `an unrecognised status is unknown, never far and never no target`() {
+        for (s in listOf(3, 5, 9, 127, 255)) assertEquals(ForwardRange.Unknown, ForwardTo.reading(s, 300), "status $s")
     }
 
     @Test
-    fun `mixed unknown and no target counts as nothing seen with confidence fraction`() {
-        val (mm, st) = grid(0, 255)
-        for (z in RegionMasks.DEFAULT.zones(Region.CENTER).take(18)) st[z] = 0
-        val r = RangeCorridor().evaluate(mm, st)
-        assertEquals(RegionRange.NothingSeen, r.of(Region.CENTER))
-        assertEquals(18f / 24f, r.corridorUnknownFraction)
+    fun `a near-looking distance with an invalid status is not a target`() {
+        assertEquals(ForwardRange.Unknown, ForwardTo.reading(RangeStatus.UNKNOWN, 100))
     }
 }

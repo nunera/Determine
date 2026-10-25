@@ -7,7 +7,6 @@ import org.determine.core.hearing.HearingMode
 import org.determine.core.hearing.HearingProfile
 import org.determine.core.hearing.Staircase
 import org.determine.core.wire.CueId
-import org.determine.core.wire.GAIN_MUTE
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -69,7 +68,7 @@ class CalibrationSessionTest {
     /** Simulated listener: deterministic per-ear thresholds; null = deaf on that side. */
     private fun run(thrL: Int?, thrR: Int?, sideAnswer: (Ear) -> Ear = { it }, ceiling: Int = -14): Pair<CalibrationSession, List<CueCommand>> {
         val sent = mutableListOf<CueCommand>()
-        val cal = CalibrationSession(ceiling, { sent += it }, Random(7))
+        val cal = CalibrationSession(ceiling, { sent += it; true }, Random(7))
         cal.setFit("glasses-1", Ear.RIGHT)
         while (cal.step == CalStep.THRESHOLD) {
             val thr = if (cal.ear == Ear.LEFT) thrL else thrR
@@ -127,14 +126,14 @@ class CalibrationSessionTest {
     @Test
     fun `haptic only when deaf both sides or chosen`() {
         assertEquals(HearingMode.HAPTIC_ONLY, run(null, null).first.result()!!.mode)
-        val cal = CalibrationSession(-14, {})
+        val cal = CalibrationSession(-14, { true })
         cal.chooseHapticOnly()
         assertEquals(HearingMode.HAPTIC_ONLY, cal.result()!!.mode)
     }
 
     @Test
     fun `sensation level bounded and levels clamp to ceiling`() {
-        val cal = CalibrationSession(-14, {})
+        val cal = CalibrationSession(-14, { true })
         cal.setFit("x", null)
         while (cal.step == CalStep.THRESHOLD) cal.answerHeard(cal.currentLevelDb!! >= -30)
         assertThrows<IllegalArgumentException> { cal.setSensationLevel(21) }
@@ -142,5 +141,54 @@ class CalibrationSessionTest {
         val p = HearingProfile.uncalibrated(-14)
         assertTrue(p.levelDb(1, Ear.LEFT)!! <= -14)
         assertEquals(-10, HearingProfile.uncalibrated(0).effectiveCeilingDb)
+    }
+
+    @Test
+    fun `haptic max can never be zero - the watchdog failure channel stays on`() {
+        val base = HearingProfile.uncalibrated(-20)
+        assertThrows<IllegalArgumentException> { base.copy(hapticMax = 0) }
+        assertThrows<IllegalArgumentException> { base.copy(hapticMax = 256) }
+        assertEquals(1, base.copy(hapticMax = org.determine.core.hearing.MIN_HAPTIC_MAX).hapticMax)
+        val cal = CalibrationSession(-14, { true })
+        cal.chooseHapticOnly()
+        assertTrue(cal.result()!!.hapticMax >= 1) // even the haptics-only mode keeps the cap above zero
+    }
+
+    @Test
+    fun `failed playback terminates threshold before any unheard answer can become hearing loss`() {
+        var plays = 0
+        val cal = CalibrationSession(-14, { ++plays == 1 }, Random(7))
+        cal.setFit("headset", null)
+        cal.answerHeard(false) // presenting the next tone fails, not a "did not hear" response
+        assertEquals(2, plays)
+        assertEquals(CalStep.FAILED, cal.step)
+        assertNull(cal.result())
+        assertTrue(cal.failureReason!!.contains("Reconnect"))
+        assertThrows<IllegalStateException> { cal.answerHeard(false) }
+        assertThrows<IllegalStateException> { cal.chooseHapticOnly() }
+        assertNull(cal.result())
+    }
+
+    @Test
+    fun `failed initial playback and playback exception cannot produce a profile`() {
+        val rejected = CalibrationSession(-14, { false })
+        rejected.setFit("headset", null)
+        assertEquals(CalStep.FAILED, rejected.step)
+        assertNull(rejected.result())
+
+        val thrown = CalibrationSession(-14, { throw IllegalStateException("route gone") })
+        thrown.setFit("headset", null)
+        assertEquals(CalStep.FAILED, thrown.step)
+        assertNull(thrown.result())
+    }
+
+    @Test
+    fun `route loss after completion revokes uncommitted result`() {
+        val cal = CalibrationSession(-14, { true })
+        cal.chooseHapticOnly()
+        assertEquals(CalStep.DONE, cal.step)
+        cal.fail("Headset disconnected. Reconnect and restart calibration.")
+        assertEquals(CalStep.FAILED, cal.step)
+        assertNull(cal.result())
     }
 }

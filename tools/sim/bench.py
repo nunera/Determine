@@ -3,19 +3,21 @@
 against sim_boards.py for self-test.
 
 Binds UDP 47000, learns each board's address from its first packet (or --cue-ip/--cam-ip),
-pings both at 10 Hz, and shows per-board offset/RTT/drift/BEAT faults, the live 8×8 ToF grid
-(mm + status), camera frame rate/sizes, and command→ACK latency. Sends test cues and PROFILE.
+pings both at 10 Hz, and shows per-board offset/RTT/drift/BEAT faults, the live single forward
+ToF reading (mm + canonical status + hazard band), camera frame rate/sizes, and command→ACK
+latency. Sends test cues (haptic-only on the board) and PROFILE.
 
 Examples
   bench.py                                   # live dashboard; type commands + Enter (h for help)
-  bench.py --cue OBSTACLE_NEAR --side L --gain -20
-  bench.py --profile -25 --mode STEREO --haptic-max 200
+  bench.py --cue OBSTACLE_NEAR --side L --intensity 180
+  bench.py --profile --mode SSD --haptic-max 200
   bench.py --latency 50 --cue OBSTACLE_FAR    # command→ACK p50/p95 over 50 cues
   bench.py --fault-test                       # stop pinging; verify the cue-board watchdog
   bench.py --duration 10 --json --save-jpeg /tmp/latest.jpg
 
-Latency here is command→ACK (CUE send → ACK receipt on this host). Command→sound for Gate G3
-additionally needs the board's audio start, e.g. measured with a microphone.
+Latency here is command→ACK (CUE send → ACK receipt on this host). The board only vibrates; sound
+is the phone's, so command→haptic onset needs an accelerometer/scope, and command→sound is the
+phone app's own audio path to the bone-conduction headset.
 """
 from __future__ import annotations
 
@@ -33,8 +35,8 @@ from typing import Callable
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from dtwire import (ACK_NAMES, CUE_NAMES, FAULT_WATCHDOG_ACTIVE, MODE_BY_NAME, SIDE_BY_NAME, dw,  # noqa: E402
-                    fault_names)
+from dtwire import (ACK_NAMES, BAND_FAR_MM, BAND_MID_MM, BAND_NEAR_MM, FAULT_WATCHDOG_ACTIVE, MODE_BY_NAME,  # noqa: E402
+                    RANGE_STATUS_NAMES, SIDE_BY_NAME, band_of, dw, fault_names)
 from phonelib import AssembledFrame, ClockSync, FrameAssembler, LatencyStats  # noqa: E402
 from simclock import host_us  # noqa: E402
 
@@ -66,7 +68,7 @@ class PendingCue:
     kind: str  # "CUE" | "PROFILE"
     name: str
     sent_us: int
-    gains: tuple[int, int]
+    haptics: tuple[int, int]  # requested (haptic_l, haptic_r); a PROFILE carries (0, haptic_max)
 
 
 @dataclass
@@ -76,7 +78,6 @@ class AckResult:
     name: str
     status: str
     latency_ms: float | None
-    applied: tuple[int, int]
     requested: tuple[int, int]
 
 
@@ -172,7 +173,7 @@ class Bench:
                     del self.pending[seq]
                     self.missed_acks += 1
                     self.ack_status["MISSING"] += 1
-                    self.results.append(AckResult(seq, p.kind, p.name, "MISSING", None, (0, 0), p.gains))
+                    self.results.append(AckResult(seq, p.kind, p.name, "MISSING", None, p.haptics))
             self.frames.expire(now)
 
     def _board_for(self, msg, addr) -> str | None:
@@ -252,10 +253,9 @@ class Bench:
         lat = (rx - p.sent_us) / 1000.0
         self.ack_lat.add(lat)
         self.ack_status[st] += 1
-        r = AckResult(a.cue_seq, p.kind, p.name, st, lat, (a.applied_gain_l_db, a.applied_gain_r_db), p.gains)
+        r = AckResult(a.cue_seq, p.kind, p.name, st, lat, p.haptics)
         self.results.append(r)
-        self.log(f"ACK {p.kind} {p.name} seq={a.cue_seq} status={st} applied=({a.applied_gain_l_db},"
-                 f"{a.applied_gain_r_db}) requested={p.gains} latency={lat:.1f} ms")
+        self.log(f"ACK {p.kind} {p.name} seq={a.cue_seq} status={st} requested={p.haptics} latency={lat:.1f} ms")
 
     # -------------------------------------------------------------------- commands
     def synced(self, board: str) -> bool:
@@ -269,18 +269,18 @@ class Bench:
             self.poll(0.02)
         return pred()
 
-    def send_cue(self, name: str, side: int = dw.SIDE_BOTH, gain_l: int = -20, gain_r: int | None = None,
-                 haptic: str | None = None, hl: int = 180, hr: int | None = None, ttl_ms: int | None = None,
-                 flags: int = 0, no_sync: bool = False) -> int | None:
+    def send_cue(self, name: str, side: int = dw.SIDE_BOTH, haptic: str | None = None, hl: int = 180,
+                 hr: int | None = None, ttl_ms: int | None = None, flags: int = 0,
+                 no_sync: bool = False) -> int | None:
         """Builds a CUE exactly as the phone would: deadline = board-time estimate at issue + ttl.
-        Refuses without clock sync unless no_sync=True (sends deadline 0 → expect ACK NO_SYNC)."""
+        Haptic-only: the board vibrates, all sound is the phone's. Refuses without clock sync
+        unless no_sync=True (sends deadline 0 → expect ACK NO_SYNC)."""
         cue_id = dw.CUE_IDS[name]
-        gain_r = gain_l if gain_r is None else gain_r
         hr = hl if hr is None else hr
         if side == dw.SIDE_L:
-            gain_r, hr = dw.GAIN_MUTE, 0
+            hr = 0
         elif side == dw.SIDE_R:
-            gain_l, hl = dw.GAIN_MUTE, 0
+            hl = 0
         haptic = haptic or DEFAULT_HAPTIC.get(name, "NONE")
         ttl_ms = ttl_ms if ttl_ms is not None else (1000 if name in CAL_CUES else 150)  # PROTOCOL.md CUE ttl
         with self.lock:
@@ -290,18 +290,17 @@ class Bench:
                 self.log("no clock sync with the cue board yet: CUE not sent (use --no-sync-test to force)")
                 return None
             deadline = 0 if no_sync else bt + ttl_ms * 1000
-            seq = self._send("cue", dw.Cue(now, deadline, cue_id, side, gain_l, gain_r, dw.HAPTIC[haptic],
-                                           hl, hr, flags, ttl_ms))
+            seq = self._send("cue", dw.Cue(now, deadline, cue_id, side, dw.HAPTIC[haptic], hl, hr, flags, ttl_ms))
             if seq is not None:
-                self.pending[seq] = PendingCue(seq, "CUE", name, now, (gain_l, gain_r))
+                self.pending[seq] = PendingCue(seq, "CUE", name, now, (hl, hr))
             return seq
 
-    def send_profile(self, ceiling_db: int, mode: int = dw.MODE_STEREO, haptic_max: int = 255) -> int | None:
+    def send_profile(self, mode: int = dw.MODE_STEREO, haptic_max: int = 255) -> int | None:
         with self.lock:
-            seq = self._send("cue", dw.Profile(ceiling_db, mode, haptic_max))
+            seq = self._send("cue", dw.Profile(mode, haptic_max))
             if seq is not None:
-                self.pending[seq] = PendingCue(seq, "PROFILE", f"ceiling={ceiling_db}", self.host(),
-                                               (ceiling_db, ceiling_db))
+                self.pending[seq] = PendingCue(seq, "PROFILE", f"mode={mode} haptic_max={haptic_max}", self.host(),
+                                               (0, haptic_max))
             return seq
 
     def wait_ack(self, seq: int, timeout_s: float = 1.5) -> AckResult | None:
@@ -337,6 +336,9 @@ class Bench:
                 "reset_reason": bt.reset_reason if bt else None,
             }
         out["range_hz"] = round(self._rate(self.range_rx, now), 2)
+        r = self.last_range
+        out["range"] = None if r is None else {"mm": r.mm, "status": RANGE_STATUS_NAMES.get(r.status, r.status),
+                                               "band": band_of(r.mm, r.status)}
         out["frame_fps"] = round(self._rate(self.frame_done_rx, now), 2)
         out["frame_bytes_avg"] = int(sum(self.frame_sizes) / len(self.frame_sizes)) if self.frame_sizes else None
         out["frame_wh"] = [self.last_frame.w, self.last_frame.h] if self.last_frame else None
@@ -365,7 +367,7 @@ class Bench:
                          f"temp={f(b['temp_c'])}  reset={f(b['reset_reason'])}")
             lines.append(f"    faults: {', '.join(b['faults']) if b['faults'] else ('none' if b['faults'] == [] else '-')}")
         lines.append(f"RANGE {s['range_hz']:.1f} Hz")
-        lines.extend(render_grid(self.last_range, color))
+        lines.append(render_range(self.last_range, color))
         lines.append(f"FRAME {s['frame_fps']:.1f} fps  size={s['frame_wh']} avg={s['frame_bytes_avg']} B  "
                      f"age={'-' if s['frame_age_ms'] is None else f'{s['frame_age_ms']:.0f} ms'}  "
                      f"completed={s['frames_completed']} timeout={s['frames_dropped_timeout']} bad={s['frames_dropped_bad']}")
@@ -374,7 +376,7 @@ class Bench:
                      f"p95={'-' if p95 is None else f'{p95:.1f}'} ms  status={s['ack_status']}  missed={s['missed_acks']}  "
                      f"pinging={'yes' if self.pinging else 'NO (watchdog test)'}")
         for r in list(self.results)[-3:]:
-            lines.append(f"  last: {r.kind} {r.name} seq={r.seq} {r.status} applied={r.applied} "
+            lines.append(f"  last: {r.kind} {r.name} seq={r.seq} {r.status} requested={r.requested} "
                          f"{'' if r.latency_ms is None else f'{r.latency_ms:.1f} ms'}")
         return "\n".join(lines)
 
@@ -382,28 +384,23 @@ class Bench:
         self.sock.close()
 
 
-def render_grid(r: "dw.Range | None", color: bool = True) -> list[str]:
-    """8×8 ToF heatmap: row 0 = top, col 0 = wearer's left. Valid zones show mm, '----' = NO_TARGET,
-    '?NNN' = any other raw status (UNKNOWN for the phone; never 'far')."""
+def render_range(r: "dw.Range | None", color: bool = True) -> str:
+    """The ONE forward ToF reading (single zone, no left/right). VALID shows mm and its hazard band,
+    NO_TARGET shows no obstacle claim (never 'clear'), UNKNOWN is a failure and never a distance."""
     if r is None:
-        return ["  (no RANGE yet)"]
-    out = ["      L " + " ".join(f"  c{c} " for c in range(8)) + " R"]
-    for row in range(8):
-        cells = []
-        for col in range(8):
-            z = row * 8 + col
-            st, mm = r.status[z], r.mm[z]
-            if st in dw.VALID_STATUS:
-                txt = f"{mm:5d}"
-                code = 196 if mm < 1000 else 208 if mm < 2000 else 226 if mm < 3000 else 46
-            elif st == dw.STATUS_NO_TARGET:
-                txt, code = " ----", 240
-            else:
-                txt, code = f" ?{st:3d}", 201
-            cells.append(f"\x1b[38;5;{code}m{txt}\x1b[0m" if color else txt)
-        out.append(f"  r{row}   " + " ".join(cells))
-    out.append("  mm: <1000 NEAR  <2000 MID  <3000 FAR (Arch §7.2)   ---- NO_TARGET   ?s raw status = UNKNOWN")
-    return out
+        return "  (no RANGE yet)"
+    if r.status == dw.RANGE_VALID:
+        band = band_of(r.mm, r.status)
+        txt = f"{r.mm} mm  " + (band if band else f"beyond {BAND_FAR_MM} mm: no claim")
+        code = {"NEAR": 196, "MID": 208, "FAR": 226}.get(band, 240)
+    elif r.status == dw.RANGE_NO_TARGET:
+        txt, code = "NO_TARGET (no obstacle claim; NOT an all-clear)", 240
+    else:
+        txt, code = f"UNKNOWN (status={r.status}): reading unusable, never far", 201
+    if color:
+        txt = f"\x1b[38;5;{code}m{txt}\x1b[0m"
+    return (f"  forward: {txt}\n  bands: NEAR <{BAND_NEAR_MM}  MID <{BAND_MID_MM}  FAR ≤{BAND_FAR_MM} mm "
+            f"(PROTOCOL.md; measured/tunable)")
 
 
 # ------------------------------------------------------------------------ modes
@@ -425,7 +422,8 @@ def run_fault_test(bench: Bench, hold_s: float, out: Callable[[str], None]) -> b
     with bench.lock:
         bench.pinging = False
         last_ping = b.last_ping_sent  # pings are sent only from _service; none after this point
-    out(f"stopped pinging; holding {hold_s:.1f} s (listen for SYSTEM_OFF + LSS now and again after 5 s)")
+    out(f"stopped pinging; holding {hold_s:.1f} s (feel the temple haptic LSS now and again after 5 s; "
+        "the board makes no sound)")
     bench.poll(hold_s)
     on = next((rx for rx, a in events if a), None)
     with bench.lock:
@@ -454,7 +452,7 @@ def run_fault_test(bench: Bench, hold_s: float, out: Callable[[str], None]) -> b
     return ok
 
 
-def run_latency(bench: Bench, n: int, name: str, side: int, gain: int, interval_s: float,
+def run_latency(bench: Bench, n: int, name: str, side: int, intensity: int, interval_s: float,
                 out: Callable[[str], None]) -> dict:
     if not bench.wait_for(lambda: bench.synced("cue"), 8.0):
         out("FAIL: no clock sync with the cue board within 8 s")
@@ -462,7 +460,7 @@ def run_latency(bench: Bench, n: int, name: str, side: int, gain: int, interval_
     lat = LatencyStats()
     statuses: Counter = Counter()
     for _ in range(n):
-        seq = bench.send_cue(name, side, gain)
+        seq = bench.send_cue(name, side, hl=intensity)
         r = bench.wait_ack(seq, 1.2) if seq is not None else None
         if r is None or r.latency_ms is None:
             statuses["MISSING"] += 1
@@ -482,13 +480,14 @@ def _fmt(v):
 
 
 HELP = """commands (then Enter):
-  f|m|n [L|R|B]        OBSTACLE_FAR / MID / NEAR at --gain (default side BOTH)
-  s                    SYSTEM_OFF        r  READY
-  c NAME [L|R|B] [gain] [haptic] [intensity] [ttl_ms]   any cue, e.g. c CAL_TONE_1K L -30 NONE 0 1000
-  x                    forged CUE at 0 dBFS (Gate G4: expect PLAYED_CLAMPED at the ceiling)
-  p CEILING [STEREO|SSD|HAPTIC_ONLY] [haptic_max]        send PROFILE
+  f|m|n [L|R|B]        OBSTACLE_FAR / MID / NEAR haptics at --intensity (default side BOTH)
+  s                    SYSTEM_OFF haptic LSS        r  READY
+  c NAME [L|R|B] [haptic] [intensity] [ttl_ms]   any cue, e.g. c OBSTACLE_MID L PULSE60 150
+  x                    forged CUE at haptic intensity 255 (expect APPLIED_CLAMPED at the profile haptic_max)
+  p [STEREO|SSD|HAPTIC_ONLY] [haptic_max 1-255]  send PROFILE (0 is illegal: expect ACK BAD_CUE)
   w                    toggle PINGs (watchdog check)   j  save latest JPEG to ./bench_latest.jpg
-  h                    help                           q  quit"""
+  h                    help                           q  quit
+the board only vibrates; sound is the phone's (bone-conduction headset)"""
 
 
 def interactive(bench: Bench, args, color: bool, out: Callable[[str], None]):
@@ -536,21 +535,22 @@ def handle_command(bench: Bench, c: str, args) -> str:
     k = t[0].lower()
     if k in ("f", "m", "n"):
         name = {"f": "OBSTACLE_FAR", "m": "OBSTACLE_MID", "n": "OBSTACLE_NEAR"}[k]
-        seq = bench.send_cue(name, _side(t[1] if len(t) > 1 else None), args.gain)
+        seq = bench.send_cue(name, _side(t[1] if len(t) > 1 else None), hl=args.intensity)
     elif k == "s":
-        seq = bench.send_cue("SYSTEM_OFF", dw.SIDE_BOTH, args.gain)
+        seq = bench.send_cue("SYSTEM_OFF", dw.SIDE_BOTH, hl=args.intensity)
     elif k == "r":
-        seq = bench.send_cue("READY", dw.SIDE_BOTH, args.gain)
+        seq = bench.send_cue("READY", dw.SIDE_BOTH, hl=args.intensity)
     elif k == "x":
-        seq = bench.send_cue("OBSTACLE_FAR", dw.SIDE_BOTH, 0)
+        seq = bench.send_cue("OBSTACLE_FAR", dw.SIDE_BOTH, hl=255)
     elif k == "c":
         name = t[1].upper()
-        seq = bench.send_cue(name, _side(t[2] if len(t) > 2 else None), int(t[3]) if len(t) > 3 else args.gain,
-                             haptic=t[4].upper() if len(t) > 4 else None, hl=int(t[5]) if len(t) > 5 else 180,
-                             ttl_ms=int(t[6]) if len(t) > 6 else None)
+        seq = bench.send_cue(name, _side(t[2] if len(t) > 2 else None),
+                             haptic=t[3].upper() if len(t) > 3 else None,
+                             hl=int(t[4]) if len(t) > 4 else args.intensity,
+                             ttl_ms=int(t[5]) if len(t) > 5 else None)
     elif k == "p":
-        mode = MODE_BY_NAME[t[2].upper()] if len(t) > 2 else dw.MODE_STEREO
-        seq = bench.send_profile(int(t[1]), mode, int(t[3]) if len(t) > 3 else 255)
+        mode = MODE_BY_NAME[t[1].upper()] if len(t) > 1 else dw.MODE_STEREO
+        seq = bench.send_profile(mode, int(t[2]) if len(t) > 2 else 255)
         return f"PROFILE sent seq={seq}"
     elif k == "w":
         with bench.lock:
@@ -588,18 +588,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cam-ip", help="camera board IP[:port] (default: learned from its first packet)")
     p.add_argument("--cue", metavar="NAME", choices=sorted(dw.CUE_IDS), help="send this cue (or the --latency cue)")
     p.add_argument("--side", default="BOTH", help="L | R | BOTH (default BOTH)")
-    p.add_argument("--gain", type=int, default=-20, help="dBFS, ≤ 0 (default -20; board clamps to its ceiling)")
-    p.add_argument("--gain-r", type=int, help="right gain if different from --gain")
     p.add_argument("--haptic", choices=sorted(dw.HAPTIC), help="haptic pattern (default per cue)")
     p.add_argument("--intensity", type=int, default=180, help="haptic intensity 0–255 (default 180)")
     p.add_argument("--ttl", type=int, help="ms (default 150; 1000 for CAL cues)")
-    p.add_argument("--interrupt", action="store_true", help="set flags bit0 (interrupt current sound)")
+    p.add_argument("--interrupt", action="store_true", help="set flags bit0 (interrupt the current haptic output)")
     p.add_argument("--count", type=int, default=1, help="repeat --cue N times")
     p.add_argument("--interval", type=float, default=0.5, help="seconds between repeated cues (default 0.5)")
     p.add_argument("--no-sync-test", action="store_true", help="send deadline 0 (expect ACK NO_SYNC)")
-    p.add_argument("--profile", type=int, metavar="CEILING_DB", help="send PROFILE with this ceiling")
-    p.add_argument("--mode", default="STEREO", choices=sorted(MODE_BY_NAME), help="PROFILE mode")
-    p.add_argument("--haptic-max", type=int, default=255, help="PROFILE haptic_max")
+    p.add_argument("--profile", action="store_true", help="send PROFILE with --mode/--haptic-max")
+    p.add_argument("--mode", default="STEREO", choices=sorted(MODE_BY_NAME),
+                   help="PROFILE mode (phone audio semantics; the board is always haptic-only)")
+    p.add_argument("--haptic-max", type=int, default=255,
+                   help="PROFILE haptic_max 1–255 (board clamps CUE intensity to it); 0 is illegal and sends a "
+                        "forged PROFILE to verify the board answers ACK BAD_CUE")
     p.add_argument("--latency", type=int, metavar="N", help="measure command→ACK p50/p95 over N cues")
     p.add_argument("--fault-test", action="store_true", help="stop pinging; verify the cue-board watchdog")
     p.add_argument("--fault-hold", type=float, default=6.0, help="seconds without PING in --fault-test (default 6)")
@@ -624,19 +625,20 @@ def main(argv: list[str] | None = None) -> int:
     color = sys.stdout.isatty() and not args.plain
     rc = 0
     try:
-        oneshot = args.fault_test or args.latency or args.cue or args.profile is not None
-        if args.profile is not None:
+        oneshot = args.fault_test or args.latency or args.cue or args.profile
+        if args.profile:
             if not bench.wait_for(lambda: bench.boards["cue"].addr is not None, args.sync_timeout):
                 out("FAIL: cue board not heard")
                 return 2
-            seq = bench.send_profile(args.profile, MODE_BY_NAME[args.mode], args.haptic_max)
+            seq = bench.send_profile(MODE_BY_NAME[args.mode], args.haptic_max)
             r = bench.wait_ack(seq) if seq is not None else None
-            out(f"PROFILE seq={seq}: {r.status if r else 'NO ACK'}" + (f" applied ceiling={r.applied[0]}" if r else ""))
-            rc |= 0 if (r and r.status == "PLAYED") else 1
+            want = "BAD_CUE" if args.haptic_max == 0 else "APPLIED"  # haptic_max 0 must be rejected
+            out(f"PROFILE seq={seq}: {r.status if r else 'NO ACK'} (expected {want})")
+            rc |= 0 if (r and r.status == want) else 1
         if args.fault_test:
             rc |= 0 if run_fault_test(bench, args.fault_hold, out) else 1
         if args.latency:
-            res = run_latency(bench, args.latency, args.cue or "OBSTACLE_FAR", _side(args.side), args.gain,
+            res = run_latency(bench, args.latency, args.cue or "OBSTACLE_FAR", _side(args.side), args.intensity,
                               args.interval, out)
             rc |= 0 if res and res.get("acked") == args.latency else 1
         elif args.cue:
@@ -646,7 +648,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.no_sync_test:
                 bench.wait_for(lambda: bench.boards["cue"].addr is not None, args.sync_timeout)
             for i in range(args.count):
-                seq = bench.send_cue(args.cue, _side(args.side), args.gain, args.gain_r, args.haptic, args.intensity,
+                seq = bench.send_cue(args.cue, _side(args.side), args.haptic, args.intensity,
                                      ttl_ms=args.ttl, flags=1 if args.interrupt else 0, no_sync=args.no_sync_test)
                 r = bench.wait_ack(seq) if seq is not None else None
                 if r is None:
