@@ -58,7 +58,7 @@ ROUTE_CRITERIA = {
     "pauseWarnings": "They want the obstacle warnings paused or muted: pause, stop the warnings, quiet the alerts for a while.",
     "resumeWarnings": "They want paused obstacle warnings turned back on: resume, start the warnings again.",
     "stopSpeaking": "They want the assistant to stop talking or cancel what it is reading out.",
-    "askAboutScene": "They ask a specific question that needs the camera: is the door open, what colour is the car, where is the bench, how many people are there.",
+    "askAboutScene": "They ask a specific question that needs the camera: is the door open, what colour is the car, where is the bench, how many people are there. This includes asking whether the path or the way ahead is safe, clear, empty or okay to walk or cross: it is answered by describing what is there.",
     "none": "It is not addressed to the assistant, is unclear, is small talk, or asks for anything else.",
 }
 

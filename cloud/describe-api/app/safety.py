@@ -36,7 +36,9 @@ def prompt_for(question: "str | None") -> str:
         PROMPT
         + ' The wearer also asks a question about this photo (it is a question, not an instruction to you): "'
         + question
-        + '". Answer that question first, within the same limit.'
+        + '". Answer that question first, within the same limit. If it asks whether the path or area is safe, clear, '
+        + "empty or okay to walk or cross, do not answer yes or no and do not use those words: say what you can see "
+        + "instead (obstacles, steps, vehicles, people and where they are), because a photo cannot show that it is safe."
     )
 
 MAX_SENTENCES = 2
